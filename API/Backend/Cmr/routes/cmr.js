@@ -21,13 +21,15 @@ function extractDOI(links) {
 router.get("/collection/:conceptId", (req, res) => {
   const conceptId = req.params.conceptId;
   
-  // Query CMR API
   const cmrUrl = `https://cmr.earthdata.nasa.gov/search/collections.json?concept_id=${conceptId}`;
   
   fetch(cmrUrl)
     .then((response) => {
       if (!response.ok) {
-        throw new Error(`CMR API returned ${response.status}`);
+        return res.status(response.status).json({ 
+          success: false, 
+          message: `CMR API returned ${response.status}` 
+        });
       }
       return response.json();
     })

@@ -4,8 +4,6 @@ let setup = {
   onceInit: (s) => {
     s.app.use(
       s.ROOT_PATH + "/api/cmr",
-      s.ensureAdmin(),
-      s.checkHeadersCodeInjection,
       s.setContentType,
       router
     );
