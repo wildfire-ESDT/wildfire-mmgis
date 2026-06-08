@@ -11,7 +11,7 @@ const fetch = require("node-fetch");
 
 const WORLDVIEW_BASE_URL = "https://raw.githubusercontent.com/nasa-gibs/worldview/main/config/default/common/config/metadata/layers";
 
-router.get("/description/:encodedPath", (req, res) => {
+router.get("/description/:encodedPath", async (req, res) => {
   const encodedPath = req.params.encodedPath;
   
   if (!encodedPath) {
@@ -24,32 +24,31 @@ router.get("/description/:encodedPath", (req, res) => {
   const worldviewPath = decodeURIComponent(encodedPath);
   const worldviewUrl = `${WORLDVIEW_BASE_URL}/${worldviewPath}.md`;
   
-  fetch(worldviewUrl)
-    .then((response) => {
-      if (!response.ok) {
-        return res.status(response.status).json({ 
-          success: false, 
-          message: `Worldview GitHub returned ${response.status} for ${worldviewUrl}` 
-        });
-      }
-      return response.text();
-    })
-    .then((markdown) => {
-      return res.json({
-        success: true,
-        data: {
-          summary: markdown.trim(),
-          source: "worldview",
-          path: worldviewPath
-        }
-      });
-    })
-    .catch((error) => {
-      res.status(500).json({ 
+  try {
+    const response = await fetch(worldviewUrl);
+    if (!response.ok) {
+      return res.status(response.status).json({ 
         success: false, 
-        message: error.message || "Error fetching description from Worldview GitHub" 
+        message: `Worldview GitHub returned ${response.status} for ${worldviewUrl}` 
       });
+    }
+    
+    const markdown = await response.text();
+    
+    return res.json({
+      success: true,
+      data: {
+        summary: markdown.trim(),
+        source: "worldview",
+        path: worldviewPath
+      }
     });
+  } catch (error) {
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message || "Error fetching description from Worldview GitHub" 
+    });
+  }
 });
 
 module.exports = router;

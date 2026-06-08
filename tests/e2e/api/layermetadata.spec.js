@@ -27,6 +27,7 @@ test.describe('LayerMetadata API', () => {
     expect(data.success).toBe(true);
     expect(data.data).toBeTruthy();
     expect(data.data.summary).toBeTruthy();
+    expect(data.data.genericDescription).toBeTruthy();
     expect(data.data.source).toBe('worldview');
     expect(data.data.path).toBe(worldviewPath);
     expect(data.data.summary).toContain('MODIS');
@@ -92,6 +93,8 @@ test.describe('LayerMetadata API', () => {
     expect(res.ok()).toBe(true);
     expect(data.success).toBe(true);
     expect(data.data.summary).toContain('TROPOMI');
+    expect(data.data.genericDescription).toBeTruthy();
+    expect(data.data.genericDescription.toLowerCase()).toContain('sulfur');
   });
 
   test('GET /api/layermetadata/description/:encodedPath returns valid description for OPERA', async ({ request }) => {
@@ -161,5 +164,29 @@ test.describe('LayerMetadata API', () => {
 
     expect(res.ok()).toBe(true);
     expect(responseTime).toBeLessThan(5000);
+  });
+
+  test('layers without generic descriptions still return successfully', async ({ request }) => {
+    const worldviewPath = 'tempo/TEMPO_L3_Ozone_Column_Amount';
+    const encodedPath = encodeURIComponent(worldviewPath);
+    
+    const res = await request.get(`${BASE_URL}/api/layermetadata/description/${encodedPath}`);
+    const data = await res.json();
+
+    expect(res.ok()).toBe(true);
+    expect(data.success).toBe(true);
+    expect(data.data.summary).toBeTruthy();
+  });
+
+  test('generic descriptions are included when available', async ({ request }) => {
+    const worldviewPath = 'modis/terra/MODIS_Terra_EVI_8Day';
+    const encodedPath = encodeURIComponent(worldviewPath);
+    
+    const res = await request.get(`${BASE_URL}/api/layermetadata/description/${encodedPath}`);
+    const data = await res.json();
+
+    expect(res.ok()).toBe(true);
+    expect(data.data.genericDescription).toBeTruthy();
+    expect(data.data.genericDescription.toLowerCase()).toContain('vegetation');
   });
 });

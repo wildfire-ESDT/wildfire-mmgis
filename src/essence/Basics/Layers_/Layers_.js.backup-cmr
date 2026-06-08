@@ -4223,37 +4223,32 @@ async function parseConfig(configData, urlOnLayers) {
             // Create parsed layers named
             L_.layers.data[d[i].name] = d[i]
 
-            // Fetch layer description from Worldview GitHub if worldviewPath is configured
-            if (d[i].worldviewPath && !d[i].description) {
+            // Fetch CMR description if layer has cmrConceptId but no description
+            if (d[i].cmrConceptId && !d[i].description) {
                 const layerName = d[i].name
-                const encodedPath = encodeURIComponent(d[i].worldviewPath)
-                const metadataUrl = `${
+                const cmrUrl = `${
                     window.mmgisglobal.ROOT_PATH
                         ? window.mmgisglobal.ROOT_PATH + '/'
                         : ''
-                }api/layermetadata/description/${encodedPath}`
+                }api/cmr/collection/${d[i].cmrConceptId}`
                 
                 $.ajax({
                     type: 'GET',
-                    url: metadataUrl,
+                    url: cmrUrl,
                     xhrFields: {
                         withCredentials: true,
                     },
                     success: (response) => {
                         if (response.success && response.data && response.data.summary) {
+                            // Store the description in the layer data
                             L_.layers.data[layerName].description = response.data.summary
-                            console.log(`Layer description loaded from Worldview for: ${layerName}`)
+                            console.log(`CMR description loaded for layer: ${layerName}`)
                         }
                     },
                     error: (xhr, status, error) => {
-                        console.warn(`Failed to fetch layer description for ${layerName}:`, error)
+                        console.warn(`Failed to fetch CMR description for ${layerName}:`, error)
                     }
                 })
-            }
-            
-            // Add placeholder for layers without any description
-            if (!d[i].description && !d[i].worldviewPath) {
-                L_.layers.data[d[i].name].description = '**Description in progress.** Please check back later for more information about this layer.'
             }
 
             if (d[i].display_name === 'TimeCogs') {
