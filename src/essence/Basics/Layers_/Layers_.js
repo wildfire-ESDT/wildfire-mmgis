@@ -4223,6 +4223,34 @@ async function parseConfig(configData, urlOnLayers) {
             // Create parsed layers named
             L_.layers.data[d[i].name] = d[i]
 
+            // Fetch layer description from Worldview GitHub if worldviewPath is configured
+            if (d[i].worldviewPath && !d[i].description) {
+                const layerName = d[i].name
+                const encodedPath = encodeURIComponent(d[i].worldviewPath)
+                const metadataUrl = `${
+                    window.mmgisglobal.ROOT_PATH
+                        ? window.mmgisglobal.ROOT_PATH + '/'
+                        : ''
+                }api/layermetadata/description/${encodedPath}`
+                
+                $.ajax({
+                    type: 'GET',
+                    url: metadataUrl,
+                    xhrFields: {
+                        withCredentials: true,
+                    },
+                    success: (response) => {
+                        if (response.success && response.data && response.data.summary) {
+                            L_.layers.data[layerName].description = response.data.summary
+                            console.log(`Layer description loaded from Worldview for: ${layerName}`)
+                        }
+                    },
+                    error: (xhr, status, error) => {
+                        console.warn(`Failed to fetch layer description for ${layerName}:`, error)
+                    }
+                })
+            }
+
             if (d[i].display_name === 'TimeCogs') {
                 d[i].time.current = '2025-02-12T01:20:55Z'
                 d[i].time.start = ''

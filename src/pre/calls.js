@@ -147,6 +147,10 @@ const c = {
         type: 'GET',
         url: 'api/geodatasets/aggregations',
     },
+    cmr_collection: {
+        type: 'GET',
+        url: 'api/cmr/collection/',
+    },
     geodatasets_search: {
         type: 'POST',
         url: 'api/geodatasets/search',

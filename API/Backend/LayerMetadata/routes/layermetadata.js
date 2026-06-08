@@ -1,12 +1,9 @@
 /***********************************************************
- * JavaScript syntax format: ES5/ES6 - ECMAScript 2015
- * Loading all required dependencies, libraries and packages
+ * LayerMetadata Routes
  * 
- * Fetches layer descriptions from NASA Worldview's GitHub repository
- * 
- * Endpoint accepts a worldviewPath parameter which is the relative path
- * to the metadata file in Worldview's repository
- * Example: modis/aqua/MODIS_Aqua_Thermal_Anomalies_All
+ * Fetches layer descriptions from NASA Worldview's GitHub repository.
+ * Accepts URL-encoded worldviewPath (e.g., modis/aqua/MODIS_Aqua_Thermal_Anomalies_All)
+ * and returns the markdown description.
  **********************************************************/
 const express = require("express");
 const router = express.Router();
@@ -24,10 +21,7 @@ router.get("/description/:encodedPath", (req, res) => {
     });
   }
   
-  // Decode the URL-encoded path
   const worldviewPath = decodeURIComponent(encodedPath);
-  
-  // Construct the full URL to the Worldview metadata file
   const worldviewUrl = `${WORLDVIEW_BASE_URL}/${worldviewPath}.md`;
   
   fetch(worldviewUrl)
@@ -41,7 +35,6 @@ router.get("/description/:encodedPath", (req, res) => {
       return response.text();
     })
     .then((markdown) => {
-      // Return the markdown description
       return res.json({
         success: true,
         data: {
