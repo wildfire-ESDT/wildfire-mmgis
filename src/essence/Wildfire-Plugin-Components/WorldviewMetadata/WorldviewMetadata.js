@@ -37,9 +37,9 @@ const WorldviewMetadata = {
               if (response.success && response.data && response.data.summary) {
                 // Remove image references from markdown to prevent 404 errors
                 let description = response.data.summary;
-                if (description) {
-                  description = description.replace(/!\[.*?\]\(.*?\)/g, '');
-                }
+                // if (description) {
+                //   description = description.replace(/!\[.*?\]\(.*?\)/g, '');
+                // }
                 L_.layers.data[layerName].description = description;
                 console.log(`WorldviewMetadata: Description loaded for ${layer.display_name}`);
               }
