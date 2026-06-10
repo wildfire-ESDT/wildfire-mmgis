@@ -1,5 +1,5 @@
 /***********************************************************
- * LayerMetadata Routes
+ * WorldviewMetadata Routes
  * 
  * Fetches layer descriptions from NASA Worldview's GitHub repository.
  * Accepts URL-encoded worldviewPath (e.g., modis/aqua/MODIS_Aqua_Thermal_Anomalies_All)

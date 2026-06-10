@@ -10,46 +10,20 @@ showdown.setFlavor('github')
 const LayerInfo = {
     converter: new showdown.Converter(),
     open: function (layerName) {
-        console.log('LayerInfo.open called with:', layerName)
-        let layer = L_.layers.data[layerName]
-        
-        // If not found by name, try to find by UUID
-        if (layer == null) {
-            console.log('Layer not found by name, searching by UUID...')
-            console.log('Available layers:', Object.keys(L_.layers.data))
-            for (const name in L_.layers.data) {
-                console.log('Checking layer:', name, 'UUID:', L_.layers.data[name].uuid)
-                if (L_.layers.data[name].uuid === layerName) {
-                    layer = L_.layers.data[name]
-                    console.log('Found layer by UUID:', name)
-                    break
-                }
-            }
-        }
+        const layer = L_.layers.data[layerName]
 
-        if (layer == null) {
-            console.log('Layer not found for:', layerName)
-            return
-        }
+        if (layer == null) return
 
         let numberOfFeatures = ''
         if (layer.type === 'vector')
             try {
-                numberOfFeatures = ` ${
+                numberOfFeatures = ` (${
                     L_.layers.layer[layerName].getLayers().length
-                } Features`
+                } Features)`
             } catch (e) {}
 
         let type = layer.type
         if (type === 'tile') type = 'raster'
-
-        // Description may have been fetched from CMR during layer initialization
-        let description = layer.description || ''
-        
-        // Remove image references from markdown to prevent 404 errors
-        if (description) {
-            description = description.replace(/!\[.*?\]\(.*?\)/g, '')
-        }
 
         // prettier-ignore
         Modal.set(
@@ -88,7 +62,7 @@ const LayerInfo = {
 
                         `<div id='LayerInfoModalDescription'>`,
                             `<div id='LayerInfoModalDescriptionContent'>`,
-                                description ? LayerInfo.converter.makeHtml(description) : '<div class="LayerInfoModalNone">No Description</div>',
+                                layer.description ? LayerInfo.converter.makeHtml(layer.description) : `<div class='LayerInfoModalNone'>No Description</div>`,
                             `</div>`,
                         `</div>`,
                         `<div id='LayerInfoModalInnerUUID'>${layer.uuid}</div>`,
