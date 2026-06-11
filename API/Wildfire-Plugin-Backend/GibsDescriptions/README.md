@@ -4,7 +4,7 @@ Fetches GIBS layer descriptions from NASA Worldview GitHub repository and caches
 
 ## Features
 - **WebSocket Auto-Refresh**: Updates cache when configs change
-- **Smart Fetching**: If server is running, and a new layer is added, it will fetch only new descriptions, and use the existing chached ones
+- **Smart Fetching**: If server is running, and a new layer is added, it will fetch only new descriptions, and use the existing cached ones
 - **Pruning**: Automatically removes descriptions for deleted layers ensuring cache is maintained.
 - **Concurrency**: Fetches 5 descriptions at once for faster startup
 - **Timeout Protection**: 15 second timeout per fetch
