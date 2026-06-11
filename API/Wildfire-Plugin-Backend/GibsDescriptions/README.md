@@ -232,13 +232,47 @@ Enable debug logging in `processes/gibsCache.js`:
 const DEBUG = true;
 ```
 
-Check cache stats:
-```bash
-curl http://localhost:8888/api/gibsdescriptions/stats
+### Testing Admin Endpoints
+
+**To verify admin-only protection:**
+1. Open browser console as a **non-admin user** (or logged out)
+2. Run any of these commands - they should return `{ status: "failure", message: "Unauthorized!" }`
+
+**Browser Console Commands:**
+
+Check cache stats (admin-only):
+```javascript
+fetch('/api/gibsdescriptions/stats', { credentials: 'include' })
+  .then(r => r.json())
+  .then(console.log)
 ```
 
-Force refresh (admin only):
+List all cached paths (admin-only):
+```javascript
+fetch('/api/gibsdescriptions/list', { credentials: 'include' })
+  .then(r => r.json())
+  .then(console.log)
+```
+
+Force manual refresh (admin-only):
+```javascript
+fetch('/api/gibsdescriptions/refresh', { 
+  method: 'POST', 
+  credentials: 'include' 
+})
+  .then(r => r.json())
+  .then(console.log)
+```
+
+**Expected behavior:**
+- Non-admin: Returns `{ status: "failure", message: "Unauthorized!" }`
+- Admin: Returns actual data
+
+**cURL (requires session cookie):**
 ```bash
+curl http://localhost:8888/api/gibsdescriptions/stats \
+  -H "Cookie: connect.sid=..."
+
 curl -X POST http://localhost:8888/api/gibsdescriptions/refresh \
   -H "Cookie: connect.sid=..." \
   -H "Content-Type: application/json"
