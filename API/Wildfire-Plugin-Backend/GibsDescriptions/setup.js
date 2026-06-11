@@ -18,7 +18,7 @@ const routes = require("./routes/gibsdescriptions");
 const gibs = require("./processes/gibsCache");
 const WebSocket = require('isomorphic-ws');
 
-const DEBUG = true;
+const DEBUG = false;
 
 let setup = {
   // Once the app initializes: mount routes

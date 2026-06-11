@@ -1,7 +1,0 @@
-{
-  "name": "WorldviewMetadata",
-  "description": "Fetches layer descriptions from NASA Worldview GitHub for layers with worldviewPath",
-  "paths": {
-    "WorldviewMetadata": "essence/Wildfire-Plugin-Components/WorldviewMetadata/WorldviewMetadata"
-  }
-}

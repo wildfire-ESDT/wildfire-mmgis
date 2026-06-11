@@ -1,0 +1,7 @@
+{
+  "name": "GibsDescriptions",
+  "description": "Fetches GIBS layer descriptions from NASA Worldview GitHub for layers with worldviewPath",
+  "paths": {
+    "GibsDescriptions": "essence/Wildfire-Plugin-Components/GibsDescriptions/GibsDescriptions"
+  }
+}

@@ -1,19 +1,21 @@
 import $ from 'jquery'
 import L_ from '../../Basics/Layers_/Layers_'
 
-const WorldviewMetadata = {
+const DEBUG = false;
+
+const GibsDescriptions = {
   init: function(vars) {
-    console.log('WorldviewMetadata plugin initialized');
+    if (DEBUG) console.log('GibsDescriptions plugin initialized');
     
     // Wait for layers to be loaded
     const checkAndFetchDescriptions = () => {
       if (!L_.layers || !L_.layers.data) {
-        console.log('WorldviewMetadata: Layers not ready yet, waiting...');
+        if (DEBUG) console.log('GibsDescriptions: Layers not ready yet, waiting...');
         setTimeout(checkAndFetchDescriptions, 500);
         return;
       }
 
-      console.log('WorldviewMetadata: Layers ready, fetching descriptions for worldviewPath layers');
+      if (DEBUG) console.log('GibsDescriptions: Layers ready, fetching descriptions for worldviewPath layers');
       
       // Collect all worldviewPaths that need descriptions
       const pathsToFetch = [];
@@ -28,20 +30,20 @@ const WorldviewMetadata = {
       });
       
       if (pathsToFetch.length === 0) {
-        console.log('WorldviewMetadata: No descriptions needed');
+        if (DEBUG) console.log('GibsDescriptions: No descriptions needed');
         return;
       }
       
-      console.log(`WorldviewMetadata: Fetching ${pathsToFetch.length} descriptions in batch`);
+      if (DEBUG) console.log(`GibsDescriptions: Fetching ${pathsToFetch.length} descriptions in batch`);
       
       // Single batch request for all descriptions
-      const metadataUrl = `${
+      const apiUrl = `${
         window.mmgisglobal.ROOT_PATH ? window.mmgisglobal.ROOT_PATH + '/' : ''
-      }api/worldviewmetadata/descriptions/batch`;
+      }api/gibsdescriptions/batch`;
       
       $.ajax({
         type: 'POST',
-        url: metadataUrl,
+        url: apiUrl,
         contentType: 'application/json',
         data: JSON.stringify({ paths: pathsToFetch }),
         xhrFields: {
@@ -59,18 +61,18 @@ const WorldviewMetadata = {
               if (result.success && result.data && result.data.summary) {
                 L_.layers.data[layerName].description = result.data.summary;
                 loadedCount++;
-                console.log(`WorldviewMetadata: Description loaded for ${L_.layers.data[layerName].display_name}`);
+                if (DEBUG) console.log(`GibsDescriptions: Description loaded for ${L_.layers.data[layerName].display_name}`);
               } else {
                 failedCount++;
-                console.warn(`WorldviewMetadata: Failed to load description for ${L_.layers.data[layerName].display_name}:`, result.message);
+                if (DEBUG) console.warn(`GibsDescriptions: Failed to load description for ${L_.layers.data[layerName].display_name}:`, result.message);
               }
             });
             
-            console.log(`WorldviewMetadata: Batch complete - ${loadedCount} loaded, ${failedCount} failed`);
+            if (DEBUG) console.log(`GibsDescriptions: Batch complete - ${loadedCount} loaded, ${failedCount} failed`);
           }
         },
         error: (xhr, status, error) => {
-          console.error('WorldviewMetadata: Batch fetch failed:', error);
+          console.error('GibsDescriptions: Batch fetch failed:', error);
           // No fallback - user will see "No Description" in modal
         }
       });
@@ -81,4 +83,4 @@ const WorldviewMetadata = {
   }
 };
 
-export default WorldviewMetadata;
+export default GibsDescriptions;
