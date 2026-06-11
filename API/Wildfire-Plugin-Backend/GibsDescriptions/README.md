@@ -129,7 +129,7 @@ MODIS_Aqua_Thermal_Anomalies_All
 }
 ```
 
-**Note:** If a layer doesn't have a description on GitHub, omit `worldviewPath` - the layer will work normally.
+**Note:** If a layer doesn't have a description on GitHub, omit `worldviewPath` - the layer will work normally and not try to fetch anything.
 
 ## API Endpoints
 
@@ -183,8 +183,6 @@ The frontend component automatically enriches your layers with descriptions:
 3. **Batch request** - Single POST to `/api/gibsdescriptions/batch` with all paths
 4. **Stores descriptions** - Saves to `L_.layers.data[layerName].description`
 5. **LayerInfoModal displays** - When users click layer info button, description appears
-
-**Result:** Users see rich NASA descriptions in layer info panels without any manual work.
 
 
 ## Security
