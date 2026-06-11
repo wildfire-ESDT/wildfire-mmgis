@@ -1850,11 +1850,9 @@ function interfaceWithMMGIS(fromInit) {
     })
 
     //Enables the time dialogue box
-    $(document).on('click', '.LayersToolInfo', function (e) {
+    $('.LayersToolInfo').on('click', function (e) {
         e.stopPropagation()
-        console.log('LayersToolInfo clicked')
         const layerName = $(this).attr('layername')
-        console.log('Layer name:', layerName)
         LayerInfoModal.open(layerName)
     })
     //Enables the time dialogue box

@@ -37,7 +37,7 @@ const LayerInfo = {
                         `<div id='LayerInfoModalInnerTitle'>${layer.display_name}</div>`,
                         `<div id='LayerInfoModalInnerSubtitle'>${type}<span>${numberOfFeatures}</span></div>`,
 
-                            layer.tags && layer.tags.length > 0 ?
+                            layer.tags && layer.tags.length > 0 ? 
                                 [
                                     `<div id='LayerInfoModalTags'>`,
                                         `<div id='LayerInfoModalTagsContent'>`,
@@ -59,7 +59,7 @@ const LayerInfo = {
                                         `</div>`,
                                     `</div>`
                                 ].join('\n') : '',
-
+                        
                         `<div id='LayerInfoModalDescription'>`,
                             `<div id='LayerInfoModalDescriptionContent'>`,
                                 layer.description ? LayerInfo.converter.makeHtml(layer.description) : `<div class='LayerInfoModalNone'>No Description</div>`,
@@ -73,7 +73,7 @@ const LayerInfo = {
                 $('#LayerInfoModalClose').on('click', function () {
                     Modal.remove()
                 })
-            }
+            }       
         )
     },
 }
