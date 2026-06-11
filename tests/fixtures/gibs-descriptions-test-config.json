@@ -1,0 +1,32 @@
+{
+  "msv": {
+    "view": [0, 0, 2],
+    "projection": "EPSG:4326"
+  },
+  "layers": [
+    {
+      "name": "MODIS_Aqua_Thermal_Anomalies",
+      "display_name": "MODIS Aqua Thermal Anomalies",
+      "type": "tile",
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/MODIS_Aqua_Thermal_Anomalies_All/default/{time}/{tilematrixset}/{z}/{y}/{x}.png",
+      "worldviewPath": "modis/aqua/MODIS_Aqua_Thermal_Anomalies_All",
+      "opacity": 1,
+      "minZoom": 0,
+      "maxZoom": 9
+    },
+    {
+      "name": "MODIS_Terra_Thermal_Anomalies",
+      "display_name": "MODIS Terra Thermal Anomalies",
+      "type": "tile",
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/MODIS_Terra_Thermal_Anomalies_All/default/{time}/{tilematrixset}/{z}/{y}/{x}.png",
+      "worldviewPath": "modis/terra/MODIS_Terra_Thermal_Anomalies_All",
+      "opacity": 1,
+      "minZoom": 0,
+      "maxZoom": 9
+    }
+  ],
+  "tools": [],
+  "time": {
+    "enabled": false
+  }
+}
