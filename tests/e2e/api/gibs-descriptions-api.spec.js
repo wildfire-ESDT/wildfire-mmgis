@@ -26,7 +26,7 @@ test.describe('GibsDescriptions Backend API', () => {
     
     try {
       // Load config from fixture
-      const configPath = resolve(process.cwd(), 'tests/fixtures/gibs-test-config.json');
+      const configPath = resolve(process.cwd(), 'tests/fixtures/gibs-descriptions-test-config.json');
       const gibsConfig = JSON.parse(readFileSync(configPath, 'utf8'));
       
       // Insert test mission
