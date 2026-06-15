@@ -655,9 +655,18 @@
           "subdescription": "A freeform markdown description of the layer. In the LayersTool, users may click the information icon beside the layer's name to view this information.",
           "components": [
             {
+              "field": "descriptionMarkdownUrl",
+              "name": "Description Markdown URL",
+              "description": "Optional URL to a .md file containing the layer description. If provided, the description will be fetched from this URL. Must be a valid HTTPS URL ending in .md (max 500 characters).",
+              "type": "text",
+              "width": 12,
+              "maxLength": 500,
+              "pattern": "^https://.*\\.md$"
+            },
+            {
               "field": "description",
               "name": "Description",
-              "description": "",
+              "description": "Manual markdown description. If a Description Markdown URL is provided above, this field will be auto-populated when the URL is fetched.",
               "type": "markdown",
               "width": 12
             }

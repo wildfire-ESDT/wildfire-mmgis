@@ -1,0 +1,7 @@
+{
+    "name": "LayerDescriptionFetch",
+    "description": "Fetches layer descriptions from descriptionMarkdownUrl fields on page load.",
+    "js": {
+        "LayerDescriptionFetch": "Wildfire-Plugin-Components/LayerDescriptionFetch/LayerDescriptionFetch"
+    }
+}
