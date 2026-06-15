@@ -1,7 +1,5 @@
 import L_ from '../../Basics/Layers_/Layers_'
 
-const PREFETCH_CONCURRENCY = 10
-
 const LayerDescriptionFetch = {
     init: function (vars) {
         const checkAndPrefetch = () => {
@@ -18,29 +16,20 @@ const LayerDescriptionFetch = {
         const layers = L_.layers.data
         if (!layers) return
 
-        const toFetch = []
-        for (const name in layers) {
-            const layer = layers[name]
-            if (layer.descriptionMarkdownUrl) {
-                toFetch.push({ layer, name })
-            }
-        }
-
-        for (let i = 0; i < toFetch.length; i += PREFETCH_CONCURRENCY) {
-            const batch = toFetch.slice(i, i + PREFETCH_CONCURRENCY)
-            await Promise.all(
-                batch.map(async ({ layer, name }) => {
+        await Promise.all(
+            Object.values(layers)
+                .filter((layer) => layer.descriptionMarkdownUrl)
+                .map(async (layer) => {
                     try {
                         const resp = await fetch(layer.descriptionMarkdownUrl)
                         if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
                         const text = (await resp.text()).trim()
                         if (text) layer.description = text
                     } catch (e) {
-                        // keep existing layer.description as fallback
+                        // keep existing layer.description as fallback so do nothing
                     }
                 })
-            )
-        }
+        )
     },
 }
 

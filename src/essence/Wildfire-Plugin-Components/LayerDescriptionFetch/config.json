@@ -2,6 +2,6 @@
     "name": "LayerDescriptionFetch",
     "description": "Fetches layer descriptions from descriptionMarkdownUrl fields on page load.",
     "paths": {
-        "LayerDescriptionFetch": "Wildfire-Plugin-Components/LayerDescriptionFetch/LayerDescriptionFetch"
+        "LayerDescriptionFetch": "essence/Wildfire-Plugin-Components/LayerDescriptionFetch/LayerDescriptionFetch"
     }
 }
