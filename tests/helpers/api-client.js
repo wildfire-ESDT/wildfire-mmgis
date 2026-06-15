@@ -152,15 +152,4 @@ export class ApiClient {
   async healthcheck() {
     return this.request.get('/api/utils/healthcheck');
   }
-    /**
-   * Query CMR collection by concept ID.
-   *
-   * @param {string} conceptId - CMR collection concept ID.
-   * @returns {Promise<import('@playwright/test').APIResponse>}
-   */
-  async getCMRCollection(conceptId) {
-    return this.request.get(`/api/cmr/collection/${conceptId}`, {
-      headers: this._headers(),
-    });
-  }
 }
