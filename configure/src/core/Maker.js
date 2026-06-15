@@ -468,7 +468,11 @@ const getComponent = (
                           })
                           .then((text) => {
                             text = text.trim()
-                            if (text) updateConfiguration('description', text, layer)
+                            if (text) {
+                              updateConfiguration('description', null, layer)
+                              updateConfiguration('description', text, layer)
+                              dispatch(setSnackBarText({ text: 'Description fetched successfully.', severity: 'success' }))
+                            }
                           })
                           .catch(() => {
                             dispatch(setSnackBarText({ text: 'Could not fetch description from URL.', severity: 'warning' }))
@@ -1795,16 +1799,6 @@ export default function Maker(props) {
     } else if (layer != null) {
       traverseLayers(nextConfiguration.layers, (l, path, index) => {
         if (layer.uuid === l.uuid) {
-          // If descriptionMarkdownUrl is changing, clear description to prevent stale data
-          if (keyPath === 'descriptionMarkdownUrl') {
-            const oldUrl = getIn(l, ['descriptionMarkdownUrl']);
-            // Clear description if:
-            // 1. URL changed from one value to another
-            // 2. URL was removed (value is now empty/null)
-            if (oldUrl && oldUrl !== value) {
-              setIn(l, ['description'], null, true);
-            }
-          }
           setIn(l, keyPath.split("."), value, true);
         }
       });
