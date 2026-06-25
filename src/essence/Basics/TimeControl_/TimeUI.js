@@ -780,7 +780,7 @@ const TimeUI = {
         TimeUI.startTempus.subscribe(Namespace.events.change, (e) => {
             if (TimeUI.startTempus.dontChangeAnythingElse !== true) {
                 TimeUI.setStartTime(
-                    moment.utc(e.date).toISOString(),
+                    e.date.toISOString(),
                     TimeUI.startTempus.dontChangeNext,
                     null,
                     e.oldDate != null
@@ -808,7 +808,7 @@ const TimeUI = {
                 TimeUI.endTempus.dontChangeAnythingElse !== true
             ) {
                 TimeUI.setEndTime(
-                    moment.utc(e.date).toISOString(),
+                    e.date.toISOString(),
                     TimeUI.endTempus.dontChangeNext,
                     e.oldDate != null
                 )
@@ -1959,13 +1959,12 @@ const TimeUI = {
         const endTime = moment(TimeUI.removeOffset(TimeUI._endTimestamp))
     },
     _calculateRangePositions(containerType) {
-        // Convert UTC timestamps to local time using addOffset to match display
-        const startTime = moment.utc(
-            moment(TimeUI.removeOffset(TimeUI._startTimestamp))
-        )
-        const endTime = moment.utc(
-            moment(TimeUI.removeOffset(TimeUI._endTimestamp))
-        )
+        // Use display-tz fields for range positions
+        const _sDisp = TimeUI._utcToDisplay(TimeUI._startTimestamp)
+        const _eDisp = TimeUI._utcToDisplay(TimeUI._endTimestamp)
+        // Wrap in moment using UTC so .year()/.month()/.date()/.hour() return display-tz digits
+        const startTime = moment.utc(Date.UTC(_sDisp.year, _sDisp.month, _sDisp.day, _sDisp.hour, _sDisp.minute, _sDisp.second))
+        const endTime = moment.utc(Date.UTC(_eDisp.year, _eDisp.month, _eDisp.day, _eDisp.hour, _eDisp.minute, _eDisp.second))
 
         const mode = TimeUI.modes[TimeUI.modeIndex]
 
@@ -2007,9 +2006,7 @@ const TimeUI = {
             endPeriod = moment(TimeUI._endTimestamp).year()
         } else if (containerType === 'months') {
             // Calculate fractional range for months row (12 months)
-            const selectedYear = moment
-                .utc(moment(TimeUI.removeOffset(TimeUI._endTimestamp)))
-                .year()
+            const selectedYear = _eDisp.year
             const totalMonths = 12
 
             // Calculate start position
@@ -2136,15 +2133,9 @@ const TimeUI = {
             }
         } else if (containerType === 'hours') {
             // Calculate fractional range for hours row (24 hours)
-            const selectedYear = moment(
-                TimeUI.removeOffset(TimeUI._endTimestamp)
-            ).year()
-            const selectedMonth = moment(
-                TimeUI.removeOffset(TimeUI._endTimestamp)
-            ).month()
-            const selectedDay = moment(
-                TimeUI.removeOffset(TimeUI._endTimestamp)
-            ).date()
+            const selectedYear = _eDisp.year
+            const selectedMonth = _eDisp.month
+            const selectedDay = _eDisp.day
             const totalHours = 24
 
             // Calculate start position
@@ -2153,28 +2144,8 @@ const TimeUI = {
                 startTime.month() === selectedMonth &&
                 startTime.date() === selectedDay
             ) {
-                const startHourBegin = moment
-                    .utc([
-                        selectedYear,
-                        selectedMonth,
-                        selectedDay,
-                        startTime.hour(),
-                    ])
-                    .startOf('hour')
-                const startHourEnd = moment
-                    .utc([
-                        selectedYear,
-                        selectedMonth,
-                        selectedDay,
-                        startTime.hour(),
-                    ])
-                    .endOf('hour')
-
-                const startHourFraction =
-                    (startTime.valueOf() - startHourBegin.valueOf()) /
-                    (startHourEnd.valueOf() - startHourBegin.valueOf())
-                startPercent =
-                    ((startTime.hour() + startHourFraction) / totalHours) * 100
+                const startHourFraction = startTime.minute() / 60 + startTime.second() / 3600
+                startPercent = ((startTime.hour() + startHourFraction) / totalHours) * 100
                 startPeriod = startTime.hour()
             } else if (
                 startTime.isBefore(
@@ -2194,27 +2165,8 @@ const TimeUI = {
                 endTime.month() === selectedMonth &&
                 endTime.date() === selectedDay
             ) {
-                const endHourBegin = moment
-                    .utc([
-                        selectedYear,
-                        selectedMonth,
-                        selectedDay,
-                        endTime.hour(),
-                    ])
-                    .startOf('hour')
-                const endHourEnd = moment
-                    .utc([
-                        selectedYear,
-                        selectedMonth,
-                        selectedDay,
-                        endTime.hour(),
-                    ])
-                    .endOf('hour')
-                const endHourFraction =
-                    (endTime.valueOf() - endHourBegin.valueOf()) /
-                    (endHourEnd.valueOf() - endHourBegin.valueOf())
-                endPercent =
-                    ((endTime.hour() + endHourFraction) / totalHours) * 100
+                const endHourFraction = endTime.minute() / 60 + endTime.second() / 3600
+                endPercent = ((endTime.hour() + endHourFraction) / totalHours) * 100
                 endPeriod = endTime.hour()
             } else if (
                 endTime.isAfter(
@@ -2340,10 +2292,7 @@ const TimeUI = {
         const currentYear = moment().year()
         const startYear = currentYear - 19
 
-        // Determine which year is currently selected (use addOffset to get local time)
-        const selectedYear = moment
-            .utc(moment(TimeUI.removeOffset(TimeUI._endTimestamp)))
-            .year()
+        const selectedYear = TimeUI._utcToDisplay(TimeUI._endTimestamp).year
 
         for (let year = startYear; year <= currentYear; year++) {
             const yearButton = $('<div>')
@@ -2373,10 +2322,7 @@ const TimeUI = {
         // Get 12 months
         const months = moment.months()
 
-        // Determine which month is currently selected (use addOffset to get local time)
-        const selectedMonth = moment
-            .utc(moment(TimeUI.removeOffset(TimeUI._endTimestamp)))
-            .month()
+        const selectedMonth = TimeUI._utcToDisplay(TimeUI._endTimestamp).month
 
         for (let i = 0; i < months.length; i++) {
             const monthButton = $('<div>')
@@ -2403,10 +2349,9 @@ const TimeUI = {
         container.empty()
         container.append(rangeIndicator)
 
-        // Get the number of days in the selected month (use addOffset to get local time)
-        const selectedMoment = moment(TimeUI._endTimestamp)
-        const daysInMonth = selectedMoment.daysInMonth()
-        const selectedDay = selectedMoment.date()
+        const _dispEnd = TimeUI._utcToDisplay(TimeUI._endTimestamp)
+        const daysInMonth = new Date(_dispEnd.year, _dispEnd.month + 1, 0).getDate()
+        const selectedDay = _dispEnd.day
 
         for (let day = 1; day <= daysInMonth; day++) {
             const dayButton = $('<div>')
@@ -2442,25 +2387,12 @@ const TimeUI = {
         TimeUI._populateExpandedRows()
     },
     _selectMonth(monthIndex) {
-        // Select the entire month for the current year (use addOffset to get local time)
-        const selectedYear = moment
-            .utc(moment(TimeUI.removeOffset(TimeUI._endTimestamp)))
-            .utc()
-            .year()
+        const selectedYear = TimeUI._utcToDisplay(TimeUI._endTimestamp).year
+        const startOfMonth = TimeUI._displayToUtc(selectedYear, monthIndex, 1, 0, 0, 0)
+        const lastDay = new Date(selectedYear, monthIndex + 1, 0).getDate()
+        const endOfMonth = TimeUI._displayToUtc(selectedYear, monthIndex, lastDay, 23, 59, 59)
 
-        const startOfMonth = moment([selectedYear, monthIndex, 1])
-            .startOf('month')
-            .valueOf()
-        const endOfMonth = moment([selectedYear, monthIndex, 1])
-            .endOf('month')
-            .valueOf()
-
-        // Use the proper updateTimes function (removeOffset to convert local to UTC)
-        TimeUI.updateTimes(
-            TimeUI.removeOffset(startOfMonth),
-            TimeUI.removeOffset(endOfMonth),
-            TimeUI.removeOffset(endOfMonth)
-        )
+        TimeUI.updateTimes(startOfMonth, endOfMonth, endOfMonth)
 
         // Pan the timeline to show the selected extent
         TimeUI.fitWindowToTime()
@@ -2469,26 +2401,11 @@ const TimeUI = {
         TimeUI._populateExpandedRows()
     },
     _selectDay(day) {
-        // Select the entire day for the current month/year (use addOffset to get local time)
-        const selectedMoment = moment
-            .utc(moment(TimeUI.removeOffset(TimeUI._endTimestamp)))
-            .utc()
+        const _disp = TimeUI._utcToDisplay(TimeUI._endTimestamp)
+        const startOfDay = TimeUI._displayToUtc(_disp.year, _disp.month, day, 0, 0, 0)
+        const endOfDay = TimeUI._displayToUtc(_disp.year, _disp.month, day, 23, 59, 59)
 
-        const selectedYear = selectedMoment.year()
-        const selectedMonth = selectedMoment.month()
-        const startOfDay = moment([selectedYear, selectedMonth, day])
-            .startOf('day')
-            .valueOf()
-        const endOfDay = moment([selectedYear, selectedMonth, day])
-            .endOf('day')
-            .valueOf()
-
-        // Use the proper updateTimes function (removeOffset to convert local to UTC)
-        TimeUI.updateTimes(
-            TimeUI.removeOffset(startOfDay),
-            TimeUI.removeOffset(endOfDay),
-            TimeUI.removeOffset(endOfDay)
-        )
+        TimeUI.updateTimes(startOfDay, endOfDay, endOfDay)
 
         // Pan the timeline to show the selected extent
         TimeUI.fitWindowToTime()
@@ -2502,12 +2419,7 @@ const TimeUI = {
         container.empty()
         container.append(rangeIndicator)
 
-        // Get the selected hour
-        const selectedMoment = moment.utc(
-            moment(TimeUI.removeOffset(TimeUI._endTimestamp))
-        )
-
-        const selectedHour = selectedMoment.hour()
+        const selectedHour = TimeUI._utcToDisplay(TimeUI._endTimestamp).hour
 
         // Generate 24 hours in 12-hour format with AM/PM
         for (let hour = 0; hour < 24; hour++) {
@@ -2535,34 +2447,12 @@ const TimeUI = {
         }
     },
     _selectHour(hour) {
-        // Select the entire hour for the current day/month/year
-        const selectedMoment = moment(TimeUI._endTimestamp)
-        const selectedYear = selectedMoment.year()
-        const selectedMonth = selectedMoment.month()
-        const selectedDay = selectedMoment.date()
-        const startOfHour = moment([
-            selectedYear,
-            selectedMonth,
-            selectedDay,
-            hour,
-        ])
-            .startOf('hour')
-            .valueOf()
-        const endOfHour = moment([
-            selectedYear,
-            selectedMonth,
-            selectedDay,
-            hour,
-        ])
-            .endOf('hour')
-            .valueOf()
+        const _disp = TimeUI._utcToDisplay(TimeUI._endTimestamp)
+        const startOfHour = TimeUI._displayToUtc(_disp.year, _disp.month, _disp.day, hour, 0, 0)
+        const endOfHour = TimeUI._displayToUtc(_disp.year, _disp.month, _disp.day, hour, 59, 59)
 
-        // Use the proper updateTimes function (removeOffset to convert local to UTC)
-        TimeUI.updateTimes(
-            TimeUI.removeOffset(startOfHour),
-            TimeUI.removeOffset(endOfHour),
-            TimeUI.removeOffset(endOfHour)
-        )
+
+        TimeUI.updateTimes(startOfHour, endOfHour, startOfHour)
 
         // Pan the timeline to show the selected extent
         TimeUI.fitWindowToTime()
@@ -3234,31 +3124,21 @@ const TimeUI = {
             )
         if (disableChange != true) TimeUI.change()
     },
+    _utcToDisplay(utcMs) {
+        const d = new Date(utcMs)
+        return {
+            year: d.getFullYear(), month: d.getMonth(), day: d.getDate(),
+            hour: d.getHours(), minute: d.getMinutes(), second: d.getSeconds()
+        }
+    },
+    _displayToUtc(year, month, day, hour, minute, second) {
+        return new Date(year, month, day, hour, minute, second).getTime()
+    },
     addOffset(timestamp) {
-        const utcDate = new Date(timestamp)
-        return new Date(
-            utcDate.getUTCFullYear(),
-            utcDate.getUTCMonth(),
-            utcDate.getUTCDate(),
-            utcDate.getUTCHours(),
-            utcDate.getUTCMinutes(),
-            utcDate.getUTCSeconds(),
-            utcDate.getUTCMilliseconds()
-        )
+        return new Date(timestamp)
     },
     removeOffset(timestamp) {
-        const localDate = new Date(timestamp)
-        return new Date(
-            Date.UTC(
-                localDate.getFullYear(),
-                localDate.getMonth(),
-                localDate.getDate(),
-                localDate.getHours(),
-                localDate.getMinutes(),
-                localDate.getSeconds(),
-                localDate.getMilliseconds()
-            )
-        )
+        return new Date(new Date(timestamp).getTime())
     },
     getCurrentTimestamp(removeOffset) {
         let currentTimestamp = TimeUI._timeSliderTimestamp
