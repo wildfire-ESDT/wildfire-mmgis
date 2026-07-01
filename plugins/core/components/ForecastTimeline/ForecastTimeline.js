@@ -132,8 +132,9 @@ const ForecastTimeline = {
         const isExpanded = timeUI.classList.contains('expanded')
         const layers = this._detectForecastLayers()
         const cardCount = layers.length
-        // 22px for the FORECAST ACTIVE label bar + 54px per card row (two-line ticks)
-        const extraH = cardCount > 0 ? 22 + cardCount * 54 : 0
+        // 54px per card row (two-line ticks). The "FORECAST MODE" badge floats
+        // over the strip corner and adds no row height.
+        const extraH = cardCount > 0 ? cardCount * 54 : 0
         if (isExpanded && extraH > 0) {
             // #timeUI base expanded = 177px; #mmgisTimeUIExpandedContent base = 137px
             timeUI.style.height = (177 + extraH) + 'px'
@@ -166,7 +167,7 @@ const ForecastTimeline = {
         panel.innerHTML = `
 <div class="ftl-detached-header">
   <span class="ftl-detached-title">
-    <i class="mdi mdi-weather-cloudy-clock"></i>&nbsp;FORECAST ACTIVE
+    <i class="mdi mdi-weather-cloudy-clock"></i>&nbsp;FORECAST MODE
   </span>
   <div class="ftl-detached-pickers">
     <span class="ftl-picker-label">DATE</span>
@@ -307,9 +308,7 @@ const ForecastTimeline = {
             const cardsHTML = layers.map(({ name, config: fc }) =>
                 this._buildCardHTML(name, fc, false)
             ).join('')
-            strip.innerHTML = layers.length > 0
-                ? `<div id="ftl-strip-label"><i class="mdi mdi-weather-cloudy-clock"></i> FORECAST ACTIVE</div>${cardsHTML}`
-                : ''
+            strip.innerHTML = layers.length > 0 ? cardsHTML : ''
             layers.forEach(({ name, config: fc }) => {
                 this._attachCardHandlers(name, fc, strip)
                 this._renderCardStep(name, fc, strip)
@@ -353,20 +352,66 @@ const ForecastTimeline = {
         })
     },
 
+    // ── Origin / step helpers ──────────────────────────────
+
+    // Model init time floored to the current hour's :00 (e.g. 02:55 → 02:00).
+    // All forecast steps are generated from this floored base so ticks land on
+    // clean hour boundaries and the "MODEL INITIALIZED AT" readout matches.
+    _originBase: function () {
+        const d = new Date(this.state.originMs || Date.now())
+        d.setMinutes(0, 0, 0)
+        return d.getTime()
+    },
+
+    // Per-layer configurable step label. time.forecast.stepLabel wins;
+    // otherwise derived from stepSize (default 1) + stepUnit ("hour"/"day").
+    _stepLabel: function (fc) {
+        if (fc.stepLabel) return fc.stepLabel
+        const size = fc.stepSize || 1
+        const unit = fc.stepUnit || 'hour'
+        const abbr =
+            unit === 'day'
+                ? size === 1 ? 'day' : 'days'
+                : size === 1 ? 'hr' : 'hrs'
+        return `${size} ${abbr}`
+    },
+
+    // "Jun 30, 2026 · 02:00 PDT"
+    _formatInit: function (ms) {
+        const d = new Date(ms)
+        const dateStr = d.toLocaleDateString('en-US', {
+            timeZone: PDT_TZ,
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        })
+        const timeStr = d.toLocaleTimeString('en-US', {
+            timeZone: PDT_TZ,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+            timeZoneName: 'short',
+        })
+        return `${dateStr} · ${timeStr}`
+    },
+
     // ── Card HTML ──────────────────────────────────────────
 
     _buildCardHTML: function (name, fc, large) {
         const steps = fc.steps || 1
         const unit = fc.stepUnit || 'hour'
         const label = fc.label || name
-        const originMs = this.state.originMs || Date.now()
+        const originBase = this._originBase()
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
+        const stepLabel = this._stepLabel(fc)
+        const initStr = this._formatInit(originBase)
 
         // Use native TimeUI classes in attached mode so rows blend in perfectly
         const tickClass = large ? 'ftl-tick ftl-tick-large' : 'ftl-tick mmgisTimeUIExpandedItem'
         const ticks = Array.from({ length: steps }, (_, i) => {
-            const stepMs = originMs + (i + 1) * unitMs
-            const stepDate = new Date(stepMs)
+            // Steps are generated from the hour-floored base, so they already
+            // land on clean boundaries — no per-tick rounding needed.
+            const stepDate = new Date(originBase + (i + 1) * unitMs)
 
             let clockLbl, relLbl
             if (unit === 'day') {
@@ -377,15 +422,12 @@ const ForecastTimeline = {
                 })
                 relLbl = i === 0 ? 'Today' : `+${i}`
             } else {
-                // Round down to the hour boundary in PDT
-                const hourRounded = new Date(stepMs)
-                hourRounded.setMinutes(0, 0, 0)
-                clockLbl = hourRounded.toLocaleString('en-US', {
+                clockLbl = stepDate.toLocaleString('en-US', {
                     timeZone: PDT_TZ,
                     hour: 'numeric',
                     hour12: true,
                 })
-                relLbl = `hr${i + 1}`
+                relLbl = `h${i + 1}`
             }
             return `<div class="${tickClass} ftl-tick-twoline" data-layer="${name}" data-step="${i}"><span class="ftl-tick-clock">${clockLbl}</span><span class="ftl-tick-rel">${relLbl}</span></div>`
         }).join('')
@@ -397,7 +439,12 @@ const ForecastTimeline = {
 <div class="${rowClass}" data-layer="${name}">
   <div class="ftl-card-header">
     <span class="ftl-card-label">${label}</span>
-    <span class="ftl-card-origin"></span>
+    <span class="ftl-card-init-caption">MODEL INITIALIZED AT</span>
+    <span class="ftl-card-init">${initStr}</span>
+    <div class="ftl-card-footer">
+      <span class="ftl-card-step">STEP <span class="ftl-card-step-chip">${stepLabel}</span></span>
+      <span class="ftl-card-mode"><i class="mdi mdi-weather-cloudy-clock"></i>FORECAST</span>
+    </div>
   </div>
   <div class="ftl-card-body">
     <button class="ftl-card-prev" data-layer="${name}"><i class="mdi mdi-chevron-left"></i></button>
@@ -447,45 +494,33 @@ const ForecastTimeline = {
         const idx = this.state.cards[name]?.stepIndex ?? 0
         const steps = fc.steps || 1
         const unit = fc.stepUnit || 'hour'
-        const originMs = this.state.originMs || Date.now()
+        const originBase = this._originBase()
 
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
             el.classList.toggle('active', i === idx)
             const clockEl = el.querySelector('.ftl-tick-clock')
             if (clockEl) {
-                const stepMs2 = originMs + (i + 1) * unitMs
-                if (unit === 'day') {
-                    const stepDate = new Date(stepMs2)
-                    clockEl.textContent = stepDate.toLocaleString('en-US', {
-                        timeZone: PDT_TZ,
-                        month: 'short',
-                        day: 'numeric',
-                    })
-                } else {
-                    const hourRounded = new Date(stepMs2)
-                    hourRounded.setMinutes(0, 0, 0)
-                    clockEl.textContent = hourRounded.toLocaleString('en-US', {
-                        timeZone: PDT_TZ,
-                        hour: 'numeric',
-                        hour12: true,
-                    })
-                }
+                const stepDate = new Date(originBase + (i + 1) * unitMs)
+                clockEl.textContent =
+                    unit === 'day'
+                        ? stepDate.toLocaleString('en-US', {
+                              timeZone: PDT_TZ,
+                              month: 'short',
+                              day: 'numeric',
+                          })
+                        : stepDate.toLocaleString('en-US', {
+                              timeZone: PDT_TZ,
+                              hour: 'numeric',
+                              hour12: true,
+                          })
             }
         })
 
-        const originEl = card.querySelector('.ftl-card-origin')
-        if (originEl) {
-            const stepTime = new Date(originMs + (idx + 1) * (STEP_UNITS[unit] || STEP_UNITS.hour))
-            const hourStr = stepTime.toLocaleString('en-US', {
-                timeZone: PDT_TZ,
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true,
-                timeZoneName: 'short',
-            })
-            originEl.textContent = 'Active: ' + hourStr
-        }
+        // Keep the "MODEL INITIALIZED AT" readout in sync as the origin tracks
+        // the main timeline selection.
+        const initEl = card.querySelector('.ftl-card-init')
+        if (initEl) initEl.textContent = this._formatInit(originBase)
 
         card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', idx === 0)
         card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', idx === steps - 1)
@@ -493,7 +528,7 @@ const ForecastTimeline = {
 
     _applyCardStep: function (name, fc, idx) {
         const unitMs = STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour
-        const originMs = this.state.originMs || Date.now()
+        const originMs = this._originBase()
         const stepMs = originMs + (idx + 1) * unitMs
 
         // Mark stepIndex on the layer data so the main TimeControl loop
