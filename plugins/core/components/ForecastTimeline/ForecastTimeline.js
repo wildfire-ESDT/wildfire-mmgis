@@ -134,14 +134,17 @@ const ForecastTimeline = {
         const cardCount = layers.length
         // 54px per card row (two-line ticks). The "FORECAST MODE" badge floats
         // over the strip corner and adds no row height.
-        const extraH = cardCount > 0 ? cardCount * 54 : 0
+        const extraH = cardCount > 0 ? cardCount * 44 : 0
         if (isExpanded && extraH > 0) {
             // #timeUI base expanded = 177px; #mmgisTimeUIExpandedContent base = 137px
-            timeUI.style.height = (177 + extraH) + 'px'
-            expandedContent.style.height = (137 + extraH) + 'px'
+            // Add 10px to account for the 5px top+bottom padding inside expandedContent
+            timeUI.style.height = (177 + extraH + 10) + 'px'
+            expandedContent.style.height = (137 + extraH + 10) + 'px'
+            expandedContent.style.overflow = 'visible'
         } else {
             timeUI.style.height = ''
             expandedContent.style.height = ''
+            expandedContent.style.overflow = ''
         }
     },
 
@@ -376,7 +379,7 @@ const ForecastTimeline = {
         return `${size} ${abbr}`
     },
 
-    // "Jun 30, 2026 · 02:00 PDT"
+    // "Jun 30, 2026 · 2:00 PM PDT"
     _formatInit: function (ms) {
         const d = new Date(ms)
         const dateStr = d.toLocaleDateString('en-US', {
@@ -387,9 +390,9 @@ const ForecastTimeline = {
         })
         const timeStr = d.toLocaleTimeString('en-US', {
             timeZone: PDT_TZ,
-            hour: '2-digit',
+            hour: 'numeric',
             minute: '2-digit',
-            hour12: false,
+            hour12: true,
             timeZoneName: 'short',
         })
         return `${dateStr} · ${timeStr}`
@@ -403,7 +406,6 @@ const ForecastTimeline = {
         const label = fc.label || name
         const originBase = this._originBase()
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
-        const stepLabel = this._stepLabel(fc)
         const initStr = this._formatInit(originBase)
 
         // Use native TimeUI classes in attached mode so rows blend in perfectly
@@ -432,18 +434,26 @@ const ForecastTimeline = {
             return `<div class="${tickClass} ftl-tick-twoline" data-layer="${name}" data-step="${i}"><span class="ftl-tick-clock">${clockLbl}</span><span class="ftl-tick-rel">${relLbl}</span></div>`
         }).join('')
 
-        const rowClass = large ? 'ftl-card ftl-card-large' : 'ftl-card mmgisTimeUIExpandedRow'
+        const rowClass = large ? 'ftl-card ftl-card-large' : 'ftl-card'
         const ticksWrapClass = large ? 'ftl-ticks-wrap' : 'ftl-ticks-wrap mmgisTimeUIExpandedRowContainer'
+
+        const unitWord = unit === 'day' ? 'daily' : unit === 'week' ? 'weekly' : 'hourly'
+        const unitPlural = unit === 'day' ? 'days' : unit === 'week' ? 'weeks' : 'hrs'
+        const forecastChipLabel = `${unitWord} / ${steps} ${unitPlural}`
 
         return `
 <div class="${rowClass}" data-layer="${name}">
   <div class="ftl-card-header">
-    <span class="ftl-card-label">${label}</span>
-    <span class="ftl-card-init-caption">MODEL INITIALIZED AT</span>
-    <span class="ftl-card-init">${initStr}</span>
-    <div class="ftl-card-footer">
-      <span class="ftl-card-step">STEP <span class="ftl-card-step-chip">${stepLabel}</span></span>
-      <span class="ftl-card-mode"><i class="mdi mdi-weather-cloudy-clock"></i>FORECAST</span>
+    <div class="ftl-card-hdr-left">
+      <span class="ftl-card-forecast-title">FORECAST</span>
+      <span class="ftl-card-forecast-chip">${forecastChipLabel}</span>
+    </div>
+    <div class="ftl-card-hdr-right">
+      <span class="ftl-card-label">${label}</span>
+      <div class="ftl-card-init-row">
+        <span class="ftl-card-init-caption">INITIALIZED:</span>
+        <span class="ftl-card-init">${initStr}</span>
+      </div>
     </div>
   </div>
   <div class="ftl-card-body">
