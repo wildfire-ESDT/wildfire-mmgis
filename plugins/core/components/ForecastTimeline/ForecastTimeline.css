@@ -1,0 +1,395 @@
+/**
+ * ForecastTimeline Component Styles
+ *
+ * Attached mode: card rows injected into #mmgisTimeUIExpandedContent via #ftl-strip
+ * Detached mode: standalone #ftl-detached panel with date+hour pickers
+ */
+
+/* ── Attached strip: prepended into mmgisTimeUIExpandedContent ── */
+#ftl-strip {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    border-bottom: 2px solid var(--color-h);
+}
+
+/* "FORECAST ACTIVE" label bar above the card rows */
+#ftl-strip-label {
+    display: flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 10px;
+    background: rgba(255, 180, 0, 0.18);
+    border-bottom: 1px solid rgba(255, 180, 0, 0.4);
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-h);
+    gap: 6px;
+}
+
+/* ── Forecast card row — styled like mmgisTimeUIExpandedRow but clearly distinct ── */
+.ftl-card {
+    display: flex;
+    align-items: center;
+    height: 54px;
+    width: 100%;
+    border-bottom: 1px solid rgba(255, 180, 0, 0.2);
+    font-size: 12px;
+    font-family: 'Arial', sans-serif;
+    overflow: hidden;
+    background: rgba(255, 160, 0, 0.08);
+}
+.ftl-card:last-child {
+    border-bottom: none;
+}
+
+/* Header: label + origin — amber accent left border, warm background */
+.ftl-card-header {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 0 8px 0 10px;
+    width: 200px;
+    min-width: 200px;
+    flex-shrink: 0;
+    height: 100%;
+    border-right: 1px solid rgba(255, 180, 0, 0.35);
+    border-left: 4px solid var(--color-h);
+    background: rgba(255, 160, 0, 0.13);
+    overflow: hidden;
+}
+.ftl-card-label {
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: var(--color-h);
+    white-space: nowrap;
+    line-height: 14px;
+    letter-spacing: 0.04em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+.ftl-card-origin {
+    font-size: 10px;
+    color: rgba(255, 220, 140, 0.95);
+    white-space: nowrap;
+    line-height: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+/* Card body: prev | ticks | next */
+.ftl-card-body {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Prev / Next buttons */
+.ftl-card-prev,
+.ftl-card-next {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 28px;
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: var(--color-a5);
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0;
+    transition: color 0.15s;
+}
+.ftl-card-prev:hover,
+.ftl-card-next:hover {
+    color: var(--color-h);
+}
+.ftl-card-prev:disabled,
+.ftl-card-next:disabled {
+    opacity: 0.2;
+    cursor: default;
+}
+
+/* Tick container */
+.ftl-ticks-wrap {
+    flex: 1;
+    overflow: hidden;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+.ftl-ticks {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+}
+
+/* Individual tick — override mmgisTimeUIExpandedItem for active/hover states */
+.ftl-tick {
+    position: relative;
+}
+
+/* Two-line tick layout: clock on top, relative label below */
+.ftl-tick-twoline {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 3px;
+    padding: 0 6px;
+    text-align: center;
+}
+.ftl-tick-clock {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    line-height: 1;
+    color: var(--color-f);
+}
+.ftl-tick-rel {
+    display: block;
+    font-size: 10px;
+    font-weight: 500;
+    opacity: 0.75;
+    white-space: nowrap;
+    line-height: 1;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-a6);
+}
+.ftl-tick-twoline.active .ftl-tick-clock {
+    color: #111;
+}
+.ftl-tick-twoline.active .ftl-tick-rel {
+    color: #333;
+    opacity: 1;
+}
+/* Ensure ticks inside ftl-strip inherit the tinted row bg */
+#ftl-strip .mmgisTimeUIExpandedItem {
+    background: transparent;
+}
+#ftl-strip .mmgisTimeUIExpandedItem:hover {
+    background: rgba(255, 180, 0, 0.15);
+    color: var(--color-h);
+}
+.ftl-tick.active,
+#ftl-strip .mmgisTimeUIExpandedItem.active {
+    background: #e6a800 !important;  /* amber gold — distinct from teal current-time */
+    color: #111 !important;
+    font-weight: bold;
+    opacity: 1 !important;
+}
+
+/* Ticks in detached mode — full standalone styling (no mmgisTimeUIExpandedItem base) */
+.ftl-tick-large {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    font-size: 12px;
+    color: var(--color-a6);
+    cursor: pointer;
+    white-space: nowrap;
+    border-left: 1px solid var(--color-a2);
+    transition: background 0.15s, color 0.15s;
+    user-select: none;
+    text-align: center;
+}
+.ftl-tick-large:first-child {
+    border-left: none;
+}
+.ftl-tick-large:hover {
+    background: rgba(255, 180, 0, 0.15);
+    color: var(--color-h);
+}
+.ftl-tick-large.active {
+    background: var(--color-h) !important;
+    color: #111 !important;
+    font-weight: bold;
+}
+
+/* ── Toggle button injected into mmgisTimeUIActionsRight ── */
+.ftl-toggle-btn {
+    position: relative;
+}
+.ftl-toggle-btn.active {
+    background: var(--color-h) !important;
+    color: var(--color-a) !important;
+}
+
+/* Visibility utility */
+.ftl-hidden {
+    display: none !important;
+}
+
+/* ── Detached standalone panel ── */
+.ftl-detached {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 77778;
+    background: rgba(12, 13, 13, 0.98);
+    border-top: 3px solid var(--color-h);
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Arial', sans-serif;
+}
+
+.ftl-detached-header {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--color-a1-5);
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.ftl-detached-title {
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: var(--color-h);
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.ftl-detached-pickers {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    justify-content: center;
+}
+
+.ftl-picker-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--color-a6);
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+.ftl-picker-input {
+    background: var(--color-a-5);
+    border: 1px solid var(--color-a1-5);
+    border-radius: 4px;
+    color: var(--color-f);
+    font-size: 12px;
+    font-family: 'Arial', sans-serif;
+    padding: 2px 6px;
+    height: 26px;
+    outline: none;
+}
+.ftl-picker-input:focus {
+    border-color: var(--color-h);
+}
+.ftl-picker-input[type="date"] {
+    width: 130px;
+}
+.ftl-picker-short {
+    width: 48px;
+    text-align: center;
+}
+
+.ftl-go-btn {
+    background: var(--color-a1);
+    border: 1px solid var(--color-a2);
+    border-radius: 4px;
+    color: var(--color-f);
+    font-size: 11px;
+    font-family: 'Arial', sans-serif;
+    padding: 2px 10px;
+    height: 26px;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+}
+.ftl-go-btn:hover {
+    background: var(--color-h);
+    color: var(--color-a);
+}
+
+.ftl-close-btn {
+    flex-shrink: 0;
+}
+
+.ftl-detached-cards {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+/* Detached card rows */
+.ftl-card-large {
+    height: 54px;
+    background: rgba(255, 160, 0, 0.06);
+    border-bottom: 1px solid rgba(255, 180, 0, 0.15);
+}
+.ftl-card-large .ftl-card-header {
+    width: 220px;
+    min-width: 220px;
+    background: rgba(255, 160, 0, 0.12);
+}
+.ftl-card-large .ftl-card-label {
+    font-size: 12px;
+}
+.ftl-card-large .ftl-card-origin {
+    font-size: 10px;
+}
+.ftl-card-large .ftl-ticks-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-a3) transparent;
+}
+
+/* ── Bottom-element offset ──
+   When forecast cards make #timeUI taller than the core 177/40px,
+   --ftl-extra-bottom is set by ForecastTimeline._repositionBottomElements.
+   These rules nudge every bottom-anchored element up by the extra amount
+   so nothing clips with the compass, scalebar, or legend.              */
+:root { --ftl-extra-bottom: 0px; }
+
+#mapToolBar {
+    margin-bottom: var(--ftl-extra-bottom) !important;
+}
+.leaflet-bottom.leaflet-left,
+.leaflet-bottom.leaflet-right {
+    margin-bottom: var(--ftl-extra-bottom) !important;
+}
+#CoordinatesDiv {
+    margin-bottom: var(--ftl-extra-bottom) !important;
+}
+#mmgis-map-logo {
+    margin-bottom: var(--ftl-extra-bottom) !important;
+}
+#_lithosphere_controls_bottomleft {
+    margin-bottom: var(--ftl-extra-bottom) !important;
+}
+
+/* ── Print ── */
+@media print {
+    #ftl-strip,
+    .ftl-detached {
+        display: none !important;
+    }
+}

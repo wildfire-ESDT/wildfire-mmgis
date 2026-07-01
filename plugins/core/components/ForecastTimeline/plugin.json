@@ -1,0 +1,27 @@
+{
+  "uuid": "f7c91e23-4a8b-4d6f-b1c3-8e5d2a9f0b47",
+  "id": "core-forecasttimeline",
+  "version": "core",
+  "type": "component",
+  "tier": "core",
+  "overridable": true,
+  "name": "ForecastTimeline",
+  "description": "Stacked per-product forecast stepper cards floating above the main timeline. One card per active forecast layer, each with independent tick stepping and playback. Origin date always tracks the main TimeUI selection. All times shown in PDT.",
+  "descriptionFull": {
+    "title": "Forecast Timeline",
+    "example": {
+      "enabled": true
+    }
+  },
+  "defaultIcon": "chart-timeline-variant",
+  "hasVars": false,
+  "paths": {
+    "ForecastTimeline": "./ForecastTimeline"
+  },
+  "config": {
+    "rows": []
+  },
+  "author": "NASA-AMMOS/MMGIS",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/NASA-AMMOS/MMGIS"
+}
