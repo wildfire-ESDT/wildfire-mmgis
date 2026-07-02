@@ -129,23 +129,30 @@ const ForecastTimeline = {
         const timeUI = document.getElementById('timeUI')
         const expandedContent = document.getElementById('mmgisTimeUIExpandedContent')
         if (!timeUI || !expandedContent) return
-        const isExpanded = timeUI.classList.contains('expanded')
-        const layers = this._detectForecastLayers()
-        const cardCount = layers.length
-        // 54px per card row (two-line ticks). The "FORECAST MODE" badge floats
-        // over the strip corner and adds no row height.
-        const extraH = cardCount > 0 ? cardCount * 44 : 0
-        if (isExpanded && extraH > 0) {
+        // Match the core BottomElementPositioner, which treats both 'expanded'
+        // and the initial 'defaultExpanded' marker as expanded. Checking only
+        // 'expanded' here meant a default-expanded timeline never grew for the
+        // forecast rows and never published --ftl-extra-bottom — so the strip
+        // spilled upward over the compass and clipped it.
+        const isExpanded = timeUI.classList.contains('expanded') ||
+            timeUI.classList.contains('defaultExpanded')
+        const cardCount = this._detectForecastLayers().length
+        // Each attached forecast row is 44px (.ftl-card); +10px covers the
+        // 5px top/bottom padding inside expandedContent.
+        const extraH = (isExpanded && cardCount > 0) ? (cardCount * 44 + 10) : 0
+        if (extraH > 0) {
             // #timeUI base expanded = 177px; #mmgisTimeUIExpandedContent base = 137px
-            // Add 10px to account for the 5px top+bottom padding inside expandedContent
-            timeUI.style.height = (177 + extraH + 10) + 'px'
-            expandedContent.style.height = (137 + extraH + 10) + 'px'
+            timeUI.style.height = (177 + extraH) + 'px'
+            expandedContent.style.height = (137 + extraH) + 'px'
             expandedContent.style.overflow = 'visible'
         } else {
             timeUI.style.height = ''
             expandedContent.style.height = ''
             expandedContent.style.overflow = ''
         }
+        // Lock the bottom-element offset to the strip's real extra height so the
+        // compass (and scalebar / legend) always clear the taller timeline.
+        this._repositionBottomElements()
     },
 
     _injectDetachedPanel: function () {
@@ -191,9 +198,38 @@ const ForecastTimeline = {
 
         panel.querySelector('#ftl-time-go')?.addEventListener('click', () => this._applyPickerTime())
         panel.querySelector('#ftl-detach-close')?.addEventListener('click', () => this._toggleDetached())
-        panel.querySelector('#ftl-date-pick')?.addEventListener('change', () => this._applyPickerTime())
         panel.querySelector('#ftl-hour-pick')?.addEventListener('change', () => this._applyPickerTime())
         panel.querySelector('#ftl-min-pick')?.addEventListener('change', () => this._applyPickerTime())
+
+        // Date: open the native picker on a click anywhere in the field, not
+        // just the tiny calendar icon. showPicker() needs a user gesture (this
+        // click is one) and may throw if unsupported / already open — ignore.
+        const dateEl = panel.querySelector('#ftl-date-pick')
+        if (dateEl) {
+            dateEl.addEventListener('change', () => this._applyPickerTime())
+            dateEl.addEventListener('click', () => {
+                try { dateEl.showPicker?.() } catch (e) { /* noop */ }
+            })
+        }
+
+        // Hour / minute: scroll the wheel to step the value (wraps at bounds).
+        this._attachWheelStep(panel.querySelector('#ftl-hour-pick'), 0, 23)
+        this._attachWheelStep(panel.querySelector('#ftl-min-pick'), 0, 59)
+    },
+
+    // Wheel-to-step a numeric picker input, wrapping around min/max, then apply.
+    _attachWheelStep: function (el, min, max) {
+        if (!el) return
+        el.addEventListener('wheel', (e) => {
+            e.preventDefault()
+            const cur = parseInt(el.value)
+            const base = isNaN(cur) ? min : cur
+            let next = base + (e.deltaY < 0 ? 1 : -1)
+            if (next < min) next = max
+            else if (next > max) next = min
+            el.value = String(next).padStart(2, '0')
+            this._applyPickerTime()
+        }, { passive: false })
     },
 
     // ── Date picker ────────────────────────────────────────
@@ -268,6 +304,9 @@ const ForecastTimeline = {
             if (panel) panel.classList.add('ftl-hidden')
             if (btn) btn.classList.remove('active')
         }
+        // Re-offset the compass / scalebar / legend for the new mode (detached
+        // panel height vs. docked timeline height).
+        this._repositionBottomElements()
     },
 
     // ── Card management ────────────────────────────────────
@@ -342,6 +381,10 @@ const ForecastTimeline = {
             this._attachCardHandlers(name, fc, container)
             this._renderCardStep(name, fc, container)
         })
+
+        // Panel height depends on how many cards were just rendered — re-offset
+        // the bottom elements so they clear the (possibly taller) detached panel.
+        if (this.state.detached) this._repositionBottomElements()
     },
 
     _refreshAllCards: function () {
@@ -695,40 +738,81 @@ const ForecastTimeline = {
                 setTimeout(tryObserve, 500)
                 return
             }
-            this._lastTimeUIHeight = timeUIEl.offsetHeight
-            this._heightObserver = new MutationObserver(() => {
-                const h = timeUIEl.offsetHeight
-                if (h !== this._lastTimeUIHeight) {
-                    this._lastTimeUIHeight = h
-                    this._repositionBottomElements(h)
-                }
-            })
+            // Whenever the core toggles #timeUI's expand class (or its height),
+            // re-derive the strip height + bottom offset. _adjustTimeUIHeight is
+            // idempotent, so re-setting an unchanged height produces no further
+            // mutation and the observer settles immediately.
+            this._heightObserver = new MutationObserver(() => this._adjustTimeUIHeight())
             this._heightObserver.observe(timeUIEl, {
                 attributes: true,
                 attributeFilter: ['class', 'style'],
             })
+            this._adjustTimeUIHeight()
         }
         tryObserve()
     },
 
-    _repositionBottomElements: function (timeUIHeight) {
-        // Mirrors the offset arithmetic in BottomElementPositioner but only
-        // adjusts the delta caused by forecast cards.  The core positioner
-        // uses hardcoded 177 / 40 for expanded / collapsed.  We compute
-        // how much taller #timeUI actually is and add that as extra margin.
+    _repositionBottomElements: function () {
+        // The core BottomElementPositioner offsets every bottom-anchored element
+        // (compass, scalebar, legend, coordinates…) off a HARDCODED timeUI dock
+        // height of 177 (expanded) / 40 (collapsed). We keep those elements clear
+        // of whatever the forecast plugin adds at the bottom, in two modes:
+        const root = document.documentElement
+
+        if (this.state.detached) {
+            // ── Detached "forecast mode" ──
+            // #timeUI is display:none and replaced by the fixed #ftl-detached
+            // panel, but the core still offsets bottom elements as if the main
+            // timeline were docked (at its stale collapsed/expanded height). So
+            // we OVERRIDE their bottom (via .ftl-detached-mode !important rules)
+            // to sit above the actual panel — this both lifts them when the main
+            // timeline was collapsed (was clipping) and lowers them when it was
+            // expanded (was floating above the panel).
+            const panel = document.getElementById('ftl-detached')
+            const panelH = panel && !panel.classList.contains('ftl-hidden')
+                ? panel.offsetHeight
+                : 0
+            root.classList.add('ftl-detached-mode')
+            root.style.setProperty('--ftl-detached-offset', panelH + 'px')
+            root.style.setProperty('--ftl-extra-bottom', '0px')
+
+            // The core's --mmgis-sep-tools-bottom-reserve is computed off the
+            // now-hidden main timeline, so it's stale here (e.g. still 177 tall
+            // after shrinking into forecast mode). Publish our OWN full reserve
+            // based on the ACTUAL detached panel so separated-tool panels (Legend)
+            // grow back when forecast mode is shorter than the old timeline, and
+            // shrink only once the forecast panel grows tall enough to collide.
+            // Mirrors the core formula: containerTop + bottomStack + compass + gap.
+            const sepContainer = document.getElementById('toolcontroller_sep_content')
+            if (sepContainer) {
+                const compassStack = 70 // compass + scale bar height above the bar
+                const gap = 12
+                const containerTop = sepContainer.getBoundingClientRect().top
+                const reserve = containerTop + panelH + compassStack + gap
+                root.style.setProperty('--ftl-sep-reserve', reserve + 'px')
+            }
+            return
+        }
+
+        // ── Attached mode ──
+        // The forecast strip makes #timeUI taller than the core's hardcoded 177,
+        // so publish the exact extra height as a CSS custom property;
+        // ForecastTimeline.css adds it as margin-bottom to each bottom element.
+        // Derived from the card count (the same formula that grows #timeUI in
+        // _adjustTimeUIHeight) rather than a live measurement, so it stays stable
+        // during the timeline's expand/collapse transition instead of jittering.
+        root.classList.remove('ftl-detached-mode')
+        root.style.setProperty('--ftl-detached-offset', '0px')
+
         const timeUIEl = document.getElementById('timeUI')
         if (!timeUIEl) return
 
         const isExpanded = timeUIEl.classList.contains('expanded') ||
             timeUIEl.classList.contains('defaultExpanded')
-        const baseH = isExpanded ? 177 : 40
-        const extraH = Math.max(0, timeUIHeight - baseH)
+        const cardCount = this._detectForecastLayers().length
+        const extraH = (isExpanded && cardCount > 0) ? (cardCount * 44 + 10) : 0
 
-        // Nudge every bottom-anchored element by the extra amount.
-        // We use a CSS custom property so we don't fight the core positioner.
-        document.documentElement.style.setProperty(
-            '--ftl-extra-bottom', extraH + 'px'
-        )
+        root.style.setProperty('--ftl-extra-bottom', extraH + 'px')
     },
 
     // ── Cleanup ────────────────────────────────────────────
@@ -757,8 +841,11 @@ const ForecastTimeline = {
             this._heightObserver = null
         }
 
-        // Remove extra bottom offset
+        // Remove extra bottom offset + detached-mode override
+        document.documentElement.classList.remove('ftl-detached-mode')
         document.documentElement.style.removeProperty('--ftl-extra-bottom')
+        document.documentElement.style.removeProperty('--ftl-detached-offset')
+        document.documentElement.style.removeProperty('--ftl-sep-reserve')
 
         // Restore original reloadTimeLayers
         this._unpatchReloadTimeLayers()

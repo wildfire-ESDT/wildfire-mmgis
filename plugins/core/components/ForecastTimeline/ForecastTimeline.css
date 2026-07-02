@@ -51,11 +51,13 @@
     justify-content: center;
     gap: 4px;
     padding: 3px 10px;
-    width: 90px;
-    min-width: 90px;
+    /* Wide enough that the "hourly / N hrs" chip sits centered with a margin
+       instead of overflowing flush against the divider. */
+    width: 130px;
+    min-width: 130px;
     flex-shrink: 0;
     align-self: stretch;
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    border-right: 1px solid rgba(255, 180, 0, 0.4);
 }
 .ftl-card-forecast-title {
     font-size: 11px;
@@ -69,15 +71,16 @@
 .ftl-card-forecast-chip {
     display: inline-flex;
     align-items: center;
-    padding: 2px 7px;
-    border: 1px solid rgba(255, 180, 0, 0.5);
-    border-radius: 3px;
-    background: rgba(255, 180, 0, 0.1);
+    padding: 2px 9px;
+    border: 1px solid rgba(255, 180, 0, 0.45);
+    border-radius: 10px;
+    background: rgba(255, 180, 0, 0.12);
     color: var(--color-h);
-    font-size: 11px;
+    font-size: 10px;
     font-weight: bold;
+    letter-spacing: 0.02em;
     white-space: nowrap;
-    line-height: 1.2;
+    line-height: 1.4;
 }
 /* Right column: layer name + init time */
 .ftl-card-hdr-right {
@@ -87,7 +90,11 @@
     justify-content: center;
     gap: 1px;
     padding: 3px 10px;
-    overflow: visible;
+    /* Clip within the header so the label / init text can't bleed into the
+       tick buttons. max-width fits the standard init string but bounds long
+       layer names / locales; anything over ellipsizes instead of spilling. */
+    overflow: hidden;
+    max-width: 280px;
     white-space: nowrap;
     flex-shrink: 0;
 }
@@ -108,7 +115,8 @@
     align-items: center;
     gap: 4px;
     white-space: nowrap;
-    overflow: visible;
+    overflow: hidden;
+    max-width: 100%;
 }
 .ftl-card-init-caption {
     font-size: 12px;
@@ -361,10 +369,12 @@
 }
 .ftl-picker-input[type="date"] {
     width: 130px;
+    cursor: pointer; /* click anywhere opens the native picker */
 }
 .ftl-picker-short {
     width: 48px;
     text-align: center;
+    cursor: ns-resize; /* scroll to change value */
 }
 
 .ftl-go-btn {
@@ -405,8 +415,14 @@
     border-bottom: 1px solid rgba(255, 180, 0, 0.15);
 }
 .ftl-card-large .ftl-card-header {
-    width: 220px;
-    min-width: 220px;
+    /* Hug the content (layer name + full "INITIALIZED: … PDT" line) so there's
+       no dead space before the ticks, but keep a floor so short labels still
+       align and a cap so a long name can't run away. The old fixed 220px was
+       too narrow and overflowed the init into the ticks. Detached ticks scroll
+       (overflow-x:auto) so a wider header is free. */
+    width: fit-content;
+    min-width: 240px;
+    max-width: 380px;
     background: rgba(255, 160, 0, 0.12);
 }
 .ftl-card-large .ftl-card-label {
@@ -427,7 +443,11 @@
    --ftl-extra-bottom is set by ForecastTimeline._repositionBottomElements.
    These rules nudge every bottom-anchored element up by the extra amount
    so nothing clips with the compass, scalebar, or legend.              */
-:root { --ftl-extra-bottom: 0px; }
+:root {
+    --ftl-extra-bottom: 0px;
+    --ftl-detached-offset: 0px;
+    --ftl-sep-reserve: 120px;
+}
 
 #mapToolBar {
     margin-bottom: var(--ftl-extra-bottom) !important;
@@ -444,6 +464,62 @@
 }
 #_lithosphere_controls_bottomleft {
     margin-bottom: var(--ftl-extra-bottom) !important;
+}
+
+/* ── Detached "forecast mode" offset ──
+   In detached mode #timeUI is hidden and replaced by the fixed #ftl-detached
+   panel, but the core BottomElementPositioner keeps offsetting bottom elements
+   off the (now-hidden) main timeline's stale height. Override their `bottom`
+   directly — !important beats the core's inline styles — so they sit above the
+   real panel whether the main timeline was collapsed (were clipping) or
+   expanded (were floating above the panel). --ftl-detached-offset is the panel
+   height; each element keeps the same extra gap the core gives it.          */
+html.ftl-detached-mode .leaflet-bottom.leaflet-left,
+html.ftl-detached-mode .leaflet-bottom.leaflet-right {
+    bottom: var(--ftl-detached-offset) !important;
+    margin-bottom: 0 !important;
+}
+html.ftl-detached-mode #mapToolBar {
+    bottom: var(--ftl-detached-offset) !important;
+    margin-bottom: 0 !important;
+}
+html.ftl-detached-mode #CoordinatesDiv {
+    bottom: calc(var(--ftl-detached-offset) + 12px) !important;
+    margin-bottom: 0 !important;
+}
+html.ftl-detached-mode #mmgis-map-logo {
+    bottom: calc(var(--ftl-detached-offset) + 45px) !important;
+    margin-bottom: 0 !important;
+}
+html.ftl-detached-mode #_lithosphere_controls_bottomleft {
+    bottom: calc(var(--ftl-detached-offset) + 10px) !important;
+    margin-bottom: 0 !important;
+}
+
+/* ── Legend / separated-tool panels ──
+   The core caps each panel's height with
+   max-height: calc(100vh - var(--mmgis-sep-tools-bottom-reserve)), where the
+   reserve is computed off the HARDCODED 177px timeline. Panels have stable ids
+   (#toolPanelSeparated_<Name>) under #toolcontroller_sep_content.
+
+   Attached: the core reserve is correct for the base timeline; add the forecast
+   strip's extra height so a tall legend caps (and scrolls internally) instead of
+   growing down through the compass and the taller timeline. Fully dynamic — the
+   cap tightens as forecast layers are added and relaxes as they're removed. */
+#toolcontroller_sep_content > div[id^="toolPanelSeparated_"] {
+    max-height: calc(
+        100vh
+        - var(--mmgis-sep-tools-bottom-reserve, 120px)
+        - var(--ftl-extra-bottom, 0px)
+    ) !important;
+}
+/* Detached forecast mode: the core reserve is stale (computed off the hidden
+   main timeline), so REPLACE it with our own reserve measured from the actual
+   #ftl-detached panel (--ftl-sep-reserve). This lets the legend grow back when
+   forecast mode is shorter than the old timeline, and shrink only when the
+   forecast panel itself grows tall enough to collide. */
+html.ftl-detached-mode #toolcontroller_sep_content > div[id^="toolPanelSeparated_"] {
+    max-height: calc(100vh - var(--ftl-sep-reserve, 120px)) !important;
 }
 
 /* ── TimeUI border-radius: flatten top corners when strip has content ── */
