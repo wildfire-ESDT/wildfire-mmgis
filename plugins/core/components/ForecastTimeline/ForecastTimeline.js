@@ -8,7 +8,11 @@
  *
  * Layer config: time.forecast block with:
  *   { enabled: true, label: "PWWB Hourly", steps: 24, stepUnit: "hour" }
- *   { enabled: true, label: "WFPI Daily",  steps: 7,  stepUnit: "day", urlTemplate: true }
+ *   { enabled: true, label: "WFPI Daily",  steps: 7,  stepUnit: "day", stepOffset: 0 }
+ *
+ * stepOffset (optional, default: 0):
+ *   - 0: Day 1 = today (e.g. WFPI, where forecast-1 is today's forecast)
+ *   - 1: Day 1 = tomorrow (e.g. some NWS models where forecast starts tomorrow)
  */
 
 import TimeControl from '@basics/TimeControl_/TimeControl'
@@ -398,6 +402,55 @@ const ForecastTimeline = {
         })
     },
 
+    _reapplyAllSteps: function () {
+        if (this._reapplying) return
+        this._reapplying = true
+        const layers = this._detectForecastLayers()
+        layers.forEach(({ name, config: fc }) => {
+            const idx = this.state.cards[name]?.stepIndex ?? 0
+            if (!this._isFutureTimeSelected(fc).disabled) {
+                this._applyCardStep(name, fc, idx)
+            }
+        })
+        this._reapplying = false
+    },
+
+    // ── Future-time guard ────────────────────────────────────
+
+    // Returns { disabled: bool, reason: string } for a forecast card.
+    //
+    // Hourly cards: disabled any time the selected hour on the global timeline
+    // is NOT the current real-world hour (past OR future — forecast data only
+    // exists relative to the current model run).
+    //
+    // Daily cards: disabled only when the selected calendar date in PDT is
+    // strictly in the future relative to today.  Selecting a future hour that
+    // is still today is fine for daily products.
+    _isFutureTimeSelected: function (fc) {
+        const unit = fc.stepUnit || 'hour'
+        const nowMs = Date.now()
+
+        if (unit === 'hour') {
+            // Floor both to the hour and compare — only disable for future hours.
+            const nowHour = new Date(nowMs)
+            nowHour.setMinutes(0, 0, 0)
+            const selHour = new Date(this.state.originMs || nowMs)
+            selHour.setMinutes(0, 0, 0)
+            if (selHour.getTime() > nowHour.getTime()) {
+                return { disabled: true, reason: 'FUTURE TIME SELECTED — NO FORECAST AVAILABLE' }
+            }
+        } else if (unit === 'day') {
+            // Compare calendar dates in PDT.
+            const todayStr = new Date(nowMs).toLocaleDateString('en-CA', { timeZone: PDT_TZ })
+            const selStr = new Date(this.state.originMs || nowMs).toLocaleDateString('en-CA', { timeZone: PDT_TZ })
+            if (selStr > todayStr) {
+                return { disabled: true, reason: 'FUTURE DATE SELECTED — NO FORECAST AVAILABLE' }
+            }
+        }
+
+        return { disabled: false, reason: '' }
+    },
+
     // ── Origin / step helpers ──────────────────────────────
 
     // Model init time floored to the current hour's :00 (e.g. 02:55 → 02:00).
@@ -456,7 +509,8 @@ const ForecastTimeline = {
         const ticks = Array.from({ length: steps }, (_, i) => {
             // Steps are generated from the hour-floored base, so they already
             // land on clean boundaries — no per-tick rounding needed.
-            const stepDate = new Date(originBase + (i + 1) * unitMs)
+            const offset = fc.stepOffset ?? 0
+            const stepDate = new Date(originBase + (i + offset) * unitMs)
 
             let clockLbl, relLbl
             if (unit === 'day') {
@@ -465,7 +519,14 @@ const ForecastTimeline = {
                     month: 'short',
                     day: 'numeric',
                 })
-                relLbl = i === 0 ? 'Today' : `+${i}`
+                // Label based on actual offset: offset=0 → "Today", offset=1 → "Tomorrow"
+                if (i === 0 && offset === 0) {
+                    relLbl = 'Today'
+                } else if (i === 0 && offset === 1) {
+                    relLbl = 'Tomorrow'
+                } else {
+                    relLbl = `+${i + offset}`
+                }
             } else {
                 clockLbl = stepDate.toLocaleString('en-US', {
                     timeZone: PDT_TZ,
@@ -514,17 +575,20 @@ const ForecastTimeline = {
     _attachCardHandlers: function (name, fc, container) {
         container.querySelectorAll(`.ftl-tick[data-layer="${name}"]`).forEach((el) => {
             el.addEventListener('click', () => {
+                if (this._isFutureTimeSelected(fc).disabled) return
                 const idx = parseInt(el.dataset.step)
                 this._setCardStep(name, fc, idx)
             })
         })
         container.querySelector(`.ftl-card-prev[data-layer="${name}"]`)
             ?.addEventListener('click', () => {
+                if (this._isFutureTimeSelected(fc).disabled) return
                 const cur = this.state.cards[name]?.stepIndex ?? 0
                 this._setCardStep(name, fc, Math.max(0, cur - 1))
             })
         container.querySelector(`.ftl-card-next[data-layer="${name}"]`)
             ?.addEventListener('click', () => {
+                if (this._isFutureTimeSelected(fc).disabled) return
                 const cur = this.state.cards[name]?.stepIndex ?? 0
                 const max = (fc.steps || 1) - 1
                 this._setCardStep(name, fc, Math.min(max, cur + 1))
@@ -550,11 +614,12 @@ const ForecastTimeline = {
         const originBase = this._originBase()
 
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
+        const offset = fc.stepOffset ?? 0
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
             el.classList.toggle('active', i === idx)
             const clockEl = el.querySelector('.ftl-tick-clock')
             if (clockEl) {
-                const stepDate = new Date(originBase + (i + 1) * unitMs)
+                const stepDate = new Date(originBase + (i + offset) * unitMs)
                 clockEl.textContent =
                     unit === 'day'
                         ? stepDate.toLocaleString('en-US', {
@@ -577,12 +642,28 @@ const ForecastTimeline = {
 
         card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', idx === 0)
         card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', idx === steps - 1)
+
+        // ── Future-time disabled state ──
+        const { disabled, reason } = this._isFutureTimeSelected(fc)
+        card.classList.toggle('ftl-card-disabled', disabled)
+        let overlay = card.querySelector('.ftl-card-disabled-overlay')
+        if (disabled) {
+            if (!overlay) {
+                overlay = document.createElement('div')
+                overlay.className = 'ftl-card-disabled-overlay'
+                card.appendChild(overlay)
+            }
+            overlay.textContent = reason
+        } else if (overlay) {
+            overlay.remove()
+        }
     },
 
     _applyCardStep: function (name, fc, idx) {
         const unitMs = STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour
         const originMs = this._originBase()
-        const stepMs = originMs + (idx + 1) * unitMs
+        const offset = fc.stepOffset ?? 0
+        const stepMs = originMs + (idx + offset) * unitMs
 
         // Mark stepIndex on the layer data so the main TimeControl loop
         // (setTime → reloadAllLayers) skips this layer while a forecast
@@ -591,6 +672,7 @@ const ForecastTimeline = {
         fc.stepIndex = idx
 
         if (fc.urlTemplate) {
+            // URL templates use 1-based indexing (forecast-1, forecast-2, etc)
             this._applyUrlTemplate(name, idx + 1)
         } else {
             // Reload just this layer at the forecast step time.
@@ -656,11 +738,12 @@ const ForecastTimeline = {
     // ── TimeControl callback ───────────────────────────────
 
     _onTimeChange: function (timeData) {
-        if (this._applyingStep) return
+        if (this._applyingStep || this._reapplying) return
         if (timeData?.currentTime) {
             this.state.originMs = new Date(timeData.currentTime).getTime()
             if (this.state.detached) this._updatePickerDisplay()
             this._refreshAllCards()
+            this._reapplyAllSteps()
         }
     },
 
