@@ -176,42 +176,28 @@
     opacity: 0.2;
     cursor: default;
 }
-.ftl-disabled-future {
-    opacity: 0.35;
-    pointer-events: none;
-    filter: grayscale(0.7);
+
+/* ── Forecast card ticks: override TimeUI's generous padding so all steps fit ── */
+.ftl-card .mmgisTimeUIExpandedItem {
+    padding: 6px 6px;
+    font-size: 11px;
+    flex: 1;
+    min-width: 0;
 }
 
-/* ── Card disabled state (future / non-current time selected) ── */
-.ftl-card-disabled {
+/* ── Future item in main timeline expanded rows (years/months/days/hours) ── */
+.mmgisTimeUIExpandedItem.ftl-future-item {
+    opacity: 0.3;
+    pointer-events: none;
+    cursor: default;
     position: relative;
-    pointer-events: none;
-}
-.ftl-card-disabled .ftl-card-body,
-.ftl-card-disabled .ftl-card-header {
-    opacity: 0.25;
-    filter: grayscale(0.8);
-}
-.ftl-card-disabled-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    font-weight: bold;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(200, 200, 210, 0.9);
-    pointer-events: none;
     background-image: repeating-linear-gradient(
         -45deg,
-        rgba(80, 80, 90, 0.18) 0px,
-        rgba(80, 80, 90, 0.18) 3px,
-        transparent 3px,
-        transparent 10px
-    );
-    z-index: 2;
+        rgba(80, 80, 90, 0.25) 0px,
+        rgba(80, 80, 90, 0.25) 2px,
+        transparent 2px,
+        transparent 7px
+    ) !important;
 }
 /* Tick container */
 .ftl-ticks-wrap {
@@ -556,6 +542,16 @@ html.ftl-detached-mode #_lithosphere_controls_bottomleft {
    forecast panel itself grows tall enough to collide. */
 html.ftl-detached-mode #toolcontroller_sep_content > div[id^="toolPanelSeparated_"] {
     max-height: calc(100vh - var(--ftl-sep-reserve, 120px)) !important;
+}
+
+/* ── Tool panel (Layers menu) height cap ──
+   The core sets #toolPanel height inline. We can't override height with CSS
+   (inline wins), but we can add bottom padding equal to the extra forecast strip
+   height — the panel already has overflow:hidden, so the extra padding eats into
+   the visible area and the panel appears shorter, clearing the forecast rows.  */
+#toolPanel {
+    padding-bottom: var(--ftl-extra-bottom, 0px) !important;
+    box-sizing: border-box !important;
 }
 
 /* ── TimeUI border-radius: flatten top corners when strip has content ── */

@@ -56,6 +56,12 @@ const ForecastTimeline = {
         // Inject after TimeUI has rendered its DOM
         this._waitAndInject()
 
+        // Patch expanded rows to grey future items
+        this._patchPopulateExpandedRows()
+
+        // Patch TimeUI navigation to prevent stepping past wall-clock "now"
+        this._patchTimeUINavigation()
+
         if (TimeControl.subscribe) {
             TimeControl.subscribe('forecastTimeline', (td) =>
                 this._onTimeChange(td)
@@ -65,6 +71,182 @@ const ForecastTimeline = {
         L_.subscribeOnLayerToggle('forecastTimeline', () =>
             this._rebuildCards()
         )
+
+        // Initial Next button state (after TimeUI DOM is ready)
+        setTimeout(() => this._updateNextButtonState(), 1000)
+    },
+
+    // ── Global timeline: grey + block future items in expanded rows ───
+
+    _patchPopulateExpandedRows: function () {
+        if (this._origPopulateExpandedRows) return
+        this._origPopulateExpandedRows = TimeUI._populateExpandedRows
+        this._origSelectMonth = TimeUI._selectMonth
+        this._origSelectYear = TimeUI._selectYear
+
+        const self = this
+        TimeUI._populateExpandedRows = function () {
+            self._origPopulateExpandedRows.call(TimeUI)
+            self._markFutureExpandedItems()
+        }
+
+        // When navigating to a month, clamp to current hour if result is future
+        TimeUI._selectMonth = function (monthIndex) {
+            self._origSelectMonth.call(TimeUI, monthIndex)
+            const now = new Date()
+            const end = new Date(TimeUI._endTimestamp)
+            if (end > now) {
+                TimeUI._selectDay?.(now.getDate())
+                // After _selectDay updates _endTimestamp, snap to current hour
+                setTimeout(() => TimeUI._selectHour?.(now.getHours()), 0)
+            }
+        }
+
+        // When navigating to a year, clamp similarly
+        TimeUI._selectYear = function (year) {
+            self._origSelectYear.call(TimeUI, year)
+            const now = new Date()
+            const end = new Date(TimeUI._endTimestamp)
+            if (end > now) {
+                TimeUI._selectMonth?.(now.getMonth())
+            }
+        }
+    },
+
+    _unpatchPopulateExpandedRows: function () {
+        if (this._origPopulateExpandedRows) {
+            TimeUI._populateExpandedRows = this._origPopulateExpandedRows
+            this._origPopulateExpandedRows = null
+        }
+        if (this._origSelectMonth) {
+            TimeUI._selectMonth = this._origSelectMonth
+            this._origSelectMonth = null
+        }
+        if (this._origSelectYear) {
+            TimeUI._selectYear = this._origSelectYear
+            this._origSelectYear = null
+        }
+    },
+
+    // After _populateExpandedRows builds the DOM, mark items that represent
+    // future times with .ftl-future-item so CSS greys them and we block clicks.
+    _markFutureExpandedItems: function () {
+        const now = new Date()
+        const nowYear = now.getFullYear()
+        const nowMonth = now.getMonth()      // 0-indexed
+        const nowDay = now.getDate()
+        const nowHour = now.getHours()
+
+        // _endTimestamp is a raw UTC ms value; read it using local accessors
+        // so shownYear/Month/Day match what the user sees in the UI.
+        const endDate = new Date(TimeUI._endTimestamp)
+        const shownYear = endDate.getFullYear()
+        const shownMonth = endDate.getMonth() // 0-indexed
+        const shownDay = endDate.getDate()
+
+        // Years: grey years AFTER current year
+        document.querySelectorAll('#mmgisTimeUIYearsContainer .mmgisTimeUIExpandedItem').forEach((el) => {
+            const yr = parseInt(el.getAttribute('data-year'))
+            el.classList.toggle('ftl-future-item', yr > nowYear)
+        })
+
+        // Months: grey months after current month IF we're in the current year
+        document.querySelectorAll('#mmgisTimeUIMonthsContainer .mmgisTimeUIExpandedItem').forEach((el) => {
+            const mo = parseInt(el.getAttribute('data-month')) // 0-indexed
+            let future = false
+            if (shownYear > nowYear) {
+                future = true
+            } else if (shownYear === nowYear && mo > nowMonth) {
+                future = true
+            }
+            el.classList.toggle('ftl-future-item', future)
+        })
+
+        // Days: grey days after today IF we're in the current year+month
+        document.querySelectorAll('#mmgisTimeUIDaysContainer .mmgisTimeUIExpandedItem').forEach((el) => {
+            const day = parseInt(el.getAttribute('data-day'))
+            let future = false
+            if (shownYear > nowYear) {
+                future = true
+            } else if (shownYear === nowYear && shownMonth > nowMonth) {
+                future = true
+            } else if (shownYear === nowYear && shownMonth === nowMonth && day > nowDay) {
+                future = true
+            }
+            el.classList.toggle('ftl-future-item', future)
+        })
+
+        // Hours: grey hours after the current hour IF we're on today
+        document.querySelectorAll('#mmgisTimeUIHoursContainer .mmgisTimeUIExpandedItem').forEach((el) => {
+            const hr = parseInt(el.getAttribute('data-hour'))
+            let future = false
+            if (shownYear > nowYear) {
+                future = true
+            } else if (shownYear === nowYear && shownMonth > nowMonth) {
+                future = true
+            } else if (shownYear === nowYear && shownMonth === nowMonth) {
+                if (shownDay > nowDay) {
+                    future = true
+                } else if (shownDay === nowDay && hr > nowHour) {
+                    future = true
+                }
+            }
+            el.classList.toggle('ftl-future-item', future)
+        })
+    },
+
+    // ── Global timeline clamp: prevent navigating past "now" ───────────
+
+    _patchTimeUINavigation: function () {
+        if (this._origLoopTime) return // already patched
+        const origLoop = TimeUI._loopTime?.bind(TimeUI)
+        if (!origLoop) return
+        this._origLoopTime = TimeUI._loopTime
+
+        const self = this
+        TimeUI._loopTime = function (loopBackwards) {
+            origLoop(loopBackwards)
+            // After the step, clamp to now if we went too far (all in local display space)
+            const now = new Date()
+            const nowHourFloor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0).getTime()
+            const cur = TimeUI.getCurrentTimestamp
+                ? TimeUI.removeOffset(TimeUI.getCurrentTimestamp())
+                : 0
+            if (cur > nowHourFloor) {
+                // Snap back to the current hour floor (updateTimes takes display-local ms)
+                TimeUI.updateTimes?.(null, nowHourFloor, nowHourFloor)
+                if (TimeUI.play) TimeUI.togglePlay?.(false)
+            }
+            self._updateNextButtonState()
+        }
+    },
+
+    _unpatchTimeUINavigation: function () {
+        if (this._origLoopTime) {
+            TimeUI._loopTime = this._origLoopTime
+            this._origLoopTime = null
+        }
+    },
+
+    _updateNextButtonState: function () {
+        const now = new Date()
+        // Floor now to the current wall-clock hour
+        const nowHourFloor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0).getTime()
+        // getCurrentTimestamp returns the display-local ms (same space as removeOffset)
+        const cur = TimeUI.getCurrentTimestamp ? TimeUI.removeOffset(TimeUI.getCurrentTimestamp()) : 0
+        const atOrPastNow = cur >= nowHourFloor
+
+        const nextBtn = document.getElementById('mmgisTimeUIBottomNext')
+        if (nextBtn) {
+            nextBtn.toggleAttribute('disabled', atOrPastNow)
+            nextBtn.style.opacity = atOrPastNow ? '0.2' : ''
+            nextBtn.style.cursor = atOrPastNow ? 'default' : ''
+            nextBtn.style.pointerEvents = atOrPastNow ? 'none' : ''
+        }
+        const playBtn = document.getElementById('mmgisTimeUIPlay')
+        if (playBtn && TimeUI.play && atOrPastNow) {
+            TimeUI.togglePlay?.(false)
+        }
     },
 
     // ── DOM injection ──────────────────────────────────────
@@ -408,47 +590,9 @@ const ForecastTimeline = {
         const layers = this._detectForecastLayers()
         layers.forEach(({ name, config: fc }) => {
             const idx = this.state.cards[name]?.stepIndex ?? 0
-            if (!this._isFutureTimeSelected(fc).disabled) {
-                this._applyCardStep(name, fc, idx)
-            }
+            this._applyCardStep(name, fc, idx)
         })
         this._reapplying = false
-    },
-
-    // ── Future-time guard ────────────────────────────────────
-
-    // Returns { disabled: bool, reason: string } for a forecast card.
-    //
-    // Hourly cards: disabled any time the selected hour on the global timeline
-    // is NOT the current real-world hour (past OR future — forecast data only
-    // exists relative to the current model run).
-    //
-    // Daily cards: disabled only when the selected calendar date in PDT is
-    // strictly in the future relative to today.  Selecting a future hour that
-    // is still today is fine for daily products.
-    _isFutureTimeSelected: function (fc) {
-        const unit = fc.stepUnit || 'hour'
-        const nowMs = Date.now()
-
-        if (unit === 'hour') {
-            // Floor both to the hour and compare — only disable for future hours.
-            const nowHour = new Date(nowMs)
-            nowHour.setMinutes(0, 0, 0)
-            const selHour = new Date(this.state.originMs || nowMs)
-            selHour.setMinutes(0, 0, 0)
-            if (selHour.getTime() > nowHour.getTime()) {
-                return { disabled: true, reason: 'FUTURE TIME SELECTED — NO FORECAST AVAILABLE' }
-            }
-        } else if (unit === 'day') {
-            // Compare calendar dates in PDT.
-            const todayStr = new Date(nowMs).toLocaleDateString('en-CA', { timeZone: PDT_TZ })
-            const selStr = new Date(this.state.originMs || nowMs).toLocaleDateString('en-CA', { timeZone: PDT_TZ })
-            if (selStr > todayStr) {
-                return { disabled: true, reason: 'FUTURE DATE SELECTED — NO FORECAST AVAILABLE' }
-            }
-        }
-
-        return { disabled: false, reason: '' }
     },
 
     // ── Origin / step helpers ──────────────────────────────
@@ -475,8 +619,8 @@ const ForecastTimeline = {
         return `${size} ${abbr}`
     },
 
-    // "Jun 30, 2026 · 2:00 PM PDT"
-    _formatInit: function (ms) {
+    // "Jun 30, 2026 · 2:00 PM PDT"  (hourly)  or  "Jul 7, 2026 · 12:00 AM PDT"  (daily)
+    _formatInit: function (ms, unit) {
         const d = new Date(ms)
         const dateStr = d.toLocaleDateString('en-US', {
             timeZone: PDT_TZ,
@@ -484,6 +628,9 @@ const ForecastTimeline = {
             day: 'numeric',
             year: 'numeric',
         })
+        if (unit === 'day') {
+            return dateStr
+        }
         const timeStr = d.toLocaleTimeString('en-US', {
             timeZone: PDT_TZ,
             hour: 'numeric',
@@ -502,7 +649,7 @@ const ForecastTimeline = {
         const label = fc.label || name
         const originBase = this._originBase()
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
-        const initStr = this._formatInit(originBase)
+        const initStr = this._formatInit(originBase, unit)
 
         // Use native TimeUI classes in attached mode so rows blend in perfectly
         const tickClass = large ? 'ftl-tick ftl-tick-large' : 'ftl-tick mmgisTimeUIExpandedItem'
@@ -575,20 +722,17 @@ const ForecastTimeline = {
     _attachCardHandlers: function (name, fc, container) {
         container.querySelectorAll(`.ftl-tick[data-layer="${name}"]`).forEach((el) => {
             el.addEventListener('click', () => {
-                if (this._isFutureTimeSelected(fc).disabled) return
                 const idx = parseInt(el.dataset.step)
                 this._setCardStep(name, fc, idx)
             })
         })
         container.querySelector(`.ftl-card-prev[data-layer="${name}"]`)
             ?.addEventListener('click', () => {
-                if (this._isFutureTimeSelected(fc).disabled) return
                 const cur = this.state.cards[name]?.stepIndex ?? 0
                 this._setCardStep(name, fc, Math.max(0, cur - 1))
             })
         container.querySelector(`.ftl-card-next[data-layer="${name}"]`)
             ?.addEventListener('click', () => {
-                if (this._isFutureTimeSelected(fc).disabled) return
                 const cur = this.state.cards[name]?.stepIndex ?? 0
                 const max = (fc.steps || 1) - 1
                 this._setCardStep(name, fc, Math.min(max, cur + 1))
@@ -615,11 +759,13 @@ const ForecastTimeline = {
 
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
         const offset = fc.stepOffset ?? 0
+
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
             el.classList.toggle('active', i === idx)
+            const stepDate = new Date(originBase + (i + offset) * unitMs)
+
             const clockEl = el.querySelector('.ftl-tick-clock')
             if (clockEl) {
-                const stepDate = new Date(originBase + (i + offset) * unitMs)
                 clockEl.textContent =
                     unit === 'day'
                         ? stepDate.toLocaleString('en-US', {
@@ -638,32 +784,25 @@ const ForecastTimeline = {
         // Keep the "MODEL INITIALIZED AT" readout in sync as the origin tracks
         // the main timeline selection.
         const initEl = card.querySelector('.ftl-card-init')
-        if (initEl) initEl.textContent = this._formatInit(originBase)
+        if (initEl) initEl.textContent = this._formatInit(originBase, unit)
 
         card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', idx === 0)
         card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', idx === steps - 1)
-
-        // ── Future-time disabled state ──
-        const { disabled, reason } = this._isFutureTimeSelected(fc)
-        card.classList.toggle('ftl-card-disabled', disabled)
-        let overlay = card.querySelector('.ftl-card-disabled-overlay')
-        if (disabled) {
-            if (!overlay) {
-                overlay = document.createElement('div')
-                overlay.className = 'ftl-card-disabled-overlay'
-                card.appendChild(overlay)
-            }
-            overlay.textContent = reason
-        } else if (overlay) {
-            overlay.remove()
-        }
     },
 
     _applyCardStep: function (name, fc, idx) {
         const unitMs = STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour
         const originMs = this._originBase()
         const offset = fc.stepOffset ?? 0
-        const stepMs = originMs + (idx + offset) * unitMs
+        let stepMs = originMs + (idx + offset) * unitMs
+
+        // WFPI (and any daily product): always fetch at UTC midnight of the
+        // PDT calendar date so requests align with the model init time (00:00Z)
+        // regardless of what hour the global timeline shows.
+        if (fc.stepUnit === 'day') {
+            const stepDatePDT = new Date(stepMs).toLocaleDateString('en-CA', { timeZone: PDT_TZ })
+            stepMs = new Date(`${stepDatePDT}T00:00:00Z`).getTime()
+        }
 
         // Mark stepIndex on the layer data so the main TimeControl loop
         // (setTime → reloadAllLayers) skips this layer while a forecast
@@ -744,6 +883,7 @@ const ForecastTimeline = {
             if (this.state.detached) this._updatePickerDisplay()
             this._refreshAllCards()
             this._reapplyAllSteps()
+            this._updateNextButtonState()
         }
     },
 
@@ -930,8 +1070,19 @@ const ForecastTimeline = {
         document.documentElement.style.removeProperty('--ftl-detached-offset')
         document.documentElement.style.removeProperty('--ftl-sep-reserve')
 
-        // Restore original reloadTimeLayers
+        // Restore original reloadTimeLayers, TimeUI navigation, and expanded rows
         this._unpatchReloadTimeLayers()
+        this._unpatchTimeUINavigation()
+        this._unpatchPopulateExpandedRows()
+
+        // Restore Next button appearance
+        const nextBtn = document.getElementById('mmgisTimeUIBottomNext')
+        if (nextBtn) {
+            nextBtn.removeAttribute('disabled')
+            nextBtn.style.opacity = ''
+            nextBtn.style.cursor = ''
+            nextBtn.style.pointerEvents = ''
+        }
 
         if (TimeControl?.unsubscribe) TimeControl.unsubscribe('forecastTimeline')
         L_.unsubscribeOnLayerToggle('forecastTimeline')
