@@ -81,35 +81,11 @@ const ForecastTimeline = {
     _patchPopulateExpandedRows: function () {
         if (this._origPopulateExpandedRows) return
         this._origPopulateExpandedRows = TimeUI._populateExpandedRows
-        this._origSelectMonth = TimeUI._selectMonth
-        this._origSelectYear = TimeUI._selectYear
 
         const self = this
         TimeUI._populateExpandedRows = function () {
             self._origPopulateExpandedRows.call(TimeUI)
             self._markFutureExpandedItems()
-        }
-
-        // When navigating to a month, clamp to current hour if result is future
-        TimeUI._selectMonth = function (monthIndex) {
-            self._origSelectMonth.call(TimeUI, monthIndex)
-            const now = new Date()
-            const end = new Date(TimeUI._endTimestamp)
-            if (end > now) {
-                TimeUI._selectDay?.(now.getDate())
-                // After _selectDay updates _endTimestamp, snap to current hour
-                setTimeout(() => TimeUI._selectHour?.(now.getHours()), 0)
-            }
-        }
-
-        // When navigating to a year, clamp similarly
-        TimeUI._selectYear = function (year) {
-            self._origSelectYear.call(TimeUI, year)
-            const now = new Date()
-            const end = new Date(TimeUI._endTimestamp)
-            if (end > now) {
-                TimeUI._selectMonth?.(now.getMonth())
-            }
         }
     },
 
@@ -117,14 +93,6 @@ const ForecastTimeline = {
         if (this._origPopulateExpandedRows) {
             TimeUI._populateExpandedRows = this._origPopulateExpandedRows
             this._origPopulateExpandedRows = null
-        }
-        if (this._origSelectMonth) {
-            TimeUI._selectMonth = this._origSelectMonth
-            this._origSelectMonth = null
-        }
-        if (this._origSelectYear) {
-            TimeUI._selectYear = this._origSelectYear
-            this._origSelectYear = null
         }
     },
 
@@ -680,7 +648,7 @@ const ForecastTimeline = {
                     hour: 'numeric',
                     hour12: true,
                 })
-                relLbl = `h${i + 1}`
+                relLbl = `h${i + offset}`
             }
             return `<div class="${tickClass} ftl-tick-twoline" data-layer="${name}" data-step="${i}"><span class="ftl-tick-clock">${clockLbl}</span><span class="ftl-tick-rel">${relLbl}</span></div>`
         }).join('')
@@ -914,16 +882,14 @@ const ForecastTimeline = {
 
     _patchReloadTimeLayers: function () {
         if (this._origReloadTimeLayers) return // already patched
-        const orig = TimeControl.reloadTimeLayers.bind(TimeControl)
+        const origReload = TimeControl.reloadTimeLayers.bind(TimeControl)
+        const origUpdate = TimeControl.updateLayersTime.bind(TimeControl)
         this._origReloadTimeLayers = TimeControl.reloadTimeLayers
+        this._origUpdateLayersTime = TimeControl.updateLayersTime
 
         const self = this
-        TimeControl.reloadTimeLayers = async function () {
-            // Temporarily mark forecast-managed layers so the original loop
-            // (which checks layer.time.enabled) will still iterate them but
-            // we can intercept.  We wrap by setting a transient flag that
-            // the original code doesn't know about — instead we pre-filter
-            // by temporarily disabling time on forecast layers.
+
+        const suppressForecastLayers = () => {
             const suppressed = []
             for (const name in self.state.cards) {
                 const ld = L_.layers.data[name]
@@ -933,13 +899,31 @@ const ForecastTimeline = {
                     suppressed.push(ld)
                 }
             }
+            return suppressed
+        }
+
+        const restoreLayers = (suppressed) => {
+            suppressed.forEach((ld) => {
+                ld.time.enabled = true
+                delete ld.time._ftlSuppressed
+            })
+        }
+
+        TimeControl.updateLayersTime = function () {
+            const suppressed = suppressForecastLayers()
             try {
-                return await orig()
+                return origUpdate()
             } finally {
-                suppressed.forEach((ld) => {
-                    ld.time.enabled = true
-                    delete ld.time._ftlSuppressed
-                })
+                restoreLayers(suppressed)
+            }
+        }
+
+        TimeControl.reloadTimeLayers = async function () {
+            const suppressed = suppressForecastLayers()
+            try {
+                return await origReload()
+            } finally {
+                restoreLayers(suppressed)
             }
         }
     },
@@ -948,6 +932,10 @@ const ForecastTimeline = {
         if (this._origReloadTimeLayers) {
             TimeControl.reloadTimeLayers = this._origReloadTimeLayers
             this._origReloadTimeLayers = null
+        }
+        if (this._origUpdateLayersTime) {
+            TimeControl.updateLayersTime = this._origUpdateLayersTime
+            this._origUpdateLayersTime = null
         }
     },
 

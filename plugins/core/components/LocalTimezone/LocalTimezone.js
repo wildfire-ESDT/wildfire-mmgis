@@ -464,7 +464,10 @@ const LocalTimezone = {
             const selectedYear = TimeUI._utcToDisplay(TimeUI._endTimestamp).year
             const startOfMonth = TimeUI._displayToUtc(selectedYear, monthIndex, 1, 0, 0, 0)
             const lastDay = new Date(selectedYear, monthIndex + 1, 0).getDate()
-            const endOfMonth = TimeUI._displayToUtc(selectedYear, monthIndex, lastDay, 23, 59, 59)
+            let endOfMonth = TimeUI._displayToUtc(selectedYear, monthIndex, lastDay, 23, 59, 59)
+            const now = new Date()
+            const nowHourFloor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0).getTime()
+            if (endOfMonth > nowHourFloor) endOfMonth = nowHourFloor
 
             TimeUI.updateTimes(startOfMonth, endOfMonth, endOfMonth)
 
@@ -478,7 +481,10 @@ const LocalTimezone = {
         TimeUI._selectDay = function (day) {
             const _disp = TimeUI._utcToDisplay(TimeUI._endTimestamp)
             const startOfDay = TimeUI._displayToUtc(_disp.year, _disp.month, day, 0, 0, 0)
-            const endOfDay = TimeUI._displayToUtc(_disp.year, _disp.month, day, 23, 59, 59)
+            let endOfDay = TimeUI._displayToUtc(_disp.year, _disp.month, day, 23, 59, 59)
+            const now = new Date()
+            const nowHourFloor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0).getTime()
+            if (endOfDay > nowHourFloor) endOfDay = nowHourFloor
 
             TimeUI.updateTimes(startOfDay, endOfDay, endOfDay)
 
@@ -492,8 +498,10 @@ const LocalTimezone = {
         TimeUI._selectHour = function (hour) {
             const _disp = TimeUI._utcToDisplay(TimeUI._endTimestamp)
             const startOfHour = TimeUI._displayToUtc(_disp.year, _disp.month, _disp.day, hour, 0, 0)
+            const now = new Date()
+            const nowHourFloor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0).getTime()
+            if (startOfHour > nowHourFloor) return
             const endOfHour = TimeUI._displayToUtc(_disp.year, _disp.month, _disp.day, hour, 59, 59)
-
 
             TimeUI.updateTimes(startOfHour, endOfHour, startOfHour)
 

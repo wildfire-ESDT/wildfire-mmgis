@@ -186,6 +186,9 @@
 }
 
 /* ── Future item in main timeline expanded rows (years/months/days/hours) ── */
+.mmgisTimeUIExpandedItem {
+    transition: opacity 0.15s;
+}
 .mmgisTimeUIExpandedItem.ftl-future-item {
     opacity: 0.3;
     pointer-events: none;
