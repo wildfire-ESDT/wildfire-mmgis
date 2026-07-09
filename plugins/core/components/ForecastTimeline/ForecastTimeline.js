@@ -40,12 +40,6 @@ const ForecastTimeline = {
     init: function (vars) {
         this.state.originMs = Date.now()
 
-        // ── Monkey-patch TimeControl.reloadTimeLayers ──
-        // Wrap the core function so layers with an active forecast stepIndex
-        // are skipped by the main timeline reload loop.  This keeps forecast
-        // step selection stable when the user scrubs the main timeline.
-        this._patchReloadTimeLayers()
-
         // ── Bottom-element repositioning ──
         // Watch #timeUI height changes (caused by _adjustTimeUIHeight adding
         // forecast card rows) and push compass / legend / scalebar up so
@@ -481,19 +475,12 @@ const ForecastTimeline = {
 
         // Sync state: prune removed, init new
         const activeNames = new Set(layers.map((l) => l.name))
-        // Clear stepIndex on removed layers so main TimeControl resumes them
         Object.keys(this.state.cards).forEach((n) => {
-            if (!activeNames.has(n)) {
-                const ld = L_.layers.data[n]
-                if (ld?.time?.forecast) delete ld.time.forecast.stepIndex
-                delete this.state.cards[n]
-            }
+            if (!activeNames.has(n)) delete this.state.cards[n]
         })
         layers.forEach(({ name, config: fc }) => {
             if (!this.state.cards[name]) {
                 this.state.cards[name] = { stepIndex: 0 }
-                // Mark on the layer data so TimeControl skips this layer
-                fc.stepIndex = 0
                 if (fc.urlTemplate) this._applyUrlTemplate(name, 1)
             }
         })
@@ -705,6 +692,21 @@ const ForecastTimeline = {
                 const max = (fc.steps || 1) - 1
                 this._setCardStep(name, fc, Math.min(max, cur + 1))
             })
+
+        const wrap = container.querySelector(`.ftl-card[data-layer="${name}"] .ftl-ticks-wrap`)
+        if (wrap) {
+            let startX = 0
+            let startY = 0
+            wrap.addEventListener('touchstart', (e) => {
+                startX = e.touches[0].clientX
+                startY = e.touches[0].clientY
+            }, { passive: true })
+            wrap.addEventListener('touchmove', (e) => {
+                const dx = Math.abs(e.touches[0].clientX - startX)
+                const dy = Math.abs(e.touches[0].clientY - startY)
+                if (dx > dy) e.stopPropagation()
+            }, { passive: true })
+        }
     },
 
     // ── Step logic ─────────────────────────────────────────
@@ -789,6 +791,16 @@ const ForecastTimeline = {
             // injecting nocache params into the stac-collection: protocol.
             const ld = L_.layers.data[name]
             if (!ld || !L_.layers.on[name]) return
+
+            if (ld.type === 'tile' && (ld.url || '').toUpperCase().startsWith('COG:')) {
+                // COG layers embed the time in the URL itself via the veloserver.
+                // TODO: when veloserver supports fxx, replace this stub with:
+                //   const fxxUrl = ld.url.replace(/(&|\?)fxx=\d+/, '') + `&fxx=${idx}`
+                //   leafletLayer._url = fxxUrl (or however the COG URL is set)
+                //   leafletLayer.refresh(null, true)
+                console.log(`[ForecastTimeline] fxx step: layer="${name}" fxx=${idx} stepMs=${new Date(stepMs).toISOString()}`)
+                return
+            }
 
             const stepIso = new Date(stepMs).toISOString()
             const startIso = new Date(stepMs - unitMs).toISOString()
@@ -876,67 +888,6 @@ const ForecastTimeline = {
             minute: '2-digit',
             timeZoneName: 'short',
         })
-    },
-
-    // ── Monkey-patch: skip forecast layers in main reload ─
-
-    _patchReloadTimeLayers: function () {
-        if (this._origReloadTimeLayers) return // already patched
-        const origReload = TimeControl.reloadTimeLayers.bind(TimeControl)
-        const origUpdate = TimeControl.updateLayersTime.bind(TimeControl)
-        this._origReloadTimeLayers = TimeControl.reloadTimeLayers
-        this._origUpdateLayersTime = TimeControl.updateLayersTime
-
-        const self = this
-
-        const suppressForecastLayers = () => {
-            const suppressed = []
-            for (const name in self.state.cards) {
-                const ld = L_.layers.data[name]
-                if (ld?.time?.enabled && ld.time.forecast?.stepIndex != null) {
-                    ld.time._ftlSuppressed = true
-                    ld.time.enabled = false
-                    suppressed.push(ld)
-                }
-            }
-            return suppressed
-        }
-
-        const restoreLayers = (suppressed) => {
-            suppressed.forEach((ld) => {
-                ld.time.enabled = true
-                delete ld.time._ftlSuppressed
-            })
-        }
-
-        TimeControl.updateLayersTime = function () {
-            const suppressed = suppressForecastLayers()
-            try {
-                return origUpdate()
-            } finally {
-                restoreLayers(suppressed)
-            }
-        }
-
-        TimeControl.reloadTimeLayers = async function () {
-            const suppressed = suppressForecastLayers()
-            try {
-                return await origReload()
-            } finally {
-                restoreLayers(suppressed)
-            }
-        }
-    },
-
-    _unpatchReloadTimeLayers: function () {
-        if (this._origReloadTimeLayers) {
-            TimeControl.reloadTimeLayers = this._origReloadTimeLayers
-            this._origReloadTimeLayers = null
-        }
-        if (this._origUpdateLayersTime) {
-            TimeControl.updateLayersTime = this._origUpdateLayersTime
-            this._origUpdateLayersTime = null
-        }
     },
 
     // ── Bottom-element repositioning ─────────────────────────
@@ -1029,11 +980,6 @@ const ForecastTimeline = {
     // ── Cleanup ────────────────────────────────────────────
 
     cleanup: function () {
-        // Clear stepIndex on all forecast layers so TimeControl resumes them
-        for (const name in this.state.cards) {
-            const ld = L_.layers.data[name]
-            if (ld?.time?.forecast) delete ld.time.forecast.stepIndex
-        }
         this.state.cards = {}
         this.state.detached = false
 
@@ -1058,8 +1004,7 @@ const ForecastTimeline = {
         document.documentElement.style.removeProperty('--ftl-detached-offset')
         document.documentElement.style.removeProperty('--ftl-sep-reserve')
 
-        // Restore original reloadTimeLayers, TimeUI navigation, and expanded rows
-        this._unpatchReloadTimeLayers()
+        // Restore TimeUI navigation and expanded rows
         this._unpatchTimeUINavigation()
         this._unpatchPopulateExpandedRows()
 

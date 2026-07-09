@@ -182,7 +182,7 @@
     padding: 6px 6px;
     font-size: 11px;
     flex: 1;
-    min-width: 0;
+    min-width: 36px;
 }
 
 /* ── Future item in main timeline expanded rows (years/months/days/hours) ── */
@@ -205,15 +205,27 @@
 /* Tick container */
 .ftl-ticks-wrap {
     flex: 1;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
     height: 100%;
     display: flex;
     align-items: center;
+    /* smooth momentum scrolling on iOS */
+    -webkit-overflow-scrolling: touch;
+    /* allow horizontal finger drag */
+    touch-action: pan-x;
+    /* hide scrollbar — navigation via prev/next or finger swipe */
+    scrollbar-width: none;
+}
+.ftl-ticks-wrap::-webkit-scrollbar {
+    display: none;
 }
 .ftl-ticks {
     display: flex;
     align-items: stretch;
-    width: 100%;
+    /* never narrower than the container — but can grow wider so ticks
+       have a readable minimum width instead of squishing to nothing */
+    min-width: 100%;
     height: 100%;
 }
 
