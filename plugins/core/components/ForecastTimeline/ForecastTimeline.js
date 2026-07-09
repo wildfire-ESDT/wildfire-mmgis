@@ -10,9 +10,9 @@
  *   { enabled: true, label: "PWWB Hourly", steps: 24, stepUnit: "hour" }
  *   { enabled: true, label: "WFPI Daily",  steps: 7,  stepUnit: "day", stepOffset: 0 }
  *
- * stepOffset (optional, default: 0):
- *   - 0: Day 1 = today (e.g. WFPI, where forecast-1 is today's forecast)
- *   - 1: Day 1 = tomorrow (e.g. some NWS models where forecast starts tomorrow)
+ * stepOffset (required — must be set explicitly in each layer's time.forecast config):
+ *   - 0: first step = model init time (e.g. WFPI day-1=today, HRRR fxx=0)
+ *   - 1: first step = init + 1 unit (e.g. PWWB hourly, where H1 = init+1h)
  */
 
 import TimeControl from '@basics/TimeControl_/TimeControl'
@@ -656,7 +656,7 @@ const ForecastTimeline = {
         const ticks = Array.from({ length: steps }, (_, i) => {
             // Steps are generated from the hour-floored base, so they already
             // land on clean boundaries — no per-tick rounding needed.
-            const offset = fc.stepOffset ?? 0
+            const offset = fc.stepOffset
             const stepDate = new Date(originBase + (i + offset) * unitMs)
 
             let clockLbl, relLbl
@@ -758,7 +758,7 @@ const ForecastTimeline = {
         const originBase = this._originBase()
 
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
-        const offset = fc.stepOffset ?? 0
+        const offset = fc.stepOffset
 
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
             el.classList.toggle('active', i === idx)
@@ -793,7 +793,7 @@ const ForecastTimeline = {
     _applyCardStep: function (name, fc, idx) {
         const unitMs = STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour
         const originMs = this._originBase()
-        const offset = fc.stepOffset ?? 0
+        const offset = fc.stepOffset
         let stepMs = originMs + (idx + offset) * unitMs
 
         // WFPI (and any daily product): always fetch at UTC midnight of the
