@@ -284,10 +284,14 @@ const ForecastTimeline = {
         // spilled upward over the compass and clipped it.
         const isExpanded = timeUI.classList.contains('expanded') ||
             timeUI.classList.contains('defaultExpanded')
-        const cardCount = this._detectForecastLayers().length
-        // Each attached forecast row is 44px (.ftl-card); +10px covers the
-        // 5px top/bottom padding inside expandedContent.
-        const extraH = (isExpanded && cardCount > 0) ? (cardCount * 44 + 10) : 0
+        const layers = this._detectForecastLayers()
+        const cardCount = layers.length
+        // Expanded cards are 44px each; collapsed cards become tabs (0px each)
+        // but add a single 28px tab row if any exist. +10px for expandedContent padding.
+        const collapsedCount = layers.filter(({ name }) => this.state.cards[name]?.collapsed).length
+        const expandedCount = cardCount - collapsedCount
+        const tabRowH = collapsedCount > 0 ? 28 : 0
+        const extraH = (isExpanded && cardCount > 0) ? (expandedCount * 44 + tabRowH + 10) : 0
         if (extraH > 0) {
             // #timeUI base expanded = 177px; #mmgisTimeUIExpandedContent base = 137px
             timeUI.style.height = (177 + extraH) + 'px'
@@ -480,7 +484,7 @@ const ForecastTimeline = {
         })
         layers.forEach(({ name, config: fc }) => {
             if (!this.state.cards[name]) {
-                this.state.cards[name] = { stepIndex: 0 }
+                this.state.cards[name] = { stepIndex: 0, collapsed: false }
                 if (fc.urlTemplate) this._applyUrlTemplate(name, 1)
             }
         })
@@ -488,14 +492,12 @@ const ForecastTimeline = {
         // Rebuild the strip in attached mode (always in DOM, shown by TimeUI expand)
         const strip = document.getElementById('ftl-strip')
         if (strip) {
-            const cardsHTML = layers.map(({ name, config: fc }) =>
-                this._buildCardHTML(name, fc, false)
-            ).join('')
-            strip.innerHTML = layers.length > 0 ? cardsHTML : ''
+            strip.innerHTML = this._buildStripHTML(layers, false)
             layers.forEach(({ name, config: fc }) => {
                 this._attachCardHandlers(name, fc, strip)
                 this._renderCardStep(name, fc, strip)
             })
+            this._attachTabHandlers(strip)
         }
         this._adjustTimeUIHeight()
 
@@ -514,14 +516,13 @@ const ForecastTimeline = {
         const container = document.getElementById('ftl-detached-cards')
         if (!container) return
 
-        container.innerHTML = layers.map(({ name, config: fc }) =>
-            this._buildCardHTML(name, fc, true)
-        ).join('')
+        container.innerHTML = this._buildStripHTML(layers, true)
 
         layers.forEach(({ name, config: fc }) => {
             this._attachCardHandlers(name, fc, container)
             this._renderCardStep(name, fc, container)
         })
+        this._attachTabHandlers(container)
 
         // Panel height depends on how many cards were just rendered — re-offset
         // the bottom elements so they clear the (possibly taller) detached panel.
@@ -624,8 +625,8 @@ const ForecastTimeline = {
                 // Label based on actual offset: offset=0 → "Today", offset=1 → "Tomorrow"
                 if (i === 0 && offset === 0) {
                     relLbl = 'Today'
-                } else if (i === 0 && offset === 1) {
-                    relLbl = 'Tomorrow'
+                // } else if (i === 0 && offset === 1) {
+                //     relLbl = 'Tomorrow'
                 } else {
                     relLbl = `+${i + offset}`
                 }
@@ -647,8 +648,11 @@ const ForecastTimeline = {
         const unitPlural = unit === 'day' ? 'days' : unit === 'week' ? 'weeks' : 'hrs'
         const forecastChipLabel = `${unitWord} / ${steps} ${unitPlural}`
 
+        const isCollapsed = this.state.cards[name]?.collapsed === true
+        const collapsedAttr = isCollapsed ? ' ftl-card-collapsed' : ''
+
         return `
-<div class="${rowClass}" data-layer="${name}">
+<div class="${rowClass}${collapsedAttr}" data-layer="${name}">
   <div class="ftl-card-header">
     <div class="ftl-card-hdr-left">
       <span class="ftl-card-forecast-title">FORECAST</span>
@@ -661,6 +665,9 @@ const ForecastTimeline = {
         <span class="ftl-card-init">${initStr}</span>
       </div>
     </div>
+    <button class="ftl-card-collapse-btn" data-layer="${name}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+      <i class="mdi ${isCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up'} mdi-18px"></i>
+    </button>
   </div>
   <div class="ftl-card-body">
     <button class="ftl-card-prev" data-layer="${name}"><i class="mdi mdi-chevron-left"></i></button>
@@ -681,6 +688,10 @@ const ForecastTimeline = {
                 this._setCardStep(name, fc, idx)
             })
         })
+        container.querySelector(`.ftl-card-collapse-btn[data-layer="${name}"]`)
+            ?.addEventListener('click', () => {
+                this._toggleCardCollapsed(name)
+            })
         container.querySelector(`.ftl-card-prev[data-layer="${name}"]`)
             ?.addEventListener('click', () => {
                 const cur = this.state.cards[name]?.stepIndex ?? 0
@@ -707,6 +718,38 @@ const ForecastTimeline = {
                 if (dx > dy) e.stopPropagation()
             }, { passive: true })
         }
+    },
+
+    _toggleCardCollapsed: function (name) {
+        if (!this.state.cards[name]) return
+        this.state.cards[name].collapsed = !this.state.cards[name].collapsed
+        this._rebuildCards()
+    },
+
+    _buildStripHTML: function (layers, large) {
+        if (layers.length === 0) return ''
+        const collapsed = layers.filter(({ name }) => this.state.cards[name]?.collapsed)
+        const expanded = layers.filter(({ name }) => !this.state.cards[name]?.collapsed)
+
+        const tabsHTML = collapsed.length > 0
+            ? `<div class="ftl-tabs-row">${collapsed.map(({ name, config: fc }) =>
+                `<button class="ftl-tab" data-layer="${name}" title="Expand ${fc.label || name}">${fc.label || name}</button>`
+              ).join('')}</div>`
+            : ''
+
+        const cardsHTML = expanded.map(({ name, config: fc }) =>
+            this._buildCardHTML(name, fc, large)
+        ).join('')
+
+        return tabsHTML + cardsHTML
+    },
+
+    _attachTabHandlers: function (container) {
+        container.querySelectorAll('.ftl-tab').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this._toggleCardCollapsed(btn.dataset.layer)
+            })
+        })
     },
 
     // ── Step logic ─────────────────────────────────────────
@@ -971,8 +1014,12 @@ const ForecastTimeline = {
 
         const isExpanded = timeUIEl.classList.contains('expanded') ||
             timeUIEl.classList.contains('defaultExpanded')
-        const cardCount = this._detectForecastLayers().length
-        const extraH = (isExpanded && cardCount > 0) ? (cardCount * 44 + 10) : 0
+        const layers2 = this._detectForecastLayers()
+        const cardCount = layers2.length
+        const collapsedCount2 = layers2.filter(({ name }) => this.state.cards[name]?.collapsed).length
+        const expandedCount2 = cardCount - collapsedCount2
+        const tabRowH2 = collapsedCount2 > 0 ? 28 : 0
+        const extraH = (isExpanded && cardCount > 0) ? (expandedCount2 * 44 + tabRowH2 + 10) : 0
 
         root.style.setProperty('--ftl-extra-bottom', extraH + 'px')
     },
