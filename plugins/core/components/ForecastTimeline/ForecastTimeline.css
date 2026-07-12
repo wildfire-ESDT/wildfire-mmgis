@@ -642,6 +642,74 @@ html.ftl-detached-mode #toolcontroller_sep_content > div[id^="toolPanelSeparated
     border-radius: 0 0 10px 10px;
 }
 
+/* ── Mobile: compact one-row cards so the (already swipeable) time cells get
+   the width. Gated on .ftl-mobile, set from L_.UserInterface_.isMobile (user-
+   agent based, like TimeUI/LegendTool). Drops the "FORECAST" word, keeps the
+   chip, truncates the layer name, hides the INITIALIZED line, and shrinks the
+   header columns/fonts. The cells keep their existing touch swipe. */
+/* On mobile the whole expanded content (this strip + the year/month/day/hour rows)
+   is one vertical scroll area — set on #mmgisTimeUIExpandedContent in JS. The strip
+   itself isn't capped here; cards keep flex-shrink:0 so they don't compress. */
+.ftl-strip.ftl-mobile .ftl-card {
+    min-height: 42px;
+    height: auto;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+.ftl-strip.ftl-mobile .ftl-card-collapse-btn {
+    width: 22px;
+    min-width: 22px;
+}
+.ftl-strip.ftl-mobile .ftl-card-hdr-left {
+    width: 74px;
+    min-width: 74px;
+    padding: 2px 3px;
+}
+.ftl-strip.ftl-mobile .ftl-card-forecast-title {
+    display: none;
+}
+.ftl-strip.ftl-mobile .ftl-card-forecast-chip {
+    font-size: 9px;
+    padding: 1px 5px;
+    white-space: nowrap;
+}
+/* Give the layer name room and let it wrap to two lines instead of clipping to "…". */
+.ftl-strip.ftl-mobile .ftl-card-hdr-right {
+    width: 104px;
+    min-width: 104px;
+    padding: 3px 5px;
+    white-space: normal;
+}
+/* Hide the prev/next step arrows on mobile — swipe the cells instead — so the
+   time buttons get that width back. */
+.ftl-strip.ftl-mobile .ftl-card-prev,
+.ftl-strip.ftl-mobile .ftl-card-next {
+    display: none;
+}
+.ftl-strip.ftl-mobile .ftl-card-init-row {
+    display: none;
+}
+.ftl-strip.ftl-mobile .ftl-card-label {
+    font-size: 11px;
+    line-height: 1.15;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+/* Smaller time-cell text on mobile */
+.ftl-strip.ftl-mobile .ftl-tick-twoline {
+    padding: 0 4px;
+}
+.ftl-strip.ftl-mobile .ftl-tick-clock {
+    font-size: 11px;
+}
+.ftl-strip.ftl-mobile .ftl-tick-rel {
+    font-size: 9px;
+}
+
 /* ── Print ── */
 @media print {
     #ftl-strip,

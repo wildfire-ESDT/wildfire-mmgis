@@ -20,6 +20,16 @@ import TimeUI from '@basics/TimeControl_/TimeUI'
 import L_ from '@basics/Layers_/Layers_'
 import './ForecastTimeline.css'
 
+// Lazy accessor for the UI store (call-time require avoids a circular import at
+// module load, since the store's dependency chain reaches TimeUI).
+function _isMobile() {
+    try {
+        return require('@basics/UserInterface_/store/uiStore').default.getState().isMobile === true
+    } catch (e) {
+        return false
+    }
+}
+
 const STEP_UNITS = {
     hour: 3600000,
     day: 86400000,
@@ -229,23 +239,26 @@ const ForecastTimeline = {
     },
 
     _waitAndInject: function () {
-        const tryInject = () => {
-            const expandedContent = document.getElementById('mmgisTimeUIExpandedContent')
-            const actionsRight = document.getElementById('mmgisTimeUIActionsRight')
-            if (expandedContent && actionsRight) {
+        // The strip only needs #mmgisTimeUIExpandedContent, which exists on both
+        // desktop and mobile. The toggle button lives in #mmgisTimeUIActionsRight,
+        // which TimeUI only renders on desktop — so gate the strip on the expanded
+        // content alone and add the toggle button only when the actions bar exists.
+        const doInject = () => {
+            if (document.getElementById('mmgisTimeUIActionsRight')) {
                 this._injectToggleButton()
-                this._injectForecastStrip()
-                this._injectDetachedPanel()
-                this._rebuildCards()
+            }
+            this._injectForecastStrip()
+            this._injectDetachedPanel()
+            this._rebuildCards()
+        }
+        const tryInject = () => {
+            if (document.getElementById('mmgisTimeUIExpandedContent')) {
+                doInject()
             } else {
                 const obs = new MutationObserver(() => {
-                    if (document.getElementById('mmgisTimeUIExpandedContent') &&
-                        document.getElementById('mmgisTimeUIActionsRight')) {
+                    if (document.getElementById('mmgisTimeUIExpandedContent')) {
                         obs.disconnect()
-                        this._injectToggleButton()
-                        this._injectForecastStrip()
-                        this._injectDetachedPanel()
-                        this._rebuildCards()
+                        doInject()
                     }
                 })
                 obs.observe(document.body, { childList: true, subtree: true })
@@ -263,6 +276,9 @@ const ForecastTimeline = {
         const strip = document.createElement('div')
         strip.id = 'ftl-strip'
         strip.className = 'ftl-strip'
+        // Compact one-row cards on mobile — use the same store flag TimeUI drives
+        // its mobile layout from, so this matches when the timeline goes mobile.
+        if (_isMobile()) strip.classList.add('ftl-mobile')
         expandedContent.prepend(strip)
 
         // Watch for timeline expand/collapse to adjust #timeUI height
@@ -277,6 +293,22 @@ const ForecastTimeline = {
         const timeUI = document.getElementById('timeUI')
         const expandedContent = document.getElementById('mmgisTimeUIExpandedContent')
         if (!timeUI || !expandedContent) return
+
+        // On mobile, don't force the desktop height math (it left dead space and
+        // shifted the compass). Instead make the whole expanded content — this
+        // forecast strip plus the year/month/day/hour rows — a single vertical
+        // scroll area capped to a portion of the screen, so the map stays visible
+        // and everything below is reachable by scrolling.
+        if (_isMobile()) {
+            timeUI.style.height = ''
+            expandedContent.style.height = ''
+            expandedContent.style.maxHeight = '52vh'
+            expandedContent.style.overflowY = 'auto'
+            expandedContent.style.overflowX = 'hidden'
+            expandedContent.style.webkitOverflowScrolling = 'touch'
+            document.documentElement.style.setProperty('--ftl-extra-bottom', '0px')
+            return
+        }
         // Match the core BottomElementPositioner, which treats both 'expanded'
         // and the initial 'defaultExpanded' marker as expanded. Checking only
         // 'expanded' here meant a default-expanded timeline never grew for the
@@ -492,6 +524,7 @@ const ForecastTimeline = {
         // Rebuild the strip in attached mode (always in DOM, shown by TimeUI expand)
         const strip = document.getElementById('ftl-strip')
         if (strip) {
+            strip.classList.toggle('ftl-mobile', _isMobile())
             strip.innerHTML = this._buildStripHTML(layers, false)
             layers.forEach(({ name, config: fc }) => {
                 this._attachCardHandlers(name, fc, strip)
