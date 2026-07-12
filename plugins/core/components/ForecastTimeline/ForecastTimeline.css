@@ -90,11 +90,13 @@
     justify-content: center;
     gap: 1px;
     padding: 3px 10px;
-    /* Clip within the header so the label / init text can't bleed into the
-       tick buttons. max-width fits the standard init string but bounds long
-       layer names / locales; anything over ellipsizes instead of spilling. */
+    /* Fixed width so every row's header is the same total width and all tick
+       tracks start at the same x, regardless of step size or init-string length.
+       Content is clipped/ellipsized within it rather than spilling into the ticks. */
     overflow: hidden;
-    max-width: 280px;
+    width: 280px;
+    min-width: 280px;
+    box-sizing: border-box;
     white-space: nowrap;
     flex-shrink: 0;
 }
@@ -146,12 +148,11 @@
     flex-shrink: 0;
     background: transparent;
     border: none;
-    border-left: 1px solid rgba(255, 180, 0, 0.2);
+    border-right: 1px solid rgba(255, 180, 0, 0.2);
     color: var(--color-a5);
     cursor: pointer;
     padding: 0;
     transition: color 0.15s, background 0.15s;
-    margin-left: auto;
 }
 .ftl-card-collapse-btn:hover {
     color: var(--color-h);

@@ -654,6 +654,9 @@ const ForecastTimeline = {
         return `
 <div class="${rowClass}${collapsedAttr}" data-layer="${name}">
   <div class="ftl-card-header">
+    <button class="ftl-card-collapse-btn" data-layer="${name}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+      <i class="mdi ${isCollapsed ? 'mdi-window-restore' : 'mdi-window-minimize'} mdi-18px"></i>
+    </button>
     <div class="ftl-card-hdr-left">
       <span class="ftl-card-forecast-title">FORECAST</span>
       <span class="ftl-card-forecast-chip">${forecastChipLabel}</span>
@@ -665,9 +668,6 @@ const ForecastTimeline = {
         <span class="ftl-card-init">${initStr}</span>
       </div>
     </div>
-    <button class="ftl-card-collapse-btn" data-layer="${name}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
-      <i class="mdi ${isCollapsed ? 'mdi-chevron-down' : 'mdi-chevron-up'} mdi-18px"></i>
-    </button>
   </div>
   <div class="ftl-card-body">
     <button class="ftl-card-prev" data-layer="${name}"><i class="mdi mdi-chevron-left"></i></button>
