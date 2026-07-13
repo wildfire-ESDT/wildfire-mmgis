@@ -690,17 +690,31 @@ const ForecastTimeline = {
     },
 
     // "Jun 30, 2026 · 2:00 PM PDT"  (hourly)  or  "Jul 7, 2026 · 12:00 AM PDT"  (daily)
-    _formatInit: function (ms, unit) {
+    _formatInit: function (ms, unit, fc) {
         const d = new Date(ms)
         if (unit === 'day') {
             // Daily products are UTC-dated (00:00Z run); label by UTC date so the
             // readout matches the tick labels and the run that's actually fetched.
-            return d.toLocaleDateString('en-US', {
+            const dateStr = d.toLocaleDateString('en-US', {
                 timeZone: 'UTC',
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
             })
+            // WFPI is special: communicate the WHOLE forecast span, not one day,
+            // so it doesn't read like a single-day range. The 7 daily steps run
+            // from the 00:00Z run (5 PM PDT) across 7 days, so the span is
+            // "Jul 12 5 PM – Jul 19 5 PM PDT" — start to start-plus-N-days.
+            if (/wfpi/i.test(fc?.label || '')) {
+                const steps = fc.steps || 7
+                const dOpts = { timeZone: PDT_TZ, month: 'short', day: 'numeric' }
+                const tOpts = { timeZone: PDT_TZ, hour: 'numeric', hour12: true }
+                const endD = new Date(ms + steps * STEP_UNITS.day)
+                const start = `${d.toLocaleDateString('en-US', dOpts)} ${d.toLocaleTimeString('en-US', tOpts)}`
+                const end = `${endD.toLocaleDateString('en-US', dOpts)} ${endD.toLocaleTimeString('en-US', { ...tOpts, timeZoneName: 'short' })}`
+                return `${start} – ${end}`
+            }
+            return dateStr
         }
         const dateStr = d.toLocaleDateString('en-US', {
             timeZone: PDT_TZ,
@@ -718,6 +732,45 @@ const ForecastTimeline = {
         return `${dateStr} · ${timeStr}`
     },
 
+    // Two-line label for a single forecast tick. Shared by the initial build and
+    // the per-step refresh so both paths always agree.
+    //   - hourly:        clock = "9 AM"    rel = "h1"
+    //   - daily (step N): clock = "May 13" rel = "+N"  (first step = "+0")
+    // The daily valid window (5 PM–5 PM PDT) lives on the INITIALIZED line, not
+    // the step, so every step stays compact and uniform — see _formatInit.
+    _tickLabels: function (fc, i, originBase) {
+        const unit = fc.stepUnit || 'hour'
+        const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
+        const offset = fc.stepOffset
+        const stepDate = new Date(originBase + (i + offset) * unitMs)
+
+        if (unit === 'day') {
+            const dOpts = { timeZone: 'UTC', month: 'short', day: 'numeric' }
+            // WFPI first step only: show the day's window as prev–curr (e.g.
+            // "Jul 12–13"). Every other step (and every other daily product)
+            // shows a single date.
+            if (i === 0 && /wfpi/i.test(fc?.label || '')) {
+                const prevD = new Date(originBase + (i + offset - 1) * unitMs)
+                const sameMonth =
+                    prevD.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short' }) ===
+                    stepDate.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short' })
+                const clock = sameMonth
+                    ? `${prevD.toLocaleDateString('en-US', dOpts)}–${stepDate.toLocaleDateString('en-US', { timeZone: 'UTC', day: 'numeric' })}`
+                    : `${prevD.toLocaleDateString('en-US', dOpts)} – ${stepDate.toLocaleDateString('en-US', dOpts)}`
+                return { clock, rel: `+${i + offset}` }
+            }
+            const clock = stepDate.toLocaleString('en-US', dOpts)
+            return { clock, rel: `+${i + offset}` }
+        }
+
+        const clock = stepDate.toLocaleString('en-US', {
+            timeZone: PDT_TZ,
+            hour: 'numeric',
+            hour12: true,
+        })
+        return { clock, rel: `h${i + offset}` }
+    },
+
     // ── Card HTML ──────────────────────────────────────────
 
     _buildCardHTML: function (name, fc, large) {
@@ -725,8 +778,7 @@ const ForecastTimeline = {
         const unit = fc.stepUnit || 'hour'
         const label = fc.label || name
         const originBase = this._forecastBase(fc)
-        const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
-        const initStr = this._formatInit(originBase, unit)
+        const initStr = this._formatInit(originBase, unit, fc)
 
         // Info icon only when the layer configures a description — no description,
         // no button (there'd be nothing to show).
@@ -739,36 +791,14 @@ const ForecastTimeline = {
         const ticks = Array.from({ length: steps }, (_, i) => {
             // Steps are generated from the hour-floored base, so they already
             // land on clean boundaries — no per-tick rounding needed.
-            const offset = fc.stepOffset
-            const stepDate = new Date(originBase + (i + offset) * unitMs)
-
-            let clockLbl, relLbl
-            if (unit === 'day') {
-                clockLbl = stepDate.toLocaleString('en-US', {
-                    timeZone: 'UTC',
-                    month: 'short',
-                    day: 'numeric',
-                })
-                // Label based on actual offset: offset=0 → "Today", offset=1 → "Tomorrow"
-                if (i === 0 && offset === 0) {
-                    relLbl = 'Today'
-                // } else if (i === 0 && offset === 1) {
-                //     relLbl = 'Tomorrow'
-                } else {
-                    relLbl = `+${i + offset}`
-                }
-            } else {
-                clockLbl = stepDate.toLocaleString('en-US', {
-                    timeZone: PDT_TZ,
-                    hour: 'numeric',
-                    hour12: true,
-                })
-                relLbl = `h${i + offset}`
-            }
-            return `<div class="${tickClass} ftl-tick-twoline" data-layer="${name}" data-step="${i}"><span class="ftl-tick-clock">${clockLbl}</span><span class="ftl-tick-rel">${relLbl}</span></div>`
+            const { clock, rel } = this._tickLabels(fc, i, originBase)
+            return `<div class="${tickClass} ftl-tick-twoline" data-layer="${name}" data-step="${i}"><span class="ftl-tick-clock">${clock}</span><span class="ftl-tick-rel">${rel}</span></div>`
         }).join('')
 
         const rowClass = large ? 'ftl-card ftl-card-large' : 'ftl-card'
+        // Daily cards use fixed-width steps (see CSS) so a 1-step daily card stays
+        // one step wide instead of stretching a lone tick across the whole track.
+        const dailyClass = unit === 'day' ? ' ftl-card-daily' : ''
         const ticksWrapClass = large ? 'ftl-ticks-wrap' : 'ftl-ticks-wrap mmgisTimeUIExpandedRowContainer'
 
         const unitWord = unit === 'day' ? 'daily' : unit === 'week' ? 'weekly' : 'hourly'
@@ -784,7 +814,7 @@ const ForecastTimeline = {
         const collapsedAttr = isCollapsed ? ' ftl-card-collapsed' : ''
 
         return `
-<div class="${rowClass}${collapsedAttr}" data-layer="${name}">
+<div class="${rowClass}${dailyClass}${collapsedAttr}" data-layer="${name}">
   <div class="ftl-card-header">
     <button class="ftl-card-collapse-btn" data-layer="${name}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
       <i class="mdi ${isCollapsed ? 'mdi-window-restore' : 'mdi-window-minimize'} mdi-18px"></i>
@@ -852,6 +882,18 @@ const ForecastTimeline = {
                 const dy = Math.abs(e.touches[0].clientY - startY)
                 if (dx > dy) e.stopPropagation()
             }, { passive: true })
+
+            // Override the default: a plain vertical mouse wheel scrolls the
+            // forecast track horizontally (no Shift needed). Only when there's
+            // actually overflow to scroll, so the page still scrolls otherwise.
+            wrap.addEventListener('wheel', (e) => {
+                if (wrap.scrollWidth <= wrap.clientWidth) return
+                // Use whichever axis the wheel/trackpad reports the larger delta on.
+                const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+                if (delta === 0) return
+                e.preventDefault()
+                wrap.scrollLeft += delta
+            }, { passive: false })
         }
 
         // One hover / tap affordance: the info icon (present only when the layer
@@ -979,37 +1021,37 @@ const ForecastTimeline = {
         const unit = fc.stepUnit || 'hour'
         const originBase = this._forecastBase(fc)
 
-        const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
-        const offset = fc.stepOffset
-
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
             el.classList.toggle('active', i === idx)
-            const stepDate = new Date(originBase + (i + offset) * unitMs)
-
+            // Re-derive both lines from the shared helper so the daily step-0
+            // window ("5 PM PDT to 5 PM PDT") tracks the origin as the timeline
+            // selection moves, not just the clock line.
+            const { clock, rel } = this._tickLabels(fc, i, originBase)
             const clockEl = el.querySelector('.ftl-tick-clock')
-            if (clockEl) {
-                clockEl.textContent =
-                    unit === 'day'
-                        ? stepDate.toLocaleString('en-US', {
-                              timeZone: 'UTC',
-                              month: 'short',
-                              day: 'numeric',
-                          })
-                        : stepDate.toLocaleString('en-US', {
-                              timeZone: PDT_TZ,
-                              hour: 'numeric',
-                              hour12: true,
-                          })
-            }
+            if (clockEl) clockEl.textContent = clock
+            const relEl = el.querySelector('.ftl-tick-rel')
+            if (relEl) relEl.textContent = rel
         })
 
         // Keep the "MODEL INITIALIZED AT" readout in sync as the origin tracks
         // the main timeline selection.
         const initEl = card.querySelector('.ftl-card-init')
-        if (initEl) initEl.textContent = this._formatInit(originBase, unit)
+        if (initEl) initEl.textContent = this._formatInit(originBase, unit, fc)
 
         card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', idx === 0)
         card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', idx === steps - 1)
+
+        // Ticks are fixed width and the track scrolls horizontally, so keep the
+        // active step in view when it's stepped past the visible edge (only
+        // nudges the track's own scrollLeft — never the page).
+        const activeEl = card.querySelector('.ftl-tick.active')
+        const wrap = card.querySelector('.ftl-ticks-wrap')
+        if (activeEl && wrap) {
+            const a = activeEl.getBoundingClientRect()
+            const w = wrap.getBoundingClientRect()
+            if (a.left < w.left) wrap.scrollLeft -= w.left - a.left
+            else if (a.right > w.right) wrap.scrollLeft += a.right - w.right
+        }
     },
 
     _applyCardStep: function (name, fc, idx) {

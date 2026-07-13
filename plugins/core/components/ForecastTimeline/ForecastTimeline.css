@@ -309,12 +309,16 @@
     cursor: default;
 }
 
-/* ── Forecast card ticks: override TimeUI's generous padding so all steps fit ── */
+/* ── Forecast card ticks ──
+   Every step — hourly, daily, whatever — is the SAME fixed width so all cards
+   line up. Tracks with more steps than fit (24h, 48h) overflow and scroll
+   horizontally (.ftl-ticks-wrap) rather than squishing steps to fit. */
 .ftl-card .mmgisTimeUIExpandedItem {
     padding: 6px 6px;
     font-size: 11px;
-    flex: 1;
-    min-width: 30px;
+    flex: 0 0 58px;
+    min-width: 58px;
+    box-sizing: border-box;
 }
 
 /* ── Future item in main timeline expanded rows (years/months/days/hours) ── */
@@ -359,6 +363,12 @@
        have a readable minimum width instead of squishing to nothing */
     min-width: 100%;
     height: 100%;
+}
+
+/* Daily cards left-align their (few) fixed-width steps instead of stretching a
+   lone step across the whole track. */
+.ftl-card-daily .ftl-ticks {
+    min-width: 0;
 }
 
 /* Individual tick — override mmgisTimeUIExpandedItem for active/hover states */
@@ -409,7 +419,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 10px;
+    padding: 0 6px;
     opacity: 1;
 }
 #ftl-strip .mmgisTimeUIExpandedItem:hover {
@@ -427,7 +437,9 @@
 
 /* Ticks in detached mode — full standalone styling (no mmgisTimeUIExpandedItem base) */
 .ftl-tick-large {
-    flex: 1;
+    flex: 0 0 58px;
+    min-width: 58px;
+    box-sizing: border-box;
     height: 100%;
     display: flex;
     align-items: center;
