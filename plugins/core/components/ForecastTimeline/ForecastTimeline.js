@@ -7,12 +7,24 @@
  *   date+hour picker and expanded forecast card rows.
  *
  * Layer config: time.forecast block with:
- *   { enabled: true, label: "PWWB Hourly", steps: 24, stepUnit: "hour" }
- *   { enabled: true, label: "WFPI Daily",  steps: 7,  stepUnit: "day", stepOffset: 0 }
+ *   { enabled: true, label: "PWWB Hourly", steps: 24, stepUnit: "hour", stepOffset: 1,
+ *     description: "..." }
+ *   { enabled: true, label: "WFPI Daily",  steps: 7,  stepUnit: "day",  stepOffset: 0,
+ *     runHourUTC: 0, description: "..." }
  *
  * stepOffset (required — must be set explicitly in each layer's time.forecast config):
  *   - 0: first step = model init time (e.g. WFPI day-1=today, HRRR fxx=0)
- *   - 1: first step = init + 1 unit (e.g. PWWB hourly, where H1 = init+1h)
+ *   - 1: first step = init + 1 unit (e.g. PWWB hourly, where H1 = init+1h; a
+ *        next-day-only product is steps:1 + stepOffset:1)
+ *
+ * description (optional): plain-language text shown in the info-icon tooltip —
+ *   explain how the product is generated and how far out it forecasts. Authored
+ *   per layer; when omitted, the info icon is not shown at all.
+ *
+ * runHourUTC (daily products, optional; default 0): the UTC hour the model runs.
+ *   Daily steps anchor to the latest run at or before the selected time (fixes the
+ *   boundary where a PDT calendar date lagged the actual UTC run). WFPI runs at
+ *   00:00 UTC (5 PM PDT) → runHourUTC: 0. Set it to each product's real run hour.
  */
 
 import TimeControl from '@basics/TimeControl_/TimeControl'
@@ -82,6 +94,16 @@ const ForecastTimeline = {
         L_.subscribeOnLayerToggle('forecastTimeline', () =>
             this._rebuildCards()
         )
+
+        // Dismiss any open info tooltip on an outside click. The tip anchors
+        // stopPropagation their own clicks, so this only fires for interactions
+        // elsewhere (including tapping a time tick), which is the desired behavior.
+        if (!this._tipDismissHandler) {
+            this._tipDismissHandler = (e) => {
+                if (!e.target.closest('.ftl-has-tip')) this._hideTip()
+            }
+            document.addEventListener('click', this._tipDismissHandler)
+        }
 
         // Initial Next button state (after TimeUI DOM is ready)
         setTimeout(() => this._updateNextButtonState(), 1000)
@@ -580,6 +602,23 @@ const ForecastTimeline = {
         })
     },
 
+    // True when any visible card's rendered tick count no longer matches its
+    // effective step count — e.g. an HRRR COG card that just crossed into (or out
+    // of) a 00/06/12/18z run, so its range jumped between F18 and F48. _renderCardStep
+    // only updates existing ticks, so a mismatch means we must rebuild the tick DOM.
+    _stepCountsStale: function () {
+        const container = this.state.detached
+            ? document.getElementById('ftl-detached-cards')
+            : document.getElementById('ftl-strip')
+        if (!container) return false
+        return this._detectForecastLayers().some(({ name, config: fc }) => {
+            const card = container.querySelector(`.ftl-card[data-layer="${name}"]`)
+            // Collapsed cards render as tabs (no ticks) — skip; they rebuild on expand.
+            if (!card) return false
+            return card.querySelectorAll('.ftl-tick').length !== this._effectiveSteps(fc, name)
+        })
+    },
+
     _reapplyAllSteps: function () {
         if (this._reapplying) return
         this._reapplying = true
@@ -600,6 +639,26 @@ const ForecastTimeline = {
         const d = new Date(this.state.originMs || Date.now())
         d.setMinutes(0, 0, 0)
         return d.getTime()
+    },
+
+    // The instant a forecast's steps are generated from.
+    //  - Hourly / COG products anchor to the hour-floored selected time.
+    //  - Daily products (e.g. WFPI) anchor to the latest model run at or before
+    //    the selected time. Runs land at runHourUTC:00 UTC each day (WFPI = 00:00Z,
+    //    published ~5 PM PDT). Anchoring by the UTC run — instead of 00:00Z of the
+    //    *PDT* calendar date — fixes the 5 PM PDT boundary bug, where the PDT date
+    //    still pointed at yesterday's run for the 7 hours after the new run was out.
+    _forecastBase: function (fc) {
+        const base = this._originBase()
+        if ((fc?.stepUnit || 'hour') !== 'day') return base
+        const runHourUTC = Number.isFinite(fc.runHourUTC) ? fc.runHourUTC : 0
+        const d = new Date(base)
+        const runToday = Date.UTC(
+            d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(),
+            runHourUTC, 0, 0, 0
+        )
+        // Latest run <= selected time: today's UTC run if it has occurred, else yesterday's.
+        return runToday <= base ? runToday : runToday - STEP_UNITS.day
     },
 
     // Number of steps the card should offer. HRRR COG (veloserver fxx) layers
@@ -633,15 +692,22 @@ const ForecastTimeline = {
     // "Jun 30, 2026 · 2:00 PM PDT"  (hourly)  or  "Jul 7, 2026 · 12:00 AM PDT"  (daily)
     _formatInit: function (ms, unit) {
         const d = new Date(ms)
+        if (unit === 'day') {
+            // Daily products are UTC-dated (00:00Z run); label by UTC date so the
+            // readout matches the tick labels and the run that's actually fetched.
+            return d.toLocaleDateString('en-US', {
+                timeZone: 'UTC',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+            })
+        }
         const dateStr = d.toLocaleDateString('en-US', {
             timeZone: PDT_TZ,
             month: 'short',
             day: 'numeric',
             year: 'numeric',
         })
-        if (unit === 'day') {
-            return dateStr
-        }
         const timeStr = d.toLocaleTimeString('en-US', {
             timeZone: PDT_TZ,
             hour: 'numeric',
@@ -658,9 +724,15 @@ const ForecastTimeline = {
         const steps = this._effectiveSteps(fc, name)
         const unit = fc.stepUnit || 'hour'
         const label = fc.label || name
-        const originBase = this._originBase()
+        const originBase = this._forecastBase(fc)
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
         const initStr = this._formatInit(originBase, unit)
+
+        // Info icon only when the layer configures a description — no description,
+        // no button (there'd be nothing to show).
+        const infoBtnHTML = fc.description
+            ? `<button class="ftl-card-info-btn" data-layer="${name}" type="button" aria-label="Forecast details"><i class="mdi mdi-information-outline"></i></button>`
+            : ''
 
         // Use native TimeUI classes in attached mode so rows blend in perfectly
         const tickClass = large ? 'ftl-tick ftl-tick-large' : 'ftl-tick mmgisTimeUIExpandedItem'
@@ -673,7 +745,7 @@ const ForecastTimeline = {
             let clockLbl, relLbl
             if (unit === 'day') {
                 clockLbl = stepDate.toLocaleString('en-US', {
-                    timeZone: PDT_TZ,
+                    timeZone: 'UTC',
                     month: 'short',
                     day: 'numeric',
                 })
@@ -701,7 +773,12 @@ const ForecastTimeline = {
 
         const unitWord = unit === 'day' ? 'daily' : unit === 'week' ? 'weekly' : 'hourly'
         const unitPlural = unit === 'day' ? 'days' : unit === 'week' ? 'weeks' : 'hrs'
-        const forecastChipLabel = `${unitWord} / ${steps} ${unitPlural}`
+        // Hourly tracks label by max lead time (last tick's hour), so HRRR's
+        // H0..H18 reads "18 hrs" not "19". Daily/weekly label by the step count.
+        const span = unit === 'day' || unit === 'week'
+            ? steps
+            : (steps - 1) + (fc.stepOffset || 0)
+        const forecastChipLabel = `${unitWord} / ${span} ${unitPlural}`
 
         const isCollapsed = this.state.cards[name]?.collapsed === true
         const collapsedAttr = isCollapsed ? ' ftl-card-collapsed' : ''
@@ -717,7 +794,10 @@ const ForecastTimeline = {
       <span class="ftl-card-forecast-chip">${forecastChipLabel}</span>
     </div>
     <div class="ftl-card-hdr-right">
-      <span class="ftl-card-label">${label}</span>
+      <div class="ftl-card-label-row">
+        <span class="ftl-card-label">${label}</span>
+        ${infoBtnHTML}
+      </div>
       <div class="ftl-card-init-row">
         <span class="ftl-card-init-caption">INITIALIZED:</span>
         <span class="ftl-card-init">${initStr}</span>
@@ -772,6 +852,74 @@ const ForecastTimeline = {
                 const dy = Math.abs(e.touches[0].clientY - startY)
                 if (dx > dy) e.stopPropagation()
             }, { passive: true })
+        }
+
+        // One hover / tap affordance: the info icon (present only when the layer
+        // configures time.forecast.description). It works on desktop (hover) and
+        // mobile (tap), showing that plain-language description — how the forecast
+        // is generated and how far out it goes. Tapping elsewhere dismisses it.
+        const infoBtn = container.querySelector(`.ftl-card-info-btn[data-layer="${name}"]`)
+        if (infoBtn && fc.description) {
+            const label = fc.label || name
+            this._bindTip(
+                infoBtn,
+                `<div class="ftl-tip-title">${label}</div>` +
+                `<div class="ftl-tip-body">${fc.description}</div>`
+            )
+        }
+    },
+
+    // ── Floating tooltip (shared #ftl-tooltip appended to <body>) ──────────
+
+    _ensureTooltip: function () {
+        let tip = document.getElementById('ftl-tooltip')
+        if (!tip) {
+            tip = document.createElement('div')
+            tip.id = 'ftl-tooltip'
+            tip.className = 'ftl-tooltip ftl-hidden'
+            document.body.appendChild(tip)
+        }
+        return tip
+    },
+
+    _bindTip: function (el, html) {
+        if (!el || !html) return
+        el.classList.add('ftl-has-tip')
+        el.addEventListener('mouseenter', () => this._showTip(el, html))
+        el.addEventListener('mouseleave', () => this._hideTip())
+        el.addEventListener('click', (e) => {
+            // Toggle on tap (mobile) without letting the click bubble to the
+            // document-level dismiss handler that would immediately re-hide it.
+            e.stopPropagation()
+            const tip = document.getElementById('ftl-tooltip')
+            const openHere = tip && !tip.classList.contains('ftl-hidden') && tip._ftlAnchor === el
+            if (openHere) this._hideTip()
+            else this._showTip(el, html)
+        })
+    },
+
+    _showTip: function (anchorEl, html) {
+        const tip = this._ensureTooltip()
+        tip.innerHTML = html
+        tip._ftlAnchor = anchorEl
+        tip.classList.remove('ftl-hidden')
+        // Measure after content is set, then place above the anchor (flip below
+        // if there isn't room), clamped to the viewport.
+        const a = anchorEl.getBoundingClientRect()
+        const t = tip.getBoundingClientRect()
+        let left = a.left + a.width / 2 - t.width / 2
+        left = Math.max(8, Math.min(left, window.innerWidth - t.width - 8))
+        let top = a.top - t.height - 10
+        if (top < 8) top = a.bottom + 10
+        tip.style.left = Math.round(left) + 'px'
+        tip.style.top = Math.round(top) + 'px'
+    },
+
+    _hideTip: function () {
+        const tip = document.getElementById('ftl-tooltip')
+        if (tip) {
+            tip.classList.add('ftl-hidden')
+            tip._ftlAnchor = null
         }
     },
 
@@ -829,7 +977,7 @@ const ForecastTimeline = {
             if (this.state.cards[name]) this.state.cards[name].stepIndex = idx
         }
         const unit = fc.stepUnit || 'hour'
-        const originBase = this._originBase()
+        const originBase = this._forecastBase(fc)
 
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
         const offset = fc.stepOffset
@@ -843,7 +991,7 @@ const ForecastTimeline = {
                 clockEl.textContent =
                     unit === 'day'
                         ? stepDate.toLocaleString('en-US', {
-                              timeZone: PDT_TZ,
+                              timeZone: 'UTC',
                               month: 'short',
                               day: 'numeric',
                           })
@@ -869,17 +1017,15 @@ const ForecastTimeline = {
         // for COG layers), so a stale index never requests an unavailable hour.
         idx = Math.max(0, Math.min(idx, this._effectiveSteps(fc, name) - 1))
         const unitMs = STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour
-        const originMs = this._originBase()
+        const originMs = this._forecastBase(fc)
         const offset = fc.stepOffset
         let stepMs = originMs + (idx + offset) * unitMs
 
-        // WFPI (and any daily product): always fetch at UTC midnight of the
-        // PDT calendar date so requests align with the model init time (00:00Z)
-        // regardless of what hour the global timeline shows.
-        if (fc.stepUnit === 'day') {
-            const stepDatePDT = new Date(stepMs).toLocaleDateString('en-CA', { timeZone: PDT_TZ })
-            stepMs = new Date(`${stepDatePDT}T00:00:00Z`).getTime()
-        }
+        // Daily products (WFPI) are already anchored to the UTC model run by
+        // _forecastBase, so stepMs lands on 00:00Z of the target day — no PDT
+        // re-snap needed. The old snap to 00:00Z of the *PDT* calendar date is
+        // exactly what broke at the 5 PM PDT boundary (the new 00Z run was out,
+        // but the PDT date still pointed at yesterday's run for 7 hours).
 
         // Mark stepIndex on the layer data so the main TimeControl loop
         // (setTime → reloadAllLayers) skips this layer while a forecast
@@ -982,7 +1128,14 @@ const ForecastTimeline = {
         if (timeData?.currentTime) {
             this.state.originMs = new Date(timeData.currentTime).getTime()
             if (this.state.detached) this._updatePickerDisplay()
-            this._refreshAllCards()
+            // If a card's tick count changed (e.g. HRRR crossed a 00/06/12/18z
+            // boundary, F18↔F48), rebuild so the new ticks appear immediately;
+            // otherwise just refresh the existing ticks in place.
+            if (this._stepCountsStale()) {
+                this._rebuildCards()
+            } else {
+                this._refreshAllCards()
+            }
             this._reapplyAllSteps()
             this._updateNextButtonState()
         }
@@ -1145,9 +1298,15 @@ const ForecastTimeline = {
         if (TimeControl?.unsubscribe) TimeControl.unsubscribe('forecastTimeline')
         L_.unsubscribeOnLayerToggle('forecastTimeline')
 
+        if (this._tipDismissHandler) {
+            document.removeEventListener('click', this._tipDismissHandler)
+            this._tipDismissHandler = null
+        }
+
         document.getElementById('ftl-strip')?.remove()
         document.getElementById('ftl-toggle-btn')?.remove()
         document.getElementById('ftl-detached')?.remove()
+        document.getElementById('ftl-tooltip')?.remove()
     },
 }
 

@@ -137,6 +137,70 @@
     overflow: visible;
 }
 
+/* Layer name + info icon share one row inside the header-right column */
+.ftl-card-label-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    overflow: hidden;
+}
+.ftl-card-label-row .ftl-card-label {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.ftl-card-info-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-a6);
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.15s;
+}
+.ftl-card-info-btn:hover {
+    color: var(--color-h);
+}
+.ftl-card-info-btn .mdi {
+    font-size: 15px;
+    line-height: 1;
+}
+
+/* Shared floating tooltip — positioned via JS, appended to <body> */
+.ftl-tooltip {
+    position: fixed;
+    z-index: 100000;
+    max-width: 280px;
+    padding: 8px 10px;
+    background: rgba(12, 13, 13, 0.98);
+    border: 1px solid var(--color-h);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+    color: var(--color-f);
+    font-family: 'roboto', sans-serif;
+    font-size: 12px;
+    line-height: 1.4;
+    pointer-events: none;
+}
+.ftl-tip-title {
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-h);
+    margin-bottom: 3px;
+    white-space: nowrap;
+}
+.ftl-tip-body {
+    color: var(--color-f);
+}
+
 /* Collapse toggle button in card header */
 .ftl-card-collapse-btn {
     display: flex;
@@ -250,7 +314,7 @@
     padding: 6px 6px;
     font-size: 11px;
     flex: 1;
-    min-width: 36px;
+    min-width: 30px;
 }
 
 /* ── Future item in main timeline expanded rows (years/months/days/hours) ── */
@@ -309,13 +373,13 @@
     align-items: center !important;
     justify-content: center !important;
     gap: 1px;
-    padding: 0 6px;
+    padding: 0 3px;
     text-align: center;
 }
 .ftl-tick-clock {
     display: block;
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 600;
     white-space: nowrap;
     line-height: 1;
     color: var(--color-f);
