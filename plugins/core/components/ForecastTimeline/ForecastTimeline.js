@@ -869,12 +869,26 @@ const ForecastTimeline = {
             if (!ld || !L_.layers.on[name]) return
 
             if (ld.type === 'tile' && (ld.url || '').toUpperCase().startsWith('COG:')) {
-                // COG layers embed the time in the URL itself via the veloserver.
-                // TODO: when veloserver supports fxx, replace this stub with:
-                //   const fxxUrl = ld.url.replace(/(&|\?)fxx=\d+/, '') + `&fxx=${idx}`
-                //   leafletLayer._url = fxxUrl (or however the COG URL is set)
-                //   leafletLayer.refresh(null, true)
-                console.log(`[ForecastTimeline] fxx step: layer="${name}" fxx=${idx} stepMs=${new Date(stepMs).toISOString()}`)
+                // COG layers carry the forecast hour as a ?fxx=N query param on the
+                // veloserver source URL (kept a query so the URL still ends in
+                // .tif/.tiff — GDAL's CPL_VSIL_CURL_ALLOWED_EXTENSIONS gate strips
+                // the query before checking the extension). step 0 -> fxx=0 (the
+                // analysis); {time} stays a live token substituted per tile.
+                //
+                // The source URL (with its ?fxx=) is embedded raw in the leaflet
+                // layer's _url (the titiler '/cog/tiles/...?url=<source>' template,
+                // see Map_.js). reloadLayer/performTimeUrlReplacements do NOT rebuild
+                // that _url, so we swap fxx directly on _url and force a refetch.
+                const setFxx = (u) =>
+                    /[?&]fxx=/i.test(u)
+                        ? u.replace(/([?&]fxx=)[^&]*/i, `$1${idx}`)
+                        : `${u}${u.indexOf('?') === -1 ? '?' : '&'}fxx=${idx}`
+                // Keep ld.url in sync so a full rebuild later starts from the right fxx.
+                ld.url = setFxx(ld.url)
+                const leafletLayer = L_.layers.layer[name]
+                if (leafletLayer && typeof leafletLayer._url === 'string') {
+                    leafletLayer.refresh(setFxx(leafletLayer._url), true)
+                }
                 return
             }
 
