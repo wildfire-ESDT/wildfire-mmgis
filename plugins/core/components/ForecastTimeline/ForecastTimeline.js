@@ -37,6 +37,13 @@ const STEP_UNITS = {
 
 const PDT_TZ = 'America/Los_Angeles'
 
+// HRRR forecast hours: every run reaches F18, but the runs started at 00/06/12/18
+// UTC reach F48. fxx == step index, so a COG card offers (max fxx + 1) steps.
+const HRRR_FXX_MAX = 18
+const HRRR_FXX_MAX_EXTENDED = 48
+// The four init hours (UTC) whose runs go all the way to F48.
+const HRRR_EXTENDED_INIT_HOURS = [0, 6, 12, 18]
+
 const ForecastTimeline = {
     // ── State ──────────────────────────────────────────────
     state: {
@@ -595,6 +602,21 @@ const ForecastTimeline = {
         return d.getTime()
     },
 
+    // Number of steps the card should offer. HRRR COG (veloserver fxx) layers
+    // know their own range from the init time -- every run reaches F18, but runs
+    // started at 00/06/12/18 UTC reach F48 -- so no per-layer config. Other
+    // forecast layers (WFPI daily, PWWB hourly) use their configured fc.steps.
+    // The init-hour check is on the selected instant's UTC hour, so it's correct
+    // whatever the PDT display shows (and DST-safe).
+    _effectiveSteps: function (fc, name) {
+        const ld = name ? L_.layers.data[name] : null
+        const isCogFxx = !!ld && (ld.url || '').toUpperCase().startsWith('COG:')
+        if (!isCogFxx) return fc.steps || 1
+        const initHourUTC = new Date(this._originBase()).getUTCHours()
+        const isExtendedRun = HRRR_EXTENDED_INIT_HOURS.includes(initHourUTC)
+        return (isExtendedRun ? HRRR_FXX_MAX_EXTENDED : HRRR_FXX_MAX) + 1
+    },
+
     // Per-layer configurable step label. time.forecast.stepLabel wins;
     // otherwise derived from stepSize (default 1) + stepUnit ("hour"/"day").
     _stepLabel: function (fc) {
@@ -633,7 +655,7 @@ const ForecastTimeline = {
     // ── Card HTML ──────────────────────────────────────────
 
     _buildCardHTML: function (name, fc, large) {
-        const steps = fc.steps || 1
+        const steps = this._effectiveSteps(fc, name)
         const unit = fc.stepUnit || 'hour'
         const label = fc.label || name
         const originBase = this._originBase()
@@ -733,7 +755,7 @@ const ForecastTimeline = {
         container.querySelector(`.ftl-card-next[data-layer="${name}"]`)
             ?.addEventListener('click', () => {
                 const cur = this.state.cards[name]?.stepIndex ?? 0
-                const max = (fc.steps || 1) - 1
+                const max = this._effectiveSteps(fc, name) - 1
                 this._setCardStep(name, fc, Math.min(max, cur + 1))
             })
 
@@ -798,8 +820,14 @@ const ForecastTimeline = {
         const card = container?.querySelector(`.ftl-card[data-layer="${name}"]`)
         if (!card) return
 
-        const idx = this.state.cards[name]?.stepIndex ?? 0
-        const steps = fc.steps || 1
+        const steps = this._effectiveSteps(fc, name)
+        // Clamp a stored step past the new max (e.g. init moved off a 00/06/12/18z
+        // run, so 48 steps drop back to 18) so no out-of-range fxx is requested.
+        let idx = this.state.cards[name]?.stepIndex ?? 0
+        if (idx > steps - 1) {
+            idx = steps - 1
+            if (this.state.cards[name]) this.state.cards[name].stepIndex = idx
+        }
         const unit = fc.stepUnit || 'hour'
         const originBase = this._originBase()
 
@@ -837,6 +865,9 @@ const ForecastTimeline = {
     },
 
     _applyCardStep: function (name, fc, idx) {
+        // Guard the forecast hour to the range this init time offers (fxx == idx
+        // for COG layers), so a stale index never requests an unavailable hour.
+        idx = Math.max(0, Math.min(idx, this._effectiveSteps(fc, name) - 1))
         const unitMs = STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour
         const originMs = this._originBase()
         const offset = fc.stepOffset
