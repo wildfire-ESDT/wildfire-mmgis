@@ -85,15 +85,29 @@ const ForecastTimeline = {
         // Patch TimeUI navigation to prevent stepping past wall-clock "now"
         this._patchTimeUINavigation()
 
+        // Show a forecast card as soon as its layer is toggled on, without
+        // waiting for the layer's data to load (see _patchToggleLayer).
+        this._optimisticOn = new Set()
+        this._toggleTick = {}
+        this._patchToggleLayer()
+
         if (TimeControl.subscribe) {
             TimeControl.subscribe('forecastTimeline', (td) =>
                 this._onTimeChange(td)
             )
         }
 
-        L_.subscribeOnLayerToggle('forecastTimeline', () =>
+        L_.subscribeOnLayerToggle('forecastTimeline', (name, isNowOn) => {
+            // Once a layer has settled ON, drop its optimistic override (real
+            // state covers it). Do NOT drop on an OFF here -- a reload's brief
+            // off-then-on would otherwise prune the card mid-refresh.
+            if (name && isNowOn === true && this._optimisticOn)
+                this._optimisticOn.delete(name)
+            // A step-driven fallback reload toggles the layer; skip the rebuild
+            // then so it doesn't reset the card's step back to fxx=0.
+            if (this._reloadingLayer) return
             this._rebuildCards()
-        )
+        })
 
         // Dismiss any open info tooltip on an outside click. The tip anchors
         // stopPropagation their own clicks, so this only fires for interactions
@@ -226,6 +240,51 @@ const ForecastTimeline = {
         if (this._origLoopTime) {
             TimeUI._loopTime = this._origLoopTime
             this._origLoopTime = null
+        }
+    },
+
+    // Core's L_.toggleLayer notifies its toggle subscribers only AFTER awaiting
+    // the layer build. A velocity layer's build is a full grib fetch, so a
+    // forecast card would not appear until the wind data finished loading --
+    // unlike every other (tile) forecast layer, whose build returns right away.
+    // Wrap toggleLayer to optimistically show/remove the card the instant a
+    // toggle is requested, from its intended new state; the real toggle
+    // subscription reconciles the optimistic set once state settles.
+    _patchToggleLayer: function () {
+        if (this._origToggleLayer) return
+        const orig = L_.toggleLayer.bind(L_)
+        this._origToggleLayer = L_.toggleLayer
+        const self = this
+        L_.toggleLayer = function (s, ...rest) {
+            if (s && s.time?.forecast?.enabled === true) {
+                const name = s.name
+                // reloadLayer refreshes a velocity layer on a time change by
+                // toggling it off then on back-to-back (synchronously). Count
+                // toggles per tick: a pair is that reload -- keep the card shown
+                // right through it. A lone toggle is a real user on/off.
+                self._toggleTick[name] = (self._toggleTick[name] || 0) + 1
+                if (self._toggleTick[name] === 1) {
+                    Promise.resolve().then(() => {
+                        delete self._toggleTick[name]
+                    })
+                }
+                if (self._toggleTick[name] >= 2) {
+                    self._optimisticOn.add(name) // reload pair -> keep card
+                } else if (L_.layers.on[name] === true) {
+                    self._optimisticOn.delete(name) // user turning it off
+                } else {
+                    self._optimisticOn.add(name) // user turning it on
+                }
+                self._rebuildCards()
+            }
+            return orig(s, ...rest)
+        }
+    },
+
+    _unpatchToggleLayer: function () {
+        if (this._origToggleLayer) {
+            L_.toggleLayer = this._origToggleLayer
+            this._origToggleLayer = null
         }
     },
 
@@ -528,7 +587,13 @@ const ForecastTimeline = {
         const result = []
         for (const name in L_.layers.data) {
             const ld = L_.layers.data[name]
-            if (ld?.time?.forecast?.enabled === true && L_.layers.on[name]) {
+            // Include a layer the moment its toggle is requested (optimisticOn),
+            // not only once L_.layers.on flips -- which for a velocity layer is
+            // after its grib finishes loading. See _patchToggleLayer.
+            const isOn =
+                L_.layers.on[name] ||
+                (this._optimisticOn && this._optimisticOn.has(name))
+            if (ld?.time?.forecast?.enabled === true && isOn) {
                 result.push({ name, config: ld.time.forecast, layer: ld })
             }
         }
@@ -661,19 +726,29 @@ const ForecastTimeline = {
         return runToday <= base ? runToday : runToday - STEP_UNITS.day
     },
 
-    // Number of steps the card should offer. HRRR COG (veloserver fxx) layers
-    // know their own range from the init time -- every run reaches F18, but runs
-    // started at 00/06/12/18 UTC reach F48 -- so no per-layer config. Other
-    // forecast layers (WFPI daily, PWWB hourly) use their configured fc.steps.
-    // The init-hour check is on the selected instant's UTC hour, so it's correct
-    // whatever the PDT display shows (and DST-safe).
+    // Number of steps the card should offer. veloserver fxx layers (HRRR COG
+    // rasters and the HRRR gribjson velocity layer) know their own range from the
+    // init time -- every run reaches F18, but runs started at 00/06/12/18 UTC reach
+    // F48 -- so no per-layer config. Other forecast layers (WFPI daily, PWWB hourly)
+    // use their configured fc.steps. The init-hour check is on the selected
+    // instant's UTC hour, so it's correct whatever the PDT display shows (DST-safe).
     _effectiveSteps: function (fc, name) {
         const ld = name ? L_.layers.data[name] : null
-        const isCogFxx = !!ld && (ld.url || '').toUpperCase().startsWith('COG:')
-        if (!isCogFxx) return fc.steps || 1
+        if (!this._isFxxLayer(ld)) return fc.steps || 1
         const initHourUTC = new Date(this._originBase()).getUTCHours()
         const isExtendedRun = HRRR_EXTENDED_INIT_HOURS.includes(initHourUTC)
         return (isExtendedRun ? HRRR_FXX_MAX_EXTENDED : HRRR_FXX_MAX) + 1
+    },
+
+    // True for a veloserver layer whose forecast hour is carried as a ?fxx=N query
+    // param: an HRRR COG raster (url starts "COG:") or the HRRR gribjson velocity
+    // layer (url has /hrrr/gribjson/). GFS gribjson is winds-only analysis --
+    // veloserver ignores fxx there -- so it is deliberately excluded.
+    _isFxxLayer: function (ld) {
+        if (!ld) return false
+        const url = ld.url || ''
+        if (url.toUpperCase().startsWith('COG:')) return true
+        return ld.type === 'velocity' && /\/hrrr\/gribjson\//i.test(url)
     },
 
     // Per-layer configurable step label. time.forecast.stepLabel wins;
@@ -1111,6 +1186,63 @@ const ForecastTimeline = {
                 return
             }
 
+            // HRRR gribjson velocity layer: same ?fxx=N scheme as the COG layers,
+            // but leaflet-velocity has no in-place URL swap like a tile .refresh(),
+            // so rewrite fxx on ld.url and let reloadLayer re-fetch. reloadLayer's
+            // velocity path toggles the layer off/on, re-running makeVelocityLayer
+            // -> captureVector against the new URL. {time} stays a live token (the
+            // run/init time from the main timeline); step 0 -> fxx=0 (the analysis).
+            if (
+                ld.type === 'velocity' &&
+                /\/hrrr\/gribjson\//i.test(ld.url || '')
+            ) {
+                const setFxx = (u) =>
+                    /[?&]fxx=/i.test(u)
+                        ? u.replace(/([?&]fxx=)[^&]*/i, `$1${idx}`)
+                        : `${u}${u.indexOf('?') === -1 ? '?' : '&'}fxx=${idx}`
+                ld.url = setFxx(ld.url)
+
+                // Update the wind data in place with leaflet-velocity's setData
+                // rather than reloading the layer. reloadLayer toggles the layer
+                // off/on, which blinks the streamlines AND -- because the layer is
+                // momentarily "off" -- makes the forecast card disappear. setData
+                // leaves the layer (and the card) on screen and just refreshes the
+                // streamlines once the new grib arrives. Resolve {time} the same
+                // way LayerCapturer does (from time.start/end) for the fetch.
+                const leafletLayer = L_.layers.layer[name]
+                const canSetData =
+                    leafletLayer &&
+                    typeof leafletLayer.setData === 'function' &&
+                    /^https?:\/\//i.test(ld.url) &&
+                    ld.time &&
+                    ld.time.end
+                if (canSetData) {
+                    const fetchUrl = ld.url
+                        .replace(/{time}/g, ld.time.end)
+                        .replace(/{endtime}/g, ld.time.end)
+                        .replace(/{starttime}/g, ld.time.start || ld.time.end)
+                    fetch(fetchUrl)
+                        .then((r) => r.json())
+                        .then((data) => leafletLayer.setData(data))
+                        .catch((e) =>
+                            console.warn(
+                                'ForecastTimeline: velocity fxx update failed',
+                                e
+                            )
+                        )
+                } else {
+                    // Fallback when setData isn't available: reload via toggle,
+                    // guarded so the toggle's rebuild doesn't reset the card to 0.
+                    this._reloadingLayer = true
+                    Promise.resolve(
+                        TimeControl.reloadLayer(ld, false, false, false)
+                    ).finally(() => {
+                        this._reloadingLayer = false
+                    })
+                }
+                return
+            }
+
             const stepIso = new Date(stepMs).toISOString()
             const startIso = new Date(stepMs - unitMs).toISOString()
 
@@ -1327,6 +1459,9 @@ const ForecastTimeline = {
         // Restore TimeUI navigation and expanded rows
         this._unpatchTimeUINavigation()
         this._unpatchPopulateExpandedRows()
+        this._unpatchToggleLayer()
+        if (this._optimisticOn) this._optimisticOn.clear()
+        this._toggleTick = {}
 
         // Restore Next button appearance
         const nextBtn = document.getElementById('mmgisTimeUIBottomNext')
