@@ -1243,14 +1243,24 @@ const ForecastTimeline = {
                 return
             }
 
-            const stepIso = new Date(stepMs).toISOString()
-            const startIso = new Date(stepMs - unitMs).toISOString()
+            // The tick is LABELED with the target/valid day (stepMs), but the
+            // forecast for that day is what's current the ISSUE day before it, so
+            // the query end is one step earlier: stepMs - unitMs. This makes the
+            // forecast tick for day T show exactly what the normal timeline shows
+            // at day T-1 -- because it's a forecast (issued on T-1, valid for T).
+            const queryEndIso = new Date(stepMs - unitMs).toISOString()
 
             const prevStart = ld.time.start
             const prevEnd = ld.time.end
 
-            ld.time.start = startIso
-            ld.time.end = stepIso
+            // Keep the layer's existing (open, epoch-based) START. The normal
+            // timeline queries [epoch, selectedTime] so a STAC/titiler-pgstac
+            // mosaic returns the most recent item at or before the target.
+            // Narrowing the start excluded every earlier item, so any
+            // missing/lagging forecast day (this collection is sparse) yielded
+            // an empty mosaic -> 204 -> blank layer. Open start + issue-day end
+            // makes the step match the normal timeline at the issue day exactly.
+            ld.time.end = queryEndIso
 
             if (ld.type === 'tile') {
                 // Update tile layer options then force-refresh existing tiles
@@ -1278,7 +1288,15 @@ const ForecastTimeline = {
         ld.url = newUrl
 
         const leafletLayer = L_.layers.layer[name]
-        if (leafletLayer && L_.layers.on[name] && ld.tileformat === 'wms') {
+        if (leafletLayer && ld.tileformat === 'wms') {
+            // The Leaflet layer is pre-built at config load with the raw
+            // __FSTEP__ template baked into its _url and LAYERS param, so the
+            // step substitution must reach it even while the layer is still
+            // off. Gating this on L_.layers.on[name] meant the first toggle-on
+            // added the pre-built layer with __FSTEP__ unsubstituted -- every
+            // tile 404'd until a later tick click finally rewrote _url. Rewrite
+            // _url/LAYERS here regardless of on-state; only redraw when it's on
+            // (an off layer isn't on the map, and gets requested fresh when added).
             const urlSplit = newUrl.split('?')
             const newBase = urlSplit[0]
             const urlParams = new URLSearchParams(urlSplit[1] || '')
@@ -1289,7 +1307,25 @@ const ForecastTimeline = {
             if (layersVal) {
                 leafletLayer.setParams({ LAYERS: layersVal }, true)
             }
-            leafletLayer.redraw()
+
+            // TIME stays a live {time} token that the WMS tile builder resolves
+            // from leafletLayer.options.time per request. On a main-timeline
+            // change, timeInputChange notifies subscribers (this plugin) BEFORE
+            // it calls updateLayersTime/setLayerWmsParams, so options.time is
+            // still the PREVIOUS selection when we redraw below -- leaving WFPI a
+            // full run behind across the 5PM PDT / 00:00Z boundary (harmless
+            // within a day since TIME is date-only). TimeControl.currentTime is
+            // already updated at this point, so sync the layer's time off it
+            // first and TIME resolves to the right date this same cycle.
+            if (
+                typeof TimeControl?.setLayerWmsParams === 'function' &&
+                TimeControl.currentTime
+            ) {
+                ld.time.end = TimeControl.currentTime
+                if (TimeControl.startTime) ld.time.start = TimeControl.startTime
+                TimeControl.setLayerWmsParams(ld)
+            }
+            if (L_.layers.on[name]) leafletLayer.redraw()
         } else if (TimeControl?.reloadLayer && L_.layers.on[name]) {
             TimeControl.reloadLayer(ld, false, false, true)
         }
