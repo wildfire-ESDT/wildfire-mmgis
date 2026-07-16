@@ -610,7 +610,8 @@ const ForecastTimeline = {
         })
         layers.forEach(({ name, config: fc }) => {
             if (!this.state.cards[name]) {
-                this.state.cards[name] = { stepIndex: 0, collapsed: false }
+                // Start new cards as 'loading' — probe will set available/unavailable.
+                this.state.cards[name] = { stepIndex: 0, collapsed: false, cardState: 'loading' }
                 if (fc.urlTemplate) this._applyUrlTemplate(name, 1)
             }
         })
@@ -623,6 +624,10 @@ const ForecastTimeline = {
             layers.forEach(({ name, config: fc }) => {
                 this._attachCardHandlers(name, fc, strip)
                 this._renderCardStep(name, fc, strip)
+                const cs = this.state.cards[name]?.cardState
+                if (cs && cs !== 'available') {
+                    this._setCardState(name, cs)
+                }
             })
             this._attachTabHandlers(strip)
         }
@@ -636,6 +641,15 @@ const ForecastTimeline = {
         // Toggle button always visible
         const btn = document.getElementById('ftl-toggle-btn')
         if (btn) btn.style.display = ''
+
+        // Prune cache entries for layers that are no longer active, then probe.
+        if (this._anchorProbeCache) {
+            const active = new Set(layers.map((l) => l.name))
+            Object.keys(this._anchorProbeCache).forEach((k) => {
+                if (!active.has(k.split(':')[0])) delete this._anchorProbeCache[k]
+            })
+        }
+        this._probeAllAnchors()
     },
 
     _rebuildDetachedCards: function () {
@@ -1096,11 +1110,12 @@ const ForecastTimeline = {
         const unit = fc.stepUnit || 'hour'
         const originBase = this._forecastBase(fc)
 
+        const cardState = this.state.cards[name]?.cardState ?? 'available'
+        const isDisabled = cardState !== 'available'
+
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
-            el.classList.toggle('active', i === idx)
-            // Re-derive both lines from the shared helper so the daily step-0
-            // window ("5 PM PDT to 5 PM PDT") tracks the origin as the timeline
-            // selection moves, not just the clock line.
+            // Suppress the active (blue) highlight when not available
+            el.classList.toggle('active', !isDisabled && i === idx)
             const { clock, rel } = this._tickLabels(fc, i, originBase)
             const clockEl = el.querySelector('.ftl-tick-clock')
             if (clockEl) clockEl.textContent = clock
@@ -1108,13 +1123,14 @@ const ForecastTimeline = {
             if (relEl) relEl.textContent = rel
         })
 
-        // Keep the "MODEL INITIALIZED AT" readout in sync as the origin tracks
-        // the main timeline selection.
-        const initEl = card.querySelector('.ftl-card-init')
-        if (initEl) initEl.textContent = this._formatInit(originBase, unit, fc)
+        // Only overwrite the init line when available — _setCardState manages it otherwise
+        if (!isDisabled) {
+            const initEl = card.querySelector('.ftl-card-init')
+            if (initEl) initEl.textContent = this._formatInit(originBase, unit, fc)
+        }
 
-        card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', idx === 0)
-        card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', idx === steps - 1)
+        card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', isDisabled || idx === 0)
+        card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', isDisabled || idx === steps - 1)
 
         // Ticks are fixed width and the track scrolls horizontally, so keep the
         // active step in view when it's stepped past the visible edge (only
@@ -1181,7 +1197,8 @@ const ForecastTimeline = {
                 ld.url = setFxx(ld.url)
                 const leafletLayer = L_.layers.layer[name]
                 if (leafletLayer && typeof leafletLayer._url === 'string') {
-                    leafletLayer.refresh(setFxx(leafletLayer._url), true)
+                    const newUrl = setFxx(leafletLayer._url)
+                    if (newUrl !== leafletLayer._url) leafletLayer.refresh(newUrl, true)
                 }
                 return
             }
@@ -1222,14 +1239,19 @@ const ForecastTimeline = {
                         .replace(/{endtime}/g, ld.time.end)
                         .replace(/{starttime}/g, ld.time.start || ld.time.end)
                     fetch(fetchUrl)
-                        .then((r) => r.json())
-                        .then((data) => leafletLayer.setData(data))
-                        .catch((e) =>
-                            console.warn(
-                                'ForecastTimeline: velocity fxx update failed',
-                                e
-                            )
-                        )
+                        .then((r) => {
+                            if (!r.ok) throw new Error(r.status)
+                            return r.json()
+                        })
+                        .then((data) => {
+                            leafletLayer.setData(data)
+                            // Anchor step succeeded — clear any unavailable state.
+                            if (idx === 0) this._setCardState(name, 'available')
+                        })
+                        .catch((e) => {
+                            console.warn('ForecastTimeline: velocity fxx update failed', e)
+                            if (idx === 0) this._setCardState(name, 'unavailable')
+                        })
                 } else {
                     // Fallback when setData isn't available: reload via toggle,
                     // guarded so the toggle's rebuild doesn't reset the card to 0.
@@ -1341,6 +1363,8 @@ const ForecastTimeline = {
             // If a card's tick count changed (e.g. HRRR crossed a 00/06/12/18z
             // boundary, F18↔F48), rebuild so the new ticks appear immediately;
             // otherwise just refresh the existing ticks in place.
+            // Probe first so state is correct before _refreshAllCards renders
+            this._probeAllAnchors()
             if (this._stepCountsStale()) {
                 this._rebuildCards()
             } else {
@@ -1465,11 +1489,171 @@ const ForecastTimeline = {
         root.style.setProperty('--ftl-extra-bottom', extraH + 'px')
     },
 
+    // ── Anchor availability probe ──────────────────────────
+
+    // Probe the anchor step of each visible forecast layer once per forecastBase
+    // (i.e. once per model run). Uses a direct fetch to the underlying data URL
+    // (veloserver for COG/velocity, WMS for urlTemplate) — not TiTiler tiles —
+    // so 404 and 500 both reliably reach us. Results in _setCardUnavailable.
+    _probeAllAnchors: function () {
+        if (!this._anchorProbeCache) this._anchorProbeCache = {}
+        this._detectForecastLayers().forEach(({ name, config: fc }) => {
+            const base = this._forecastBase(fc)
+            const key = `${name}:${base}`
+            const cached = this._anchorProbeCache[key]
+
+            // Already have a confirmed result for this exact run — apply it and stop.
+            // This ensures state is correct synchronously before _refreshAllCards.
+            if (cached === 'available' || cached === 'unavailable') {
+                this._setCardState(name, cached)
+                return
+            }
+            // Probe already in flight — ensure DOM shows loading state but don't re-send.
+            if (cached === 'pending') {
+                this._setCardState(name, 'loading')
+                return
+            }
+
+            // New key: fire a probe. Show loading immediately.
+            this._anchorProbeCache[key] = 'pending'
+            this._setCardState(name, 'loading')
+
+            const url = this._anchorUrl(name, fc)
+            if (!url) {
+                // Can't probe this layer type — assume available
+                this._anchorProbeCache[key] = 'available'
+                this._setCardState(name, 'available')
+                return
+            }
+
+            // Capture the floored hour at fire time so sub-second jitter in
+            // originMs doesn't cause the result to be silently discarded.
+            const baseAtFire = base
+            fetch(url, { method: 'HEAD', cache: 'no-store' })
+                .then((r) => {
+                    const newState = r.ok ? 'available' : 'unavailable'
+                    this._anchorProbeCache[key] = newState
+                    // Only update the DOM if the user is still on the same hour
+                    if (this._forecastBase(fc) === baseAtFire) {
+                        this._setCardState(name, newState)
+                        // Re-apply steps so COG/tile refresh fires with correct state
+                        if (newState === 'available') this._reapplyAllSteps()
+                    }
+                })
+                .catch(() => {
+                    this._anchorProbeCache[key] = 'unavailable'
+                    if (this._forecastBase(fc) === baseAtFire) {
+                        this._setCardState(name, 'unavailable')
+                    }
+                })
+        })
+    },
+
+    // Build the URL to probe for the anchor step of a forecast layer.
+    // COG: veloserver source URL with fxx=0 (strip the COG: prefix — that's
+    //      just a MMGIS routing flag, not part of the actual URL).
+    // HRRR velocity: gribjson URL with fxx=0 and {time} resolved.
+    // urlTemplate (WFPI): base URL with __FSTEP__=1 and {time} resolved.
+    // Returns null for layer types we can't probe (STAC etc.).
+    _anchorUrl: function (name, fc) {
+        const ld = L_.layers.data[name]
+        if (!ld) return null
+        const url = ld.url || ''
+
+        if (fc.urlTemplate) {
+            const base = fc._baseUrl || url
+            if (!base.includes('__FSTEP__')) return null
+            const timeStr = ld.time?.end || new Date().toISOString()
+            return base
+                .replace(/__FSTEP__/g, '1')
+                .replace(/{time}/g, timeStr)
+                .replace(/{endtime}/g, timeStr)
+                .replace(/{starttime}/g, timeStr)
+        }
+
+        if (url.toUpperCase().startsWith('COG:')) {
+            const src = url.slice(4)
+            const timeStr = new Date(this._forecastBase(fc)).toISOString()
+            const resolved = src
+                .replace(/{time}/g, timeStr)
+                .replace(/{endtime}/g, timeStr)
+            return /[?&]fxx=/i.test(resolved)
+                ? resolved.replace(/([?&]fxx=)[^&]*/i, '$10')
+                : `${resolved}${resolved.includes('?') ? '&' : '?'}fxx=0`
+        }
+
+        if (ld.type === 'velocity' && /\/hrrr\/gribjson\//i.test(url)) {
+            const timeStr = ld.time?.end || new Date().toISOString()
+            const resolved = url
+                .replace(/{time}/g, timeStr)
+                .replace(/{endtime}/g, timeStr)
+            return /[?&]fxx=/i.test(resolved)
+                ? resolved.replace(/([?&]fxx=)[^&]*/i, '$10')
+                : `${resolved}${resolved.includes('?') ? '&' : '?'}fxx=0`
+        }
+
+        return null
+    },
+
+    // Set a forecast card's visual state. state is one of:
+    //   'loading'     — probe in flight: ticks/buttons dark, "Fetching…" in init row
+    //   'unavailable' — probe returned error: ticks/buttons dark, warning in init row
+    //   'available'   — probe ok: normal interactive card
+    _setCardState: function (name, state) {
+        if (this.state.cards[name]) this.state.cards[name].cardState = state
+        const disabled = state !== 'available'
+        ;[document.getElementById('ftl-strip'), document.getElementById('ftl-detached-cards')]
+            .forEach((container) => {
+                const card = container?.querySelector(`.ftl-card[data-layer="${name}"]`)
+                if (!card) return
+
+                // Card-level state classes drive the dark-button CSS
+                card.classList.toggle('ftl-card-loading', state === 'loading')
+                card.classList.toggle('ftl-card-unavailable', state === 'unavailable')
+
+                // Ticks: ftl-future-item greys them and kills pointer-events
+                const cardIdx = this.state.cards[name]?.stepIndex ?? 0
+                card.querySelectorAll('.ftl-tick').forEach((t, i) => {
+                    t.classList.toggle('ftl-future-item', disabled)
+                    if (disabled) t.classList.remove('active')
+                    else t.classList.toggle('active', i === cardIdx)
+                })
+
+                // Buttons: also set disabled attr for semantics/keyboard
+                const fc = L_.layers.data[name]?.time?.forecast
+                const steps = fc ? this._effectiveSteps(fc, name) : 1
+                card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', disabled || cardIdx === 0)
+                card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', disabled || cardIdx === steps - 1)
+
+                // Init row text
+                const initEl = card.querySelector('.ftl-card-init')
+                const captionEl = card.querySelector('.ftl-card-init-caption')
+                if (state === 'loading') {
+                    if (captionEl) captionEl.style.display = 'none'
+                    if (initEl) initEl.innerHTML =
+                        '<span style="color:var(--color-a5);font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-style:italic">Fetching\u2026</span>'
+                } else if (state === 'unavailable') {
+                    if (captionEl) captionEl.style.display = 'none'
+                    if (initEl) initEl.innerHTML =
+                        '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
+                        ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">Not yet generated</span>'
+                } else {
+                    if (captionEl) captionEl.style.display = ''
+                    if (initEl) {
+                        const unit = fc?.stepUnit || 'hour'
+                        const originBase = this._forecastBase(fc || {})
+                        initEl.textContent = this._formatInit(originBase, unit, fc || {})
+                    }
+                }
+            })
+    },
+
     // ── Cleanup ────────────────────────────────────────────
 
     cleanup: function () {
         this.state.cards = {}
         this.state.detached = false
+        this._anchorProbeCache = {}
 
         const timeUI = document.getElementById('timeUI')
         if (timeUI) {

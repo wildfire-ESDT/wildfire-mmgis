@@ -309,6 +309,25 @@
     cursor: default;
 }
 
+/* ── Card loading / unavailable states ──────────────────────────────────────
+   .ftl-card-loading  : probe in flight — "Fetching…" in init row
+   .ftl-card-unavailable : probe returned error — warning in init row
+   Both states: ticks get ftl-future-item treatment via JS, buttons get
+   a heavy dark overlay so they match the very-dark future timeline look. */
+.ftl-card-loading .ftl-card-prev,
+.ftl-card-loading .ftl-card-next,
+.ftl-card-unavailable .ftl-card-prev,
+.ftl-card-unavailable .ftl-card-next {
+    background: rgba(0, 0, 0, 0.55);
+    color: rgba(255, 255, 255, 0.15);
+    cursor: default;
+    pointer-events: none;
+}
+.ftl-card-loading .ftl-ticks-wrap,
+.ftl-card-unavailable .ftl-ticks-wrap {
+    pointer-events: none;
+}
+
 /* ── Forecast card ticks ──
    Every step — hourly, daily, whatever — is the SAME fixed width so all cards
    line up. Tracks with more steps than fit (24h, 48h) overflow and scroll
@@ -337,6 +356,30 @@
         transparent 2px,
         transparent 7px
     ) !important;
+}
+/* Higher-specificity overrides so card ticks get the full future-item
+   treatment when loading/unavailable. Must beat:
+     - .ftl-card .mmgisTimeUIExpandedItem  (card tick base)
+     - #ftl-strip .mmgisTimeUIExpandedItem (opacity:1 override)
+     - .ftl-tick.active / .active          (opacity:1 !important) */
+.ftl-card .mmgisTimeUIExpandedItem.ftl-future-item,
+#ftl-strip .mmgisTimeUIExpandedItem.ftl-future-item,
+.ftl-tick.ftl-future-item,
+.ftl-tick-large.ftl-future-item {
+    opacity: 0.3 !important;
+    pointer-events: none !important;
+    cursor: default !important;
+    background: var(--color-a) !important;
+    background-image: repeating-linear-gradient(
+        -45deg,
+        rgba(80, 80, 90, 0.25) 0px,
+        rgba(80, 80, 90, 0.25) 2px,
+        transparent 2px,
+        transparent 7px
+    ) !important;
+    color: var(--color-a7) !important;
+    border-right-color: transparent !important;
+    box-shadow: none !important;
 }
 /* Tick container */
 .ftl-ticks-wrap {
