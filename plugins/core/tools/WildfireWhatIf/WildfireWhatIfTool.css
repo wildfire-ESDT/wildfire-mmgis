@@ -1,0 +1,446 @@
+#wildfireTool {
+    color: #cfcfcf;
+    height: 100%;
+    overflow-y: auto;
+    padding: 8px 10px 24px 10px;
+    box-sizing: border-box;
+    font-family: lato-light, sans-serif;
+}
+
+/* ── Header ── */
+
+#wildfireTool .ww-header {
+    height: 40px;
+    line-height: 40px;
+    font-size: 16px;
+    color: var(--color-l);
+    background: var(--color-a);
+    font-family: lato-light;
+    text-transform: uppercase;
+    padding: 0 10px;
+    margin: -8px -10px 10px -10px;
+    letter-spacing: 0.08em;
+}
+
+/* ── Section label ── */
+
+#wildfireTool .ww-section-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-l);
+    margin: 14px 0 5px 0;
+}
+
+/* ── Buttons ── */
+
+#wildfireTool .ww-btn {
+    display: inline-block;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 2px;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: center;
+    transition: opacity 0.15s;
+    box-sizing: border-box;
+}
+
+#wildfireTool .ww-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#wildfireTool .ww-btn-primary {
+    background: #0277bd;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 9px 12px;
+    border: 1px solid #0288d1;
+}
+
+#wildfireTool .ww-btn-primary:hover:not(:disabled) {
+    background: #0288d1;
+    border-color: #039be5;
+}
+
+#wildfireTool .ww-btn-secondary {
+    background: var(--color-i, #3a3a3a);
+    color: #cfcfcf;
+    border: 1px solid #555;
+}
+
+#wildfireTool .ww-btn-secondary:hover:not(:disabled) {
+    background: #4a4a4a;
+    color: #fff;
+}
+
+#wildfireTool .ww-btn-secondary.ww-btn-active {
+    background: rgba(255,221,92,0.18);
+    color: var(--color-h, #ffdd5c);
+    border-color: var(--color-h, #ffdd5c);
+}
+
+#wildfireTool .ww-btn-ghost {
+    background: transparent;
+    color: #888;
+    border: 1px solid transparent;
+    padding: 6px 8px;
+}
+
+#wildfireTool .ww-btn-ghost:hover:not(:disabled) {
+    color: #aaa;
+    border-color: #666;
+}
+
+#wildfireTool .ww-draw-hint {
+    font-size: 11px;
+    color: var(--color-h, #ffdd5c);
+    background: rgba(255,221,92,0.07);
+    border: 1px solid rgba(255,221,92,0.25);
+    border-radius: 2px;
+    padding: 5px 8px;
+    margin-top: 5px;
+}
+
+#wildfireTool .ww-full {
+    width: 100%;
+    margin-top: 6px;
+}
+
+/* ── Perimeter row ── */
+
+#wildfireTool .ww-perim-row {
+    display: flex;
+    gap: 6px;
+}
+
+#wildfireTool .ww-perim-row .ww-btn {
+    flex: 1;
+}
+
+#wildfireTool .ww-upload-label {
+    cursor: pointer;
+}
+
+#wildfireTool .ww-upload-label input[type="file"] {
+    display: none;
+}
+
+#wildfireTool .ww-perimeter-status {
+    font-size: 11px;
+    margin-top: 5px;
+    padding: 4px 6px;
+    border-radius: 2px;
+}
+
+#wildfireTool .ww-status-none {
+    color: #888;
+    background: rgba(255,255,255,0.04);
+}
+
+#wildfireTool .ww-status-ok {
+    color: #66bb6a;
+    background: rgba(102,187,106,0.08);
+}
+
+#wildfireTool .ww-status-bbox {
+    color: #4fc3f7;
+    background: rgba(79,195,247,0.08);
+}
+
+
+#wildfireTool .ww-bbox-status {
+    font-size: 11px;
+    margin-top: 5px;
+    padding: 4px 6px;
+    border-radius: 2px;
+}
+
+.ww-wind-arrow-icon {
+    background: none !important;
+    border: none !important;
+    pointer-events: none;
+}
+
+/* ── Wind ── */
+
+#wildfireTool .ww-wind-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+#wildfireTool .ww-arrow-wrap {
+    color: var(--color-h, #ffdd5c);
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s;
+}
+
+#wildfireTool #ww-wind-arrow {
+    transition: transform 0.3s ease;
+}
+
+#wildfireTool .ww-wind-source {
+    font-size: 11px;
+    color: #888;
+    display: none;
+}
+
+#wildfireTool .ww-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+}
+
+#wildfireTool .ww-slider-label {
+    font-size: 11px;
+    color: #aaa;
+    min-width: 54px;
+    text-align: right;
+}
+
+#wildfireTool .ww-slider-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--color-h, #ffdd5c);
+    cursor: pointer;
+}
+
+#wildfireTool .ww-slider-val {
+    font-size: 11px;
+    color: #fff;
+    min-width: 110px;
+    text-align: right;
+}
+
+/* ── Wind vector mode ── */
+
+#wildfireTool .ww-mode-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+    padding: 5px 6px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 2px;
+}
+
+#wildfireTool .ww-mode-label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+}
+
+#wildfireTool .ww-mode-opt {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: #cfcfcf;
+    cursor: pointer;
+}
+
+#wildfireTool .ww-mode-opt input[type="radio"] {
+    accent-color: var(--color-h, #ffdd5c);
+    cursor: pointer;
+}
+
+/* ── Simulation type ── */
+
+#wildfireTool .ww-sim-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+#wildfireTool .ww-sim-opt {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    cursor: pointer;
+    color: #cfcfcf;
+}
+
+#wildfireTool .ww-sim-opt input[type="radio"] {
+    accent-color: var(--color-h, #ffdd5c);
+    cursor: pointer;
+}
+
+/* ── Info note ── */
+
+#wildfireTool .ww-info-note {
+    font-size: 11px;
+    color: #777;
+    margin-top: 8px;
+    margin-bottom: 2px;
+}
+
+/* ── Text input ── */
+
+#wildfireTool .ww-text-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--color-k);
+    color: #fff;
+    border: 1px solid var(--color-i, #444);
+    padding: 5px 7px;
+    font-size: 12px;
+    font-family: inherit;
+    border-radius: 2px;
+}
+
+#wildfireTool .ww-text-input.ww-input-error {
+    border-color: #ef5350;
+    box-shadow: 0 0 0 1px #ef5350;
+}
+
+/* ── Jobs section ── */
+
+#wildfireTool .ww-jobs {
+    margin-top: 14px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 4px;
+}
+
+#wildfireTool .ww-jobs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#wildfireTool .ww-empty {
+    font-size: 12px;
+    color: #666;
+    padding: 8px 0;
+}
+
+#wildfireTool .ww-job {
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding: 6px 0;
+}
+
+#wildfireTool .ww-job-header {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    user-select: none;
+}
+
+#wildfireTool .ww-job-header:hover {
+    color: #fff;
+}
+
+#wildfireTool .ww-job-chevron {
+    font-size: 9px;
+    color: #666;
+    flex-shrink: 0;
+}
+
+#wildfireTool .ww-job-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#wildfireTool .ww-sim-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
+#wildfireTool .ww-sim-badge.fire {
+    background: rgba(255,221,92,0.12);
+    color: var(--color-h, #ffdd5c);
+}
+
+#wildfireTool .ww-sim-badge.smoke {
+    background: rgba(120,144,156,0.25);
+    color: #90a4ae;
+}
+
+#wildfireTool .ww-job-status {
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+#wildfireTool .ww-job-status.completed { color: #66bb6a; }
+#wildfireTool .ww-job-status.failed    { color: #ef5350; }
+#wildfireTool .ww-job-status.running   { color: #ffb74d; }
+#wildfireTool .ww-job-status.queued    { color: #ccc; }
+#wildfireTool .ww-job-status.unknown   { color: #888; }
+
+#wildfireTool .ww-job-expanded {
+    padding: 6px 14px 4px 14px;
+    font-size: 11px;
+    color: #aaa;
+}
+
+#wildfireTool .ww-exp-ts {
+    color: #777;
+    margin-bottom: 3px;
+}
+
+#wildfireTool .ww-exp-wind {
+    color: var(--color-h, #ffdd5c);
+    margin-bottom: 4px;
+}
+
+#wildfireTool .ww-exp-json {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 6px 8px;
+    font-size: 10px;
+    font-family: monospace;
+    color: #b0bec5;
+    overflow-x: auto;
+    max-height: 180px;
+    overflow-y: auto;
+    margin: 0;
+    border-radius: 2px;
+}
+
+/* ── Pagination ── */
+
+#wildfireTool .ww-pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+#wildfireTool .ww-page-btn {
+    background: var(--color-i, #3a3a3a);
+    color: #cfcfcf;
+    border: 1px solid #555;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    border-radius: 2px;
+}
+
+#wildfireTool .ww-page-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+#wildfireTool .ww-page-label {
+    font-size: 11px;
+    color: #888;
+    flex: 1;
+    text-align: center;
+}

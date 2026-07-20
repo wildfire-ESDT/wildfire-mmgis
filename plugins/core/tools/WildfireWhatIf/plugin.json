@@ -1,0 +1,53 @@
+{
+    "uuid": "f3a7b2c1-d4e5-4f60-a891-b2c3d4e5f601",
+    "id": "core-wildfire-whatif",
+    "version": "core",
+    "type": "tool",
+    "tier": "core",
+    "overridable": true,
+    "defaultIcon": "fire",
+    "name": "WildfireWhatIf",
+    "description": "What-if wildfire scenario tool: draw a fire perimeter, tweak wind, and submit fire spread or smoke dispersion forecasts.",
+    "hasVars": true,
+    "toolbarPriority": 60,
+    "paths": {
+        "WildfireWhatIfTool": "./WildfireWhatIfTool"
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.backendUrl",
+                        "name": "What-If Backend URL",
+                        "description": "Origin of the whatif-demo FastAPI backend (e.g. http://localhost:8000).",
+                        "type": "text",
+                        "width": 12,
+                        "placeholder": "http://localhost:8000"
+                    }
+                ]
+            },
+            {
+                "components": [
+                    {
+                        "field": "variables.hrrr_date",
+                        "name": "HRRR Date (YYYY-MM-DD)",
+                        "description": "Default HRRR forecast date.",
+                        "type": "text",
+                        "width": 6,
+                        "placeholder": "2026-07-14"
+                    },
+                    {
+                        "field": "variables.hrrr_hour_pdt",
+                        "name": "HRRR Hour (PDT)",
+                        "description": "Hour of the HRRR cycle in PDT (0-23).",
+                        "type": "number",
+                        "width": 6,
+                        "min": 0,
+                        "max": 23
+                    }
+                ]
+            }
+        ]
+    }
+}
