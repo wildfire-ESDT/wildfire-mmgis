@@ -17,6 +17,7 @@
 .ftl-card {
     display: flex;
     align-items: center;
+    position: relative; /* anchors .ftl-card-prefetch to the bottom edge */
     height: 44px;
     min-height: 44px;
     width: 100%;
@@ -307,6 +308,63 @@
 .ftl-card-next:disabled {
     opacity: 0.2;
     cursor: default;
+}
+
+/* ── Animation playback ─────────────────────────────────────────────────────
+   The play button lives in the header label row beside the ⓘ icon, so it's
+   sized to match that rather than the chunky prev/next arrows. It turns into a
+   stop square while prefetching or playing; the thin bar along the card's
+   bottom edge fills as forecast steps are fetched. */
+.ftl-card-play {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-a6);
+    cursor: pointer;
+    line-height: 1;
+    font-size: 14px;
+    transition: color 0.15s;
+}
+.ftl-card-play:hover {
+    color: var(--color-h);
+}
+.ftl-card-play.ftl-playing {
+    color: #4a9eff;
+}
+.ftl-card-play:disabled {
+    opacity: 0.25;
+    cursor: default;
+}
+
+/* Pinned to the card's bottom edge rather than left in the flow: .ftl-card is a
+   row flexbox, so a full-width child here would claim the whole row and
+   collapse .ftl-card-body (and its buttons) to zero width. */
+.ftl-card-prefetch {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    pointer-events: none;
+    background: transparent;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+.ftl-card-prefetch.ftl-prefetching {
+    background: rgba(255, 255, 255, 0.08);
+    opacity: 1;
+}
+.ftl-card-prefetch-bar {
+    height: 100%;
+    width: 0;
+    background: #4a9eff;
+    transition: width 0.12s linear;
 }
 
 /* ── Card loading / unavailable states ──────────────────────────────────────
