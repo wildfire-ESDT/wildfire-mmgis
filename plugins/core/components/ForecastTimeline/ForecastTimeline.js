@@ -56,6 +56,10 @@ const HRRR_FXX_MAX_EXTENDED = 48
 // The four init hours (UTC) whose runs go all the way to F48.
 const HRRR_EXTENDED_INIT_HOURS = [0, 6, 12, 18]
 
+// Delay between animation frames. Slow enough to read the tick labels, fast
+// enough that a 49-step HRRR run doesn't take a minute to loop.
+const PLAY_INTERVAL_MS = 700
+
 const ForecastTimeline = {
     // ── State ──────────────────────────────────────────────
     state: {
@@ -778,6 +782,27 @@ const ForecastTimeline = {
         return `${size} ${abbr}`
     },
 
+    // Compact label for the model run a probe targeted, for the "not yet
+    // generated" warning: "Jul 20, 5 PM" (hourly, PDT) or "Jul 20" (daily,
+    // UTC-dated to match the tick labels and the run actually fetched).
+    _runLabel: function (fc) {
+        const base = this._forecastBase(fc || {})
+        if ((fc?.stepUnit || 'hour') === 'day') {
+            return new Date(base).toLocaleDateString('en-US', {
+                timeZone: 'UTC',
+                month: 'short',
+                day: 'numeric',
+            })
+        }
+        return new Date(base).toLocaleString('en-US', {
+            timeZone: PDT_TZ,
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            hour12: true,
+        })
+    },
+
     // "Jun 30, 2026 · 2:00 PM PDT"  (hourly)  or  "Jul 7, 2026 · 12:00 AM PDT"  (daily)
     _formatInit: function (ms, unit, fc) {
         const d = new Date(ms)
@@ -916,6 +941,7 @@ const ForecastTimeline = {
       <div class="ftl-card-label-row">
         <span class="ftl-card-label">${label}</span>
         ${infoBtnHTML}
+        <button class="ftl-card-play" data-layer="${name}" type="button" title="Play forecast animation" aria-label="Play forecast animation"><i class="mdi mdi-play"></i></button>
       </div>
       <div class="ftl-card-init-row">
         <span class="ftl-card-init-caption">INITIALIZED:</span>
@@ -930,6 +956,7 @@ const ForecastTimeline = {
     </div>
     <button class="ftl-card-next" data-layer="${name}"><i class="mdi mdi-chevron-right"></i></button>
   </div>
+  <div class="ftl-card-prefetch" data-layer="${name}"><div class="ftl-card-prefetch-bar"></div></div>
 </div>`
     },
 
@@ -957,6 +984,19 @@ const ForecastTimeline = {
                 const max = this._effectiveSteps(fc, name) - 1
                 this._setCardStep(name, fc, Math.min(max, cur + 1))
             })
+        const playBtn = container.querySelector(`.ftl-card-play[data-layer="${name}"]`)
+        if (playBtn) {
+            playBtn.addEventListener('click', () => {
+                this._togglePlay(name, fc)
+            })
+            // Hover-only tooltip, not _bindTip: that also claims click for
+            // tap-toggle, which would swallow the play press.
+            playBtn.classList.add('ftl-has-tip')
+            playBtn.addEventListener('mouseenter', () =>
+                this._showTip(playBtn, this._playTipHtml(name, fc))
+            )
+            playBtn.addEventListener('mouseleave', () => this._hideTip())
+        }
 
         const wrap = container.querySelector(`.ftl-card[data-layer="${name}"] .ftl-ticks-wrap`)
         if (wrap) {
@@ -1131,6 +1171,7 @@ const ForecastTimeline = {
 
         card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', isDisabled || idx === 0)
         card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', isDisabled || idx === steps - 1)
+        card.querySelector('.ftl-card-play')?.toggleAttribute('disabled', isDisabled || steps <= 1)
 
         // Ticks are fixed width and the track scrolls horizontally, so keep the
         // active step in view when it's stepped past the visible edge (only
@@ -1234,6 +1275,14 @@ const ForecastTimeline = {
                     ld.time &&
                     ld.time.end
                 if (canSetData) {
+                    // Prefetched frame — hand it straight to leaflet-velocity so
+                    // an animation frame costs no network round trip.
+                    const cached = this._frameCache?.[this._frameKey(name, fc)]?.[idx]
+                    if (cached) {
+                        leafletLayer.setData(cached)
+                        if (idx === 0) this._setCardState(name, 'available')
+                        return
+                    }
                     const fetchUrl = ld.url
                         .replace(/{time}/g, ld.time.end)
                         .replace(/{endtime}/g, ld.time.end)
@@ -1595,6 +1644,257 @@ const ForecastTimeline = {
         return null
     },
 
+    // ── Animation ──────────────────────────────────────────
+    //
+    // Playback walks a card's steps on a timer. Because each step is a separate
+    // network fetch, playing straight away would stutter on every frame, so a
+    // play press first prefetches the whole run and shows a progress bar.
+    //
+    // What "prefetch" can mean depends on how the layer carries its forecast hour:
+    //   • HRRR gribjson velocity — one JSON per step, so every step is fetched
+    //     and parsed into _frameCache. Playback then calls setData off memory
+    //     and is genuinely smooth.
+    //   • COG tile (?fxx=N) — no single URL per step; the visible tiles are
+    //     requested instead so the browser/titiler caches are warm for the
+    //     current viewport. Panning or zooming during playback still fetches.
+    //   • WMS urlTemplate (WFPI) and STAC — the step number is baked into tile
+    //     params rather than a swappable token, so these are not prefetched.
+    //     They animate, just with live fetches per frame.
+
+    _frameCache: {},
+    _playTimers: {},
+
+    // Frames are keyed by run, not just layer, so a new model run never animates
+    // with the previous run's data still cached.
+    _frameKey: function (name, fc) {
+        return `${name}:${this._forecastBase(fc)}`
+    },
+
+    _setFxx: function (u, idx) {
+        return /[?&]fxx=/i.test(u)
+            ? u.replace(/([?&]fxx=)[^&]*/i, `$1${idx}`)
+            : `${u}${u.indexOf('?') === -1 ? '?' : '&'}fxx=${idx}`
+    },
+
+    // Resolved single-URL fetch target for one step, or null when the layer has
+    // no one-URL-per-step representation.
+    _stepUrl: function (name, fc, idx) {
+        const ld = L_.layers.data[name]
+        if (!ld) return null
+        if (ld.type === 'velocity' && /\/hrrr\/gribjson\//i.test(ld.url || '')) {
+            const timeStr = ld.time?.end || new Date().toISOString()
+            return this._setFxx(ld.url, idx)
+                .replace(/{time}/g, timeStr)
+                .replace(/{endtime}/g, timeStr)
+                .replace(/{starttime}/g, ld.time?.start || timeStr)
+        }
+        return null
+    },
+
+    // Tile coords covering the current viewport, capped so a zoomed-out view
+    // can't fan out into hundreds of requests per step.
+    _visibleTileCoords: function (layer) {
+        const map = layer?._map
+        if (!map || typeof layer.getTileUrl !== 'function') return []
+        const z = Math.round(map.getZoom())
+        const size = layer.getTileSize ? layer.getTileSize().x : 256
+        const b = map.getBounds()
+        const nw = map.project(b.getNorthWest(), z).divideBy(size).floor()
+        const se = map.project(b.getSouthEast(), z).divideBy(size).floor()
+        const coords = []
+        for (let x = nw.x; x <= se.x; x++) {
+            for (let y = nw.y; y <= se.y; y++) {
+                coords.push({ x, y, z })
+                if (coords.length >= 48) return coords
+            }
+        }
+        return coords
+    },
+
+    // Run tasks with a small concurrency cap — a 49-step HRRR run fired all at
+    // once would swamp the connection pool and stall the map's own tiles.
+    _pooled: function (tasks, onDone, limit = 4) {
+        return new Promise((resolve) => {
+            if (!tasks.length) return resolve()
+            let next = 0
+            let active = 0
+            let finished = 0
+            const settle = () => {
+                active--
+                finished++
+                if (onDone) onDone(finished, tasks.length)
+                if (finished === tasks.length) resolve()
+                else pump()
+            }
+            const runOne = () => {
+                const task = tasks[next++]
+                active++
+                Promise.resolve().then(task).catch(() => {}).then(settle)
+            }
+            const pump = () => {
+                while (active < limit && next < tasks.length) runOne()
+            }
+            pump()
+        })
+    },
+
+    _prefetchSteps: function (name, fc, onProgress) {
+        const steps = this._effectiveSteps(fc, name)
+        const ld = L_.layers.data[name]
+        const key = this._frameKey(name, fc)
+        const isVelocity =
+            ld?.type === 'velocity' && /\/hrrr\/gribjson\//i.test(ld.url || '')
+        const isCog =
+            ld?.type === 'tile' && (ld.url || '').toUpperCase().startsWith('COG:')
+
+        if (!this._frameCache[key]) this._frameCache[key] = {}
+        const frames = this._frameCache[key]
+
+        const tasks = []
+        for (let i = 0; i < steps; i++) {
+            const idx = i
+            if (isVelocity) {
+                if (frames[idx]) continue
+                const url = this._stepUrl(name, fc, idx)
+                if (!url) continue
+                tasks.push(() =>
+                    fetch(url)
+                        .then((r) => {
+                            if (!r.ok) throw new Error(r.status)
+                            return r.json()
+                        })
+                        .then((data) => {
+                            frames[idx] = data
+                        })
+                )
+            } else if (isCog) {
+                const layer = L_.layers.layer[name]
+                const coords = this._visibleTileCoords(layer)
+                if (!coords.length) continue
+                tasks.push(() =>
+                    Promise.all(
+                        coords.map((c) => {
+                            let u
+                            try {
+                                u = layer.getTileUrl(c)
+                            } catch (e) {
+                                return null
+                            }
+                            if (typeof u !== 'string') return null
+                            // Warm the cache, don't keep the bytes.
+                            return fetch(this._setFxx(u, idx), { mode: 'no-cors' }).catch(
+                                () => {}
+                            )
+                        })
+                    )
+                )
+            }
+        }
+
+        if (!tasks.length) {
+            if (onProgress) onProgress(1, 1)
+            return Promise.resolve()
+        }
+        return this._pooled(tasks, onProgress)
+    },
+
+    _setPlayUI: function (name, mode, pct) {
+        ;[document.getElementById('ftl-strip'), document.getElementById('ftl-detached-cards')]
+            .forEach((container) => {
+                const card = container?.querySelector(`.ftl-card[data-layer="${name}"]`)
+                if (!card) return
+                const btn = card.querySelector('.ftl-card-play')
+                const icon = btn?.querySelector('i')
+                const wrap = card.querySelector('.ftl-card-prefetch')
+                const bar = wrap?.querySelector('.ftl-card-prefetch-bar')
+                if (icon) {
+                    icon.className =
+                        mode === 'idle' ? 'mdi mdi-play' : 'mdi mdi-stop'
+                }
+                if (btn) {
+                    btn.classList.toggle('ftl-playing', mode !== 'idle')
+                    btn.title =
+                        mode === 'loading'
+                            ? 'Loading forecast steps — click to cancel'
+                            : mode === 'playing'
+                            ? 'Stop animation'
+                            : 'Play forecast animation'
+                }
+                if (wrap) wrap.classList.toggle('ftl-prefetching', mode === 'loading')
+                if (bar) bar.style.width = `${Math.round((pct || 0) * 100)}%`
+            })
+    },
+
+    // Hover text for the play button. Built at hover time so the step count and
+    // playing/stopped wording are always current.
+    _playTipHtml: function (name, fc) {
+        const steps = this._effectiveSteps(fc, name)
+        const unit = (fc?.stepUnit || 'hour') === 'day' ? 'day' : 'hour'
+        if (this._isPlaying(name)) {
+            return (
+                '<b>Stop animation</b><br/>' +
+                '<span style="opacity:.75">Returns to manual stepping.</span>'
+            )
+        }
+        return (
+            '<b>Play forecast animation</b><br/>' +
+            `<span style="opacity:.75">Loads all ${steps} ${unit} steps, then` +
+            ' steps through them on the map in a loop. Click again to stop.</span>'
+        )
+    },
+
+    _isPlaying: function (name) {
+        return !!(this._playTimers && this._playTimers[name])
+    },
+
+    _stopPlay: function (name) {
+        const t = this._playTimers?.[name]
+        if (t) {
+            clearInterval(t.timer)
+            t.cancelled = true
+        }
+        if (this._playTimers) delete this._playTimers[name]
+        this._setPlayUI(name, 'idle', 0)
+    },
+
+    _startPlay: function (name, fc) {
+        if (!this._playTimers) this._playTimers = {}
+        if (this.state.cards[name]?.cardState !== 'available') return
+
+        // Placeholder entry so a second click during prefetch cancels.
+        const token = { timer: null, cancelled: false }
+        this._playTimers[name] = token
+        this._setPlayUI(name, 'loading', 0)
+
+        this._prefetchSteps(name, fc, (done, total) => {
+            if (!token.cancelled) this._setPlayUI(name, 'loading', total ? done / total : 1)
+        }).then(() => {
+            if (token.cancelled || this._playTimers[name] !== token) return
+            const steps = this._effectiveSteps(fc, name)
+            if (steps <= 1) {
+                this._stopPlay(name)
+                return
+            }
+            this._setPlayUI(name, 'playing', 1)
+            // Start from the beginning so playback always reads as a full run.
+            let idx = 0
+            this._setCardStep(name, fc, idx)
+            token.timer = setInterval(() => {
+                if (this.state.cards[name]?.cardState !== 'available') {
+                    this._stopPlay(name)
+                    return
+                }
+                idx = (idx + 1) % steps
+                this._setCardStep(name, fc, idx)
+            }, PLAY_INTERVAL_MS)
+        })
+    },
+
+    _togglePlay: function (name, fc) {
+        if (this._isPlaying(name)) this._stopPlay(name)
+        else this._startPlay(name, fc)
+    },
+
     // Set a forecast card's visual state. state is one of:
     //   'loading'     — probe in flight: ticks/buttons dark, "Fetching…" in init row
     //   'unavailable' — probe returned error: ticks/buttons dark, warning in init row
@@ -1602,6 +1902,9 @@ const ForecastTimeline = {
     _setCardState: function (name, state) {
         if (this.state.cards[name]) this.state.cards[name].cardState = state
         const disabled = state !== 'available'
+        // A card that just went unavailable must not keep animating against a
+        // run that isn't there.
+        if (disabled && this._isPlaying(name)) this._stopPlay(name)
         ;[document.getElementById('ftl-strip'), document.getElementById('ftl-detached-cards')]
             .forEach((container) => {
                 const card = container?.querySelector(`.ftl-card[data-layer="${name}"]`)
@@ -1624,21 +1927,34 @@ const ForecastTimeline = {
                 const steps = fc ? this._effectiveSteps(fc, name) : 1
                 card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', disabled || cardIdx === 0)
                 card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', disabled || cardIdx === steps - 1)
+                card.querySelector('.ftl-card-play')?.toggleAttribute('disabled', disabled || steps <= 1)
 
                 // Init row text
                 const initEl = card.querySelector('.ftl-card-init')
                 const captionEl = card.querySelector('.ftl-card-init-caption')
                 if (state === 'loading') {
                     if (captionEl) captionEl.style.display = 'none'
+                    initEl?.removeAttribute('title')
                     if (initEl) initEl.innerHTML =
                         '<span style="color:var(--color-a5);font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-style:italic">Fetching\u2026</span>'
                 } else if (state === 'unavailable') {
                     if (captionEl) captionEl.style.display = 'none'
-                    if (initEl) initEl.innerHTML =
-                        '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
-                        ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">Not yet generated</span>'
+                    if (initEl) {
+                        // Name the run that failed to probe — "not yet generated" on its
+                        // own leaves the user guessing which cycle is missing.
+                        const runStr = this._runLabel(fc)
+                        initEl.innerHTML =
+                            '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
+                            ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">' +
+                            `Model at ${runStr} not yet generated</span>`
+                        initEl.setAttribute(
+                            'title',
+                            `The ${runStr} model run has not been generated yet.`
+                        )
+                    }
                 } else {
                     if (captionEl) captionEl.style.display = ''
+                    initEl?.removeAttribute('title')
                     if (initEl) {
                         const unit = fc?.stepUnit || 'hour'
                         const originBase = this._forecastBase(fc || {})
@@ -1651,6 +1967,12 @@ const ForecastTimeline = {
     // ── Cleanup ────────────────────────────────────────────
 
     cleanup: function () {
+        // Kill any running animations before the cards they drive disappear,
+        // otherwise the intervals keep firing _setCardStep against dead DOM.
+        Object.keys(this._playTimers || {}).forEach((n) => this._stopPlay(n))
+        this._playTimers = {}
+        this._frameCache = {}
+
         this.state.cards = {}
         this.state.detached = false
         this._anchorProbeCache = {}
