@@ -32,6 +32,30 @@ import './ForecastTimeline.css'
 
 // Lazy accessor for the UI store (call-time require avoids a circular import at
 // module load, since the store's dependency chain reaches TimeUI).
+// Layer names and labels come from mission config, which admins author freely.
+// They are written both into generated HTML and into the attribute selectors
+// every handler binds by, so they need escaping in two different ways.
+
+// For HTML text nodes and double-quoted attribute values.
+function _escHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+}
+
+// For a value inside a quoted CSS attribute selector. This must be built from
+// the RAW name, not from _escHtml's output: the browser stores the decoded
+// value on the element, so `data-layer="A &amp; B"` in markup is `A & B` in the
+// DOM and only `"` and `\` need escaping here. A name containing an apostrophe
+// or quote previously produced a selector that silently matched nothing, so
+// every prev/next/play/collapse handler on that card quietly did nothing.
+function _escSel(s) {
+    return String(s == null ? '' : s).replace(/["\\]/g, '\\$&')
+}
+
 function _isMobile() {
     try {
         return require('@basics/UserInterface_/store/uiStore').default.getState().isMobile === true
@@ -481,7 +505,14 @@ const ForecastTimeline = {
         if (this._anchorProbeCache) {
             const active = new Set(layers.map((l) => l.name))
             Object.keys(this._anchorProbeCache).forEach((k) => {
-                if (!active.has(k.split(':')[0])) delete this._anchorProbeCache[k]
+                // Split at the LAST colon. The key is `name:base`, and layer
+                // names are path-like and routinely contain colons themselves
+                // (e.g. "COG:https://…"), so split(':')[0] never matched a real
+                // name — every key was pruned on every rebuild, which threw away
+                // the cache and re-probed each time instead of once per run.
+                if (!active.has(k.slice(0, k.lastIndexOf(':')))) {
+                    delete this._anchorProbeCache[k]
+                }
             })
         }
         this._probeAllAnchors()
@@ -505,22 +536,43 @@ const ForecastTimeline = {
         const container = document.getElementById('ftl-strip')
         if (!container) return false
         return this._detectForecastLayers().some(({ name, config: fc }) => {
-            const card = container.querySelector(`.ftl-card[data-layer="${name}"]`)
+            const card = container.querySelector(`.ftl-card[data-layer="${_escSel(name)}"]`)
             // Collapsed cards render as tabs (no ticks) — skip; they rebuild on expand.
             if (!card) return false
             return card.querySelectorAll('.ftl-tick').length !== this._effectiveSteps(fc, name)
         })
     },
 
+    // Re-apply every visible card's step.
+    //
+    // The guard flag MUST be cleared in a finally. Without it a single throw
+    // anywhere in _applyCardStep leaves _reapplying stuck true, and because
+    // _onTimeChange bails on that flag, the plugin then ignores every
+    // subsequent time change — permanently, for the rest of the session. One
+    // transient error and the cards silently stop tracking the timeline, which
+    // presents as "it stopped re-checking" long after the actual error.
+    //
+    // Each layer is isolated too: a card is created optimistically the moment a
+    // toggle is requested, which is before L_ has finished building the Leaflet
+    // layer, so a layer that isn't ready yet must not stop the others from
+    // being re-applied.
     _reapplyAllSteps: function () {
         if (this._reapplying) return
         this._reapplying = true
-        const layers = this._detectForecastLayers()
-        layers.forEach(({ name, config: fc }) => {
-            const idx = this.state.cards[name]?.stepIndex ?? 0
-            this._applyCardStep(name, fc, idx)
-        })
-        this._reapplying = false
+        try {
+            this._detectForecastLayers().forEach(({ name, config: fc }) => {
+                const idx = this.state.cards[name]?.stepIndex ?? 0
+                try {
+                    this._applyCardStep(name, fc, idx)
+                } catch (e) {
+                    console.warn(
+                        '[ForecastTimeline] applying step failed for', name, e
+                    )
+                }
+            })
+        } finally {
+            this._reapplying = false
+        }
     },
 
     // ── Origin / step helpers ──────────────────────────────
@@ -665,7 +717,11 @@ const ForecastTimeline = {
     _tickLabels: function (fc, i, originBase) {
         const unit = fc.stepUnit || 'hour'
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
-        const offset = fc.stepOffset
+        // stepOffset is documented as required, but a mission config that omits
+        // it must degrade to "first step = init time", not render "hNaN" and
+        // "Invalid Date" into an operational forecast card. The chip label
+        // below already defaults the same way.
+        const offset = fc.stepOffset || 0
         const stepDate = new Date(originBase + (i + offset) * unitMs)
 
         if (unit === 'day') {
@@ -707,12 +763,12 @@ const ForecastTimeline = {
         // Info icon only when the layer configures a description — no description,
         // no button (there'd be nothing to show).
         const infoBtnHTML = fc.description
-            ? `<button class="ftl-card-info-btn" data-layer="${name}" type="button" aria-label="Forecast details"><i class="mdi mdi-information-outline"></i></button>`
+            ? `<button class="ftl-card-info-btn" data-layer="${_escHtml(name)}" type="button" aria-label="Forecast details"><i class="mdi mdi-information-outline"></i></button>`
             : ''
 
         // Experimental — only rendered when the mission opts in.
         const playBtnHTML = this._playbackEnabled()
-            ? `<button class="ftl-card-play" data-layer="${name}" type="button" title="Play forecast animation" aria-label="Play forecast animation"><i class="mdi mdi-play"></i></button>`
+            ? `<button class="ftl-card-play" data-layer="${_escHtml(name)}" type="button" title="Play forecast animation" aria-label="Play forecast animation"><i class="mdi mdi-play"></i></button>`
             : ''
 
         // Use native TimeUI classes in attached mode so rows blend in perfectly
@@ -721,7 +777,7 @@ const ForecastTimeline = {
             // Steps are generated from the hour-floored base, so they already
             // land on clean boundaries — no per-tick rounding needed.
             const { clock, rel } = this._tickLabels(fc, i, originBase)
-            return `<div class="${tickClass} ftl-tick-twoline" data-layer="${name}" data-step="${i}"><span class="ftl-tick-clock">${clock}</span><span class="ftl-tick-rel">${rel}</span></div>`
+            return `<div class="${tickClass} ftl-tick-twoline" data-layer="${_escHtml(name)}" data-step="${i}"><span class="ftl-tick-clock">${clock}</span><span class="ftl-tick-rel">${rel}</span></div>`
         }).join('')
 
         const rowClass = large ? 'ftl-card ftl-card-large' : 'ftl-card'
@@ -743,9 +799,9 @@ const ForecastTimeline = {
         const collapsedAttr = isCollapsed ? ' ftl-card-collapsed' : ''
 
         return `
-<div class="${rowClass}${dailyClass}${collapsedAttr}" data-layer="${name}">
+<div class="${rowClass}${dailyClass}${collapsedAttr}" data-layer="${_escHtml(name)}">
   <div class="ftl-card-header">
-    <button class="ftl-card-collapse-btn" data-layer="${name}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+    <button class="ftl-card-collapse-btn" data-layer="${_escHtml(name)}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
       <i class="mdi ${isCollapsed ? 'mdi-window-restore' : 'mdi-window-minimize'} mdi-18px"></i>
     </button>
     <div class="ftl-card-hdr-left">
@@ -754,7 +810,7 @@ const ForecastTimeline = {
     </div>
     <div class="ftl-card-hdr-right">
       <div class="ftl-card-label-row">
-        <span class="ftl-card-label">${label}</span>
+        <span class="ftl-card-label">${_escHtml(label)}</span>
         ${infoBtnHTML}
         ${playBtnHTML}
       </div>
@@ -765,41 +821,41 @@ const ForecastTimeline = {
     </div>
   </div>
   <div class="ftl-card-body">
-    <button class="ftl-card-prev" data-layer="${name}"><i class="mdi mdi-chevron-left"></i></button>
+    <button class="ftl-card-prev" data-layer="${_escHtml(name)}"><i class="mdi mdi-chevron-left"></i></button>
     <div class="${ticksWrapClass}">
       <div class="ftl-ticks">${ticks}</div>
     </div>
-    <button class="ftl-card-next" data-layer="${name}"><i class="mdi mdi-chevron-right"></i></button>
+    <button class="ftl-card-next" data-layer="${_escHtml(name)}"><i class="mdi mdi-chevron-right"></i></button>
   </div>
-  <div class="ftl-card-prefetch" data-layer="${name}"><div class="ftl-card-prefetch-bar"></div></div>
+  <div class="ftl-card-prefetch" data-layer="${_escHtml(name)}"><div class="ftl-card-prefetch-bar"></div></div>
 </div>`
     },
 
     // ── Card event handlers ────────────────────────────────
 
     _attachCardHandlers: function (name, fc, container) {
-        container.querySelectorAll(`.ftl-tick[data-layer="${name}"]`).forEach((el) => {
+        container.querySelectorAll(`.ftl-tick[data-layer="${_escSel(name)}"]`).forEach((el) => {
             el.addEventListener('click', () => {
                 const idx = parseInt(el.dataset.step)
                 this._setCardStep(name, fc, idx)
             })
         })
-        container.querySelector(`.ftl-card-collapse-btn[data-layer="${name}"]`)
+        container.querySelector(`.ftl-card-collapse-btn[data-layer="${_escSel(name)}"]`)
             ?.addEventListener('click', () => {
                 this._toggleCardCollapsed(name)
             })
-        container.querySelector(`.ftl-card-prev[data-layer="${name}"]`)
+        container.querySelector(`.ftl-card-prev[data-layer="${_escSel(name)}"]`)
             ?.addEventListener('click', () => {
                 const cur = this.state.cards[name]?.stepIndex ?? 0
                 this._setCardStep(name, fc, Math.max(0, cur - 1))
             })
-        container.querySelector(`.ftl-card-next[data-layer="${name}"]`)
+        container.querySelector(`.ftl-card-next[data-layer="${_escSel(name)}"]`)
             ?.addEventListener('click', () => {
                 const cur = this.state.cards[name]?.stepIndex ?? 0
                 const max = this._effectiveSteps(fc, name) - 1
                 this._setCardStep(name, fc, Math.min(max, cur + 1))
             })
-        const playBtn = container.querySelector(`.ftl-card-play[data-layer="${name}"]`)
+        const playBtn = container.querySelector(`.ftl-card-play[data-layer="${_escSel(name)}"]`)
         if (playBtn) {
             playBtn.addEventListener('click', () => {
                 this._togglePlay(name, fc)
@@ -813,7 +869,7 @@ const ForecastTimeline = {
             playBtn.addEventListener('mouseleave', () => this._hideTip())
         }
 
-        const wrap = container.querySelector(`.ftl-card[data-layer="${name}"] .ftl-ticks-wrap`)
+        const wrap = container.querySelector(`.ftl-card[data-layer="${_escSel(name)}"] .ftl-ticks-wrap`)
         if (wrap) {
             let startX = 0
             let startY = 0
@@ -844,13 +900,13 @@ const ForecastTimeline = {
         // configures time.forecast.description). It works on desktop (hover) and
         // mobile (tap), showing that plain-language description — how the forecast
         // is generated and how far out it goes. Tapping elsewhere dismisses it.
-        const infoBtn = container.querySelector(`.ftl-card-info-btn[data-layer="${name}"]`)
+        const infoBtn = container.querySelector(`.ftl-card-info-btn[data-layer="${_escSel(name)}"]`)
         if (infoBtn && fc.description) {
             const label = fc.label || name
             this._bindTip(
                 infoBtn,
-                `<div class="ftl-tip-title">${label}</div>` +
-                `<div class="ftl-tip-body">${fc.description}</div>`
+                `<div class="ftl-tip-title">${_escHtml(label)}</div>` +
+                `<div class="ftl-tip-body">${_escHtml(fc.description)}</div>`
             )
         }
     },
@@ -922,7 +978,7 @@ const ForecastTimeline = {
 
         const tabsHTML = collapsed.length > 0
             ? `<div class="ftl-tabs-row">${collapsed.map(({ name, config: fc }) =>
-                `<button class="ftl-tab" data-layer="${name}" title="Expand ${fc.label || name}">${fc.label || name}</button>`
+                `<button class="ftl-tab" data-layer="${_escHtml(name)}" title="Expand ${_escHtml(fc.label || name)}">${_escHtml(fc.label || name)}</button>`
               ).join('')}</div>`
             : ''
 
@@ -951,7 +1007,7 @@ const ForecastTimeline = {
     },
 
     _renderCardStep: function (name, fc, container) {
-        const card = container?.querySelector(`.ftl-card[data-layer="${name}"]`)
+        const card = container?.querySelector(`.ftl-card[data-layer="${_escSel(name)}"]`)
         if (!card) return
 
         const steps = this._effectiveSteps(fc, name)
@@ -1007,7 +1063,9 @@ const ForecastTimeline = {
         idx = Math.max(0, Math.min(idx, this._effectiveSteps(fc, name) - 1))
         const unitMs = STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour
         const originMs = this._forecastBase(fc)
-        const offset = fc.stepOffset
+        // Default to 0 for the same reason _tickLabels does — a config missing
+        // stepOffset must not compute a NaN step time and request it.
+        const offset = fc.stepOffset || 0
         let stepMs = originMs + (idx + offset) * unitMs
 
         // Daily products (WFPI) are already anchored to the UTC model run by
@@ -1654,7 +1712,7 @@ const ForecastTimeline = {
     _setPlayUI: function (name, mode, pct) {
         ;[document.getElementById('ftl-strip')]
             .forEach((container) => {
-                const card = container?.querySelector(`.ftl-card[data-layer="${name}"]`)
+                const card = container?.querySelector(`.ftl-card[data-layer="${_escSel(name)}"]`)
                 if (!card) return
                 const btn = card.querySelector('.ftl-card-play')
                 const icon = btn?.querySelector('i')
@@ -1760,7 +1818,7 @@ const ForecastTimeline = {
         if (disabled && this._isPlaying(name)) this._stopPlay(name)
         ;[document.getElementById('ftl-strip')]
             .forEach((container) => {
-                const card = container?.querySelector(`.ftl-card[data-layer="${name}"]`)
+                const card = container?.querySelector(`.ftl-card[data-layer="${_escSel(name)}"]`)
                 if (!card) return
 
                 // Card-level state classes drive the dark-button CSS
