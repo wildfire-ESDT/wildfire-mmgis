@@ -65,9 +65,20 @@ const ForecastTimeline = {
         originMs: null,
     },
 
+    // Mission config variables (plugin.json → config.rows).
+    vars: {},
+
+    // Playback is experimental and off unless a mission opts in via
+    // variables.experimentalPlayback. Gated at the single point where the button
+    // is built, so nothing downstream needs to know about the flag.
+    _playbackEnabled: function () {
+        return this.vars?.experimentalPlayback === true
+    },
+
     // ── Lifecycle ──────────────────────────────────────────
 
     init: function (vars) {
+        this.vars = vars || {}
         this.state.originMs = Date.now()
 
         // ── Bottom-element repositioning ──
@@ -699,6 +710,11 @@ const ForecastTimeline = {
             ? `<button class="ftl-card-info-btn" data-layer="${name}" type="button" aria-label="Forecast details"><i class="mdi mdi-information-outline"></i></button>`
             : ''
 
+        // Experimental — only rendered when the mission opts in.
+        const playBtnHTML = this._playbackEnabled()
+            ? `<button class="ftl-card-play" data-layer="${name}" type="button" title="Play forecast animation" aria-label="Play forecast animation"><i class="mdi mdi-play"></i></button>`
+            : ''
+
         // Use native TimeUI classes in attached mode so rows blend in perfectly
         const tickClass = large ? 'ftl-tick ftl-tick-large' : 'ftl-tick mmgisTimeUIExpandedItem'
         const ticks = Array.from({ length: steps }, (_, i) => {
@@ -740,7 +756,7 @@ const ForecastTimeline = {
       <div class="ftl-card-label-row">
         <span class="ftl-card-label">${label}</span>
         ${infoBtnHTML}
-        <button class="ftl-card-play" data-layer="${name}" type="button" title="Play forecast animation" aria-label="Play forecast animation"><i class="mdi mdi-play"></i></button>
+        ${playBtnHTML}
       </div>
       <div class="ftl-card-init-row">
         <span class="ftl-card-init-caption">INITIALIZED:</span>
