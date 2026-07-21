@@ -1,10 +1,8 @@
 /**
  * ForecastTimeline - Integrated forecast stepper rows inside TimeUI
  *
- * Attached mode: injects card rows into TimeUI expanded content + a toggle
- *   button in the TimeUI actions bar. The main timeline stays visible.
- * Detached mode: hides TimeUI, shows a standalone panel with a compact
- *   date+hour picker and expanded forecast card rows.
+ * Injects forecast card rows into TimeUI's expanded content. The main timeline
+ *   stays visible and owns the selected time.
  *
  * Layer config: time.forecast block with:
  *   { enabled: true, label: "PWWB Hourly", steps: 24, stepUnit: "hour", stepOffset: 1,
@@ -65,7 +63,6 @@ const ForecastTimeline = {
     state: {
         cards: {},
         originMs: null,
-        detached: false,
     },
 
     // ── Lifecycle ──────────────────────────────────────────
@@ -315,32 +312,12 @@ const ForecastTimeline = {
 
     // ── DOM injection ──────────────────────────────────────
 
-    _injectToggleButton: function () {
-        document.getElementById('ftl-toggle-btn')?.remove()
-
-        const actionsRight = document.getElementById('mmgisTimeUIActionsRight')
-        if (!actionsRight) return
-
-        const btn = document.createElement('div')
-        btn.id = 'ftl-toggle-btn'
-        btn.className = 'mmgisTimeUIButton ftl-toggle-btn'
-        btn.title = 'Toggle Forecast Panel'
-        btn.innerHTML = '<i class="mdi mdi-weather-cloudy-clock mdi-24px"></i>'
-        btn.addEventListener('click', () => this._toggleDetached())
-        actionsRight.prepend(btn)
-    },
 
     _waitAndInject: function () {
         // The strip only needs #mmgisTimeUIExpandedContent, which exists on both
-        // desktop and mobile. The toggle button lives in #mmgisTimeUIActionsRight,
-        // which TimeUI only renders on desktop — so gate the strip on the expanded
-        // content alone and add the toggle button only when the actions bar exists.
+        // desktop and mobile.
         const doInject = () => {
-            if (document.getElementById('mmgisTimeUIActionsRight')) {
-                this._injectToggleButton()
-            }
             this._injectForecastStrip()
-            this._injectDetachedPanel()
             this._rebuildCards()
         }
         const tryInject = () => {
@@ -431,159 +408,11 @@ const ForecastTimeline = {
         this._repositionBottomElements()
     },
 
-    _injectDetachedPanel: function () {
-        document.getElementById('ftl-detached')?.remove()
 
-        const panel = document.createElement('div')
-        panel.id = 'ftl-detached'
-        panel.className = 'ftl-detached'
-        panel.classList.add('ftl-hidden')
 
-        const now = new Date(this.state.originMs || Date.now())
-        const dateVal = now.toLocaleDateString('en-CA', { timeZone: PDT_TZ })
-        const timeParts = now.toLocaleString('en-US', {
-            timeZone: PDT_TZ,
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        }).split(':')
-        const hourVal = timeParts[0]?.padStart(2, '0') || '00'
-        const minVal = timeParts[1] || '00'
 
-        panel.innerHTML = `
-<div class="ftl-detached-header">
-  <span class="ftl-detached-title">
-    <i class="mdi mdi-weather-cloudy-clock"></i>&nbsp;FORECAST MODE
-  </span>
-  <div class="ftl-detached-pickers">
-    <span class="ftl-picker-label">DATE</span>
-    <input id="ftl-date-pick" class="ftl-picker-input" type="date" value="${dateVal}" />
-    <span class="ftl-picker-label">HR</span>
-    <input id="ftl-hour-pick" class="ftl-picker-input ftl-picker-short" type="number" min="0" max="23" value="${hourVal}" />
-    <span class="ftl-picker-label">MIN</span>
-    <input id="ftl-min-pick" class="ftl-picker-input ftl-picker-short" type="number" min="0" max="59" value="${minVal}" />
-    <button id="ftl-time-go" class="ftl-go-btn">SET</button>
-  </div>
-  <button id="ftl-detach-close" class="mmgisTimeUIButton ftl-close-btn" title="Back to main timeline">
-    <i class="mdi mdi-arrow-collapse-down mdi-24px"></i>
-  </button>
-</div>
-<div id="ftl-detached-cards" class="ftl-detached-cards"></div>
-`
-        document.body.appendChild(panel)
 
-        panel.querySelector('#ftl-time-go')?.addEventListener('click', () => this._applyPickerTime())
-        panel.querySelector('#ftl-detach-close')?.addEventListener('click', () => this._toggleDetached())
-        panel.querySelector('#ftl-hour-pick')?.addEventListener('change', () => this._applyPickerTime())
-        panel.querySelector('#ftl-min-pick')?.addEventListener('change', () => this._applyPickerTime())
 
-        // Date: open the native picker on a click anywhere in the field, not
-        // just the tiny calendar icon. showPicker() needs a user gesture (this
-        // click is one) and may throw if unsupported / already open — ignore.
-        const dateEl = panel.querySelector('#ftl-date-pick')
-        if (dateEl) {
-            dateEl.addEventListener('change', () => this._applyPickerTime())
-            dateEl.addEventListener('click', () => {
-                try { dateEl.showPicker?.() } catch (e) { /* noop */ }
-            })
-        }
-
-        // Hour / minute: scroll the wheel to step the value (wraps at bounds).
-        this._attachWheelStep(panel.querySelector('#ftl-hour-pick'), 0, 23)
-        this._attachWheelStep(panel.querySelector('#ftl-min-pick'), 0, 59)
-    },
-
-    // Wheel-to-step a numeric picker input, wrapping around min/max, then apply.
-    _attachWheelStep: function (el, min, max) {
-        if (!el) return
-        el.addEventListener('wheel', (e) => {
-            e.preventDefault()
-            const cur = parseInt(el.value)
-            const base = isNaN(cur) ? min : cur
-            let next = base + (e.deltaY < 0 ? 1 : -1)
-            if (next < min) next = max
-            else if (next > max) next = min
-            el.value = String(next).padStart(2, '0')
-            this._applyPickerTime()
-        }, { passive: false })
-    },
-
-    // ── Date picker ────────────────────────────────────────
-
-    _applyPickerTime: function () {
-        const dateEl = document.getElementById('ftl-date-pick')
-        const hourEl = document.getElementById('ftl-hour-pick')
-        const minEl = document.getElementById('ftl-min-pick')
-        if (!dateEl || !hourEl || !minEl) return
-
-        const dateStr = dateEl.value
-        const hour = parseInt(hourEl.value) || 0
-        const min = parseInt(minEl.value) || 0
-        if (!dateStr) return
-
-        const dt = new Date(`${dateStr}T${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}:00`)
-        if (isNaN(dt)) return
-
-        this._applyingStep = true
-        TimeControl.setTime(
-            TimeUI.removeOffset(dt.getTime() - 3600000),
-            TimeUI.removeOffset(dt.getTime()),
-            false,
-            '00:00:00'
-        )
-        setTimeout(() => { this._applyingStep = false }, 200)
-
-        this.state.originMs = dt.getTime()
-        this._refreshAllCards()
-    },
-
-    _updatePickerDisplay: function () {
-        const dateEl = document.getElementById('ftl-date-pick')
-        const hourEl = document.getElementById('ftl-hour-pick')
-        const minEl = document.getElementById('ftl-min-pick')
-        if (!dateEl || !hourEl || !minEl) return
-
-        const d = new Date(this.state.originMs || Date.now())
-        dateEl.value = d.toLocaleDateString('en-CA', { timeZone: PDT_TZ })
-        const parts = d.toLocaleString('en-US', {
-            timeZone: PDT_TZ,
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        }).split(':')
-        hourEl.value = parts[0]?.padStart(2, '0') || '00'
-        minEl.value = parts[1] || '00'
-    },
-
-    // ── Attach / Detach toggle ─────────────────────────────
-
-    _toggleDetached: function () {
-        this.state.detached = !this.state.detached
-        this._applyDetachState()
-    },
-
-    _applyDetachState: function () {
-        const timeUI = document.getElementById('timeUI')
-        const panel = document.getElementById('ftl-detached')
-        const btn = document.getElementById('ftl-toggle-btn')
-
-        if (this.state.detached) {
-            if (timeUI) timeUI.style.display = 'none'
-            if (panel) {
-                panel.classList.remove('ftl-hidden')
-                this._updatePickerDisplay()
-            }
-            if (btn) btn.classList.add('active')
-            this._rebuildDetachedCards()
-        } else {
-            if (timeUI) timeUI.style.display = ''
-            if (panel) panel.classList.add('ftl-hidden')
-            if (btn) btn.classList.remove('active')
-        }
-        // Re-offset the compass / scalebar / legend for the new mode (detached
-        // panel height vs. docked timeline height).
-        this._repositionBottomElements()
-    },
 
     // ── Card management ────────────────────────────────────
 
@@ -637,15 +466,6 @@ const ForecastTimeline = {
         }
         this._adjustTimeUIHeight()
 
-        // Also rebuild detached panel if visible
-        if (this.state.detached) {
-            this._rebuildDetachedCards()
-        }
-
-        // Toggle button always visible
-        const btn = document.getElementById('ftl-toggle-btn')
-        if (btn) btn.style.display = ''
-
         // Prune cache entries for layers that are no longer active, then probe.
         if (this._anchorProbeCache) {
             const active = new Set(layers.map((l) => l.name))
@@ -656,32 +476,13 @@ const ForecastTimeline = {
         this._probeAllAnchors()
     },
 
-    _rebuildDetachedCards: function () {
-        const layers = this._detectForecastLayers()
-        const container = document.getElementById('ftl-detached-cards')
-        if (!container) return
-
-        container.innerHTML = this._buildStripHTML(layers, true)
-
-        layers.forEach(({ name, config: fc }) => {
-            this._attachCardHandlers(name, fc, container)
-            this._renderCardStep(name, fc, container)
-        })
-        this._attachTabHandlers(container)
-
-        // Panel height depends on how many cards were just rendered — re-offset
-        // the bottom elements so they clear the (possibly taller) detached panel.
-        if (this.state.detached) this._repositionBottomElements()
-    },
 
     _refreshAllCards: function () {
         const layers = this._detectForecastLayers()
         const strip = document.getElementById('ftl-strip')
-        const detachedCards = document.getElementById('ftl-detached-cards')
 
         layers.forEach(({ name, config: fc }) => {
             if (strip) this._renderCardStep(name, fc, strip)
-            if (detachedCards) this._renderCardStep(name, fc, detachedCards)
         })
     },
 
@@ -690,9 +491,7 @@ const ForecastTimeline = {
     // of) a 00/06/12/18z run, so its range jumped between F18 and F48. _renderCardStep
     // only updates existing ticks, so a mismatch means we must rebuild the tick DOM.
     _stepCountsStale: function () {
-        const container = this.state.detached
-            ? document.getElementById('ftl-detached-cards')
-            : document.getElementById('ftl-strip')
+        const container = document.getElementById('ftl-strip')
         if (!container) return false
         return this._detectForecastLayers().some(({ name, config: fc }) => {
             const card = container.querySelector(`.ftl-card[data-layer="${name}"]`)
@@ -1408,7 +1207,6 @@ const ForecastTimeline = {
         if (this._applyingStep || this._reapplying) return
         if (timeData?.currentTime) {
             this.state.originMs = new Date(timeData.currentTime).getTime()
-            if (this.state.detached) this._updatePickerDisplay()
             // If a card's tick count changed (e.g. HRRR crossed a 00/06/12/18z
             // boundary, F18↔F48), rebuild so the new ticks appear immediately;
             // otherwise just refresh the existing ticks in place.
@@ -1478,41 +1276,6 @@ const ForecastTimeline = {
         // of whatever the forecast plugin adds at the bottom, in two modes:
         const root = document.documentElement
 
-        if (this.state.detached) {
-            // ── Detached "forecast mode" ──
-            // #timeUI is display:none and replaced by the fixed #ftl-detached
-            // panel, but the core still offsets bottom elements as if the main
-            // timeline were docked (at its stale collapsed/expanded height). So
-            // we OVERRIDE their bottom (via .ftl-detached-mode !important rules)
-            // to sit above the actual panel — this both lifts them when the main
-            // timeline was collapsed (was clipping) and lowers them when it was
-            // expanded (was floating above the panel).
-            const panel = document.getElementById('ftl-detached')
-            const panelH = panel && !panel.classList.contains('ftl-hidden')
-                ? panel.offsetHeight
-                : 0
-            root.classList.add('ftl-detached-mode')
-            root.style.setProperty('--ftl-detached-offset', panelH + 'px')
-            root.style.setProperty('--ftl-extra-bottom', '0px')
-
-            // The core's --mmgis-sep-tools-bottom-reserve is computed off the
-            // now-hidden main timeline, so it's stale here (e.g. still 177 tall
-            // after shrinking into forecast mode). Publish our OWN full reserve
-            // based on the ACTUAL detached panel so separated-tool panels (Legend)
-            // grow back when forecast mode is shorter than the old timeline, and
-            // shrink only once the forecast panel grows tall enough to collide.
-            // Mirrors the core formula: containerTop + bottomStack + compass + gap.
-            const sepContainer = document.getElementById('toolcontroller_sep_content')
-            if (sepContainer) {
-                const compassStack = 70 // compass + scale bar height above the bar
-                const gap = 12
-                const containerTop = sepContainer.getBoundingClientRect().top
-                const reserve = containerTop + panelH + compassStack + gap
-                root.style.setProperty('--ftl-sep-reserve', reserve + 'px')
-            }
-            return
-        }
-
         // ── Attached mode ──
         // The forecast strip makes #timeUI taller than the core's hardcoded 177,
         // so publish the exact extra height as a CSS custom property;
@@ -1520,9 +1283,6 @@ const ForecastTimeline = {
         // Derived from the card count (the same formula that grows #timeUI in
         // _adjustTimeUIHeight) rather than a live measurement, so it stays stable
         // during the timeline's expand/collapse transition instead of jittering.
-        root.classList.remove('ftl-detached-mode')
-        root.style.setProperty('--ftl-detached-offset', '0px')
-
         const timeUIEl = document.getElementById('timeUI')
         if (!timeUIEl) return
 
@@ -1567,20 +1327,11 @@ const ForecastTimeline = {
             this._anchorProbeCache[key] = 'pending'
             this._setCardState(name, 'loading')
 
-            const url = this._anchorUrl(name, fc)
-            if (!url) {
-                // Can't probe this layer type — assume available
-                this._anchorProbeCache[key] = 'available'
-                this._setCardState(name, 'available')
-                return
-            }
-
             // Capture the floored hour at fire time so sub-second jitter in
             // originMs doesn't cause the result to be silently discarded.
             const baseAtFire = base
-            fetch(url, { method: 'HEAD', cache: 'no-store' })
-                .then((r) => {
-                    const newState = r.ok ? 'available' : 'unavailable'
+            this._probeAnchor(name, fc)
+                .then((newState) => {
                     this._anchorProbeCache[key] = newState
                     // Only update the DOM if the user is still on the same hour
                     if (this._forecastBase(fc) === baseAtFire) {
@@ -1598,27 +1349,113 @@ const ForecastTimeline = {
         })
     },
 
-    // Build the URL to probe for the anchor step of a forecast layer.
+    // Resolve a layer's anchor availability. Probing can't be one-size-fits-all:
+    // COG/velocity endpoints are plain files that return honest status codes, but
+    // a WMS answers a bad request with HTTP 200 and an XML ServiceException body,
+    // so `r.ok` there is meaningless.
+    _probeAnchor: function (name, fc) {
+        if (fc.urlTemplate) return this._probeWmsTime(name, fc)
+
+        const url = this._anchorUrl(name, fc)
+        // Can't probe this layer type (STAC etc.) — assume available
+        if (!url) return Promise.resolve('available')
+
+        return fetch(url, { method: 'HEAD', cache: 'no-store' }).then((r) =>
+            r.ok ? 'available' : 'unavailable'
+        )
+    },
+
+    // WMS availability: ask the server which times it actually publishes and look
+    // for the target run among them. GetCapabilities is the only honest answer —
+    // a GetMap for a missing TIME often returns a blank tile rather than an error.
+    _probeWmsTime: function (name, fc) {
+        const capsUrl = this._capabilitiesUrl(name, fc)
+        if (!capsUrl) return Promise.resolve('available')
+
+        return this._getCapabilityTimes(capsUrl).then((times) => {
+            // Couldn't read the extent — fall back to the old assumption rather
+            // than crying wolf on a transient USGS failure.
+            if (!times || !times.length) return 'available'
+            const target = new Date(this._forecastBase(fc))
+                .toISOString()
+                .slice(0, 10)
+            return times.includes(target) ? 'available' : 'unavailable'
+        })
+    },
+
+    // Derive the GetCapabilities endpoint from the layer's own template so no
+    // host is hardcoded. __FSTEP__ -> 1 because every step shares a workspace's
+    // time extent; only the layer name differs.
+    _capabilitiesUrl: function (name, fc) {
+        const ld = L_.layers.data[name]
+        const base = fc._baseUrl || ld?.url || ''
+        if (!base.includes('__FSTEP__')) return null
+        const endpoint = base.replace(/__FSTEP__/g, '1').split('?')[0]
+        if (!endpoint) return null
+        return `${endpoint}?service=WMS&version=1.1.1&request=GetCapabilities`
+    },
+
+    // Cached, de-duplicated GetCapabilities time extents. The document is ~380 KB
+    // and _probeAllAnchors runs on every timeline change, so this must not refetch
+    // per card render. Values are YYYY-MM-DD (the extent is day-granular).
+    _capsCache: {},
+    _CAPS_TTL_MS: 30 * 60 * 1000,
+
+    _getCapabilityTimes: function (capsUrl) {
+        const now = Date.now()
+        const hit = this._capsCache[capsUrl]
+        if (hit) {
+            // In-flight: share the promise so N cards issue one request.
+            if (hit.promise) return hit.promise
+            if (now - hit.fetchedMs < this._CAPS_TTL_MS) {
+                return Promise.resolve(hit.times)
+            }
+        }
+
+        const promise = fetch(capsUrl)
+            .then((r) => (r.ok ? r.text() : ''))
+            .then((xml) => {
+                const times = this._parseCapabilityTimes(xml)
+                this._capsCache[capsUrl] = { times, fetchedMs: Date.now() }
+                return times
+            })
+            .catch(() => {
+                // Cache the failure briefly so a down server isn't hammered.
+                this._capsCache[capsUrl] = { times: [], fetchedMs: Date.now() }
+                return []
+            })
+
+        this._capsCache[capsUrl] = { promise, times: [], fetchedMs: now }
+        return promise
+    },
+
+    // <Extent name="time" default="current">2008-08-01T00:00:00.000Z,…</Extent>
+    // Regex rather than DOMParser: it's one flat element in a 380 KB document,
+    // and a parse miss degrades to "assume available", never to a false warning.
+    _parseCapabilityTimes: function (xml) {
+        if (!xml) return []
+        const m = /<Extent[^>]*name="time"[^>]*>([\s\S]*?)<\/Extent>/i.exec(xml)
+        if (!m || !m[1]) return []
+        return m[1]
+            .split(',')
+            .map((s) => s.trim().slice(0, 10))
+            .filter(Boolean)
+    },
+
+    // Build the URL to HEAD-probe for the anchor step of a forecast layer.
     // COG: veloserver source URL with fxx=0 (strip the COG: prefix — that's
     //      just a MMGIS routing flag, not part of the actual URL).
     // HRRR velocity: gribjson URL with fxx=0 and {time} resolved.
-    // urlTemplate (WFPI): base URL with __FSTEP__=1 and {time} resolved.
-    // Returns null for layer types we can't probe (STAC etc.).
+    // Returns null for layer types we can't HEAD-probe (STAC etc.).
+    //
+    // urlTemplate (WFPI) is deliberately absent: it used to build a GetMap with
+    // no BBOX/WIDTH/HEIGHT, which GeoServer answers with HTTP 200 and an XML
+    // ServiceException — so the probe always read "available" and never actually
+    // checked. WMS layers go through _probeWmsTime/GetCapabilities instead.
     _anchorUrl: function (name, fc) {
         const ld = L_.layers.data[name]
         if (!ld) return null
         const url = ld.url || ''
-
-        if (fc.urlTemplate) {
-            const base = fc._baseUrl || url
-            if (!base.includes('__FSTEP__')) return null
-            const timeStr = ld.time?.end || new Date().toISOString()
-            return base
-                .replace(/__FSTEP__/g, '1')
-                .replace(/{time}/g, timeStr)
-                .replace(/{endtime}/g, timeStr)
-                .replace(/{starttime}/g, timeStr)
-        }
 
         if (url.toUpperCase().startsWith('COG:')) {
             const src = url.slice(4)
@@ -1799,7 +1636,7 @@ const ForecastTimeline = {
     },
 
     _setPlayUI: function (name, mode, pct) {
-        ;[document.getElementById('ftl-strip'), document.getElementById('ftl-detached-cards')]
+        ;[document.getElementById('ftl-strip')]
             .forEach((container) => {
                 const card = container?.querySelector(`.ftl-card[data-layer="${name}"]`)
                 if (!card) return
@@ -1905,7 +1742,7 @@ const ForecastTimeline = {
         // A card that just went unavailable must not keep animating against a
         // run that isn't there.
         if (disabled && this._isPlaying(name)) this._stopPlay(name)
-        ;[document.getElementById('ftl-strip'), document.getElementById('ftl-detached-cards')]
+        ;[document.getElementById('ftl-strip')]
             .forEach((container) => {
                 const card = container?.querySelector(`.ftl-card[data-layer="${name}"]`)
                 if (!card) return
@@ -1942,11 +1779,13 @@ const ForecastTimeline = {
                     if (initEl) {
                         // Name the run that failed to probe — "not yet generated" on its
                         // own leaves the user guessing which cycle is missing.
+                        // "on" for a daily run (a date), "at" for an hourly one (a time).
                         const runStr = this._runLabel(fc)
+                        const prep = (fc?.stepUnit || 'hour') === 'day' ? 'on' : 'at'
                         initEl.innerHTML =
                             '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
                             ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">' +
-                            `Model at ${runStr} not yet generated</span>`
+                            `Model ${prep} ${runStr} not yet generated</span>`
                         initEl.setAttribute(
                             'title',
                             `The ${runStr} model run has not been generated yet.`
@@ -1972,9 +1811,9 @@ const ForecastTimeline = {
         Object.keys(this._playTimers || {}).forEach((n) => this._stopPlay(n))
         this._playTimers = {}
         this._frameCache = {}
+        this._capsCache = {}
 
         this.state.cards = {}
-        this.state.detached = false
         this._anchorProbeCache = {}
 
         const timeUI = document.getElementById('timeUI')
@@ -1992,10 +1831,8 @@ const ForecastTimeline = {
             this._heightObserver = null
         }
 
-        // Remove extra bottom offset + detached-mode override
-        document.documentElement.classList.remove('ftl-detached-mode')
+        // Remove extra bottom offset
         document.documentElement.style.removeProperty('--ftl-extra-bottom')
-        document.documentElement.style.removeProperty('--ftl-detached-offset')
         document.documentElement.style.removeProperty('--ftl-sep-reserve')
 
         // Restore TimeUI navigation and expanded rows
@@ -2023,8 +1860,6 @@ const ForecastTimeline = {
         }
 
         document.getElementById('ftl-strip')?.remove()
-        document.getElementById('ftl-toggle-btn')?.remove()
-        document.getElementById('ftl-detached')?.remove()
         document.getElementById('ftl-tooltip')?.remove()
     },
 }
