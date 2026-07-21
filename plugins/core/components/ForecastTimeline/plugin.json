@@ -14,12 +14,25 @@
     }
   },
   "defaultIcon": "chart-timeline-variant",
-  "hasVars": false,
+  "hasVars": true,
   "paths": {
     "ForecastTimeline": "./ForecastTimeline"
   },
   "config": {
-    "rows": []
+    "rows": [
+      {
+        "components": [
+          {
+            "field": "variables.experimentalPlayback",
+            "name": "Forecast Playback (Experimental)",
+            "description": "Adds a play button to each forecast card that prefetches the run and animates through its steps. Experimental: playback smoothness varies by product — HRRR wind fields animate from memory, while tile-based products (WFPI, COG rasters) refetch each frame and can flicker.",
+            "type": "checkbox",
+            "width": 6,
+            "defaultChecked": false
+          }
+        ]
+      }
+    ]
   },
   "author": "NASA-AMMOS/MMGIS",
   "license": "Apache-2.0",
