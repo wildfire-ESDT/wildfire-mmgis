@@ -24,6 +24,23 @@ import TimeControl from '@basics/TimeControl_/TimeControl'
 import $ from 'jquery'
 import * as moment from 'moment'
 
+// Floor an instant to the top of its local hour.
+//
+// Subtracts the elapsed part of the hour rather than rebuilding the date from
+// local Y/M/D/H parts. The two agree in ordinary time, but rebuilding is wrong
+// across a DST fall-back: the repeated local hour is ambiguous, so 01:30 PST
+// (the second pass) rebuilds as 01:00 *PDT* — flooring the instant 90 minutes
+// backwards, into an hour the user has already left. Subtraction cannot move an
+// instant by more than 59:59.999 and needs no disambiguation. It is also
+// correct in zones whose offset is not a whole hour (India +05:30, Nepal
+// +05:45, Chatham +12:45), which keep their real :30/:45 hour boundary.
+function _hourFloor(ms) {
+    const d = new Date(ms)
+    return (
+        ms - (d.getMinutes() * 60000 + d.getSeconds() * 1000 + d.getMilliseconds())
+    )
+}
+
 const LocalTimezone = {
     _applied: false,
 
@@ -130,8 +147,8 @@ const LocalTimezone = {
                     ((endTime.year() - firstVisibleYear + endYearFraction) /
                         totalYears) *
                     100
-                startPeriod = moment(TimeUI._startTimestamp).year()
-                endPeriod = moment(TimeUI._endTimestamp).year()
+                startPeriod = startTime.year()
+                endPeriod = endTime.year()
             } else if (containerType === 'months') {
                 // Calculate fractional range for months row (12 months)
                 const selectedYear = _eDisp.year
@@ -191,15 +208,16 @@ const LocalTimezone = {
                 }
             } else if (containerType === 'days') {
                 // Calculate fractional range for days row
-                const selectedYear = moment
-                    .utc(moment(TimeUI.removeOffset(TimeUI._endTimestamp)))
-                    .year()
-                const selectedMonth = moment
-                    .utc(moment(TimeUI.removeOffset(TimeUI._endTimestamp)))
-                    .month()
-                const daysInMonth = moment
-                    .utc(moment(TimeUI.removeOffset(TimeUI._endTimestamp)))
-                    .daysInMonth()
+                // Display digits, like the months and hours branches. Reading
+                // the raw instant in UTC here put this branch in a different
+                // frame from its siblings and from startTime/endTime.
+                const selectedYear = _eDisp.year
+                const selectedMonth = _eDisp.month
+                const daysInMonth = new Date(
+                    _eDisp.year,
+                    _eDisp.month + 1,
+                    0
+                ).getDate()
 
                 // Calculate start position
                 if (
@@ -221,13 +239,13 @@ const LocalTimezone = {
                         100
                     startPeriod = startTime.date()
                 } else if (
-                    startTime.isBefore(moment([selectedYear, selectedMonth, 1]))
+                    startTime.isBefore(moment.utc([selectedYear, selectedMonth, 1]))
                 ) {
                     startPercent = 0
                     startPeriod = 0
                 } else {
                     startPercent = 100
-                    endPeriod = 0
+                    startPeriod = daysInMonth
                 }
 
                 // Calculate end position
@@ -249,7 +267,7 @@ const LocalTimezone = {
                     endPeriod = endTime.date()
                 } else if (
                     endTime.isAfter(
-                        moment([selectedYear, selectedMonth, daysInMonth]).endOf(
+                        moment.utc([selectedYear, selectedMonth, daysInMonth]).endOf(
                             'day'
                         )
                     )
@@ -277,7 +295,7 @@ const LocalTimezone = {
                     startPeriod = startTime.hour()
                 } else if (
                     startTime.isBefore(
-                        moment([selectedYear, selectedMonth, selectedDay])
+                        moment.utc([selectedYear, selectedMonth, selectedDay])
                     )
                 ) {
                     startPercent = 0
@@ -298,7 +316,7 @@ const LocalTimezone = {
                     endPeriod = endTime.hour()
                 } else if (
                     endTime.isAfter(
-                        moment([
+                        moment.utc([
                             selectedYear,
                             selectedMonth,
                             selectedDay,
@@ -465,8 +483,13 @@ const LocalTimezone = {
             const startOfMonth = TimeUI._displayToUtc(selectedYear, monthIndex, 1, 0, 0, 0)
             const lastDay = new Date(selectedYear, monthIndex + 1, 0).getDate()
             let endOfMonth = TimeUI._displayToUtc(selectedYear, monthIndex, lastDay, 23, 59, 59)
-            const now = new Date()
-            const nowHourFloor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0).getTime()
+            const nowHourFloor = _hourFloor(Date.now())
+            // A month entirely in the future has no selectable extent at all.
+            // Clamping only the END produced an INVERTED range (start after
+            // end) — e.g. clicking December in July gave Dec 1 → today — which
+            // downstream code reads as a negative-width window. _selectHour
+            // already refuses a future hour; do the same here.
+            if (startOfMonth > nowHourFloor) return
             if (endOfMonth > nowHourFloor) endOfMonth = nowHourFloor
 
             TimeUI.updateTimes(startOfMonth, endOfMonth, endOfMonth)
@@ -482,8 +505,10 @@ const LocalTimezone = {
             const _disp = TimeUI._utcToDisplay(TimeUI._endTimestamp)
             const startOfDay = TimeUI._displayToUtc(_disp.year, _disp.month, day, 0, 0, 0)
             let endOfDay = TimeUI._displayToUtc(_disp.year, _disp.month, day, 23, 59, 59)
-            const now = new Date()
-            const nowHourFloor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0).getTime()
+            const nowHourFloor = _hourFloor(Date.now())
+            // Same inversion as _selectMonth: a day wholly in the future clamped
+            // its end back to now while its start stayed ahead of it.
+            if (startOfDay > nowHourFloor) return
             if (endOfDay > nowHourFloor) endOfDay = nowHourFloor
 
             TimeUI.updateTimes(startOfDay, endOfDay, endOfDay)
@@ -498,8 +523,7 @@ const LocalTimezone = {
         TimeUI._selectHour = function (hour) {
             const _disp = TimeUI._utcToDisplay(TimeUI._endTimestamp)
             const startOfHour = TimeUI._displayToUtc(_disp.year, _disp.month, _disp.day, hour, 0, 0)
-            const now = new Date()
-            const nowHourFloor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0).getTime()
+            const nowHourFloor = _hourFloor(Date.now())
             if (startOfHour > nowHourFloor) return
             const endOfHour = TimeUI._displayToUtc(_disp.year, _disp.month, _disp.day, hour, 59, 59)
 
