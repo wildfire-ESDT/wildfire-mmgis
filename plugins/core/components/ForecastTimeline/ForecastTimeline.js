@@ -1795,13 +1795,11 @@ const ForecastTimeline = {
                     if (initEl) {
                         // Name the run that failed to probe — "not yet generated" on its
                         // own leaves the user guessing which cycle is missing.
-                        // "on" for a daily run (a date), "at" for an hourly one (a time).
                         const runStr = this._runLabel(fc)
-                        const prep = (fc?.stepUnit || 'hour') === 'day' ? 'on' : 'at'
                         initEl.innerHTML =
                             '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
                             ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">' +
-                            `Model ${prep} ${runStr} not yet generated</span>`
+                            `${runStr} run not yet generated</span>`
                         initEl.setAttribute(
                             'title',
                             `The ${runStr} model run has not been generated yet.`
