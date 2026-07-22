@@ -403,6 +403,14 @@
     box-sizing: border-box;
 }
 
+/* WFPI is the exception: its ticks carry a full valid window
+   ("Dec 30 4 PM – Dec 31 4 PM", nowrap at 11px/600), so only that card's
+   steps get a wider fixed width. Class set in _buildCardHTML. */
+.ftl-card-wfpi .mmgisTimeUIExpandedItem {
+    flex: 0 0 160px;
+    min-width: 160px;
+}
+
 /* ── Future item in main timeline expanded rows (years/months/days/hours) ── */
 .mmgisTimeUIExpandedItem {
     transition: opacity 0.15s;

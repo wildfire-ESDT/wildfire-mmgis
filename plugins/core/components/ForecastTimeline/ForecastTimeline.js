@@ -771,17 +771,20 @@ const ForecastTimeline = {
 
         if (unit === 'day') {
             const dOpts = { timeZone: 'UTC', month: 'short', day: 'numeric' }
-            // WFPI first step only: show the day's window as prev–curr (e.g.
-            // "Jul 12–13"). Every other step (and every other daily product)
-            // shows a single date.
-            if (i === 0 && /wfpi/i.test(fc?.label || '')) {
-                const prevD = new Date(originBase + (i + offset - 1) * unitMs)
-                const sameMonth =
-                    prevD.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short' }) ===
-                    stepDate.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short' })
-                const clock = sameMonth
-                    ? `${prevD.toLocaleDateString('en-US', dOpts)}–${stepDate.toLocaleDateString('en-US', { timeZone: 'UTC', day: 'numeric' })}`
-                    : `${prevD.toLocaleDateString('en-US', dOpts)} – ${stepDate.toLocaleDateString('en-US', dOpts)}`
+            // WFPI: every step shows its full valid window in local time —
+            // "Jul 12 5 PM – Jul 13 5 PM". A step is valid from its 00:00Z
+            // stamp (5 PM PDT the prior evening) through the next 00:00Z.
+            // Formatting the real instants (rather than hardcoding "5 PM")
+            // keeps the hour right across DST (4 PM PST in winter).
+            if (/wfpi/i.test(fc?.label || '')) {
+                const endDate = new Date(stepDate.getTime() + unitMs)
+                // "Jul 12 5 PM" — date and time joined without a comma, matching
+                // the INITIALIZED row's span format (_formatInit).
+                const winD = { timeZone: PDT_TZ, month: 'short', day: 'numeric' }
+                const winT = { timeZone: PDT_TZ, hour: 'numeric', hour12: true }
+                const fmtWin = (dd) =>
+                    `${dd.toLocaleDateString('en-US', winD)} ${dd.toLocaleTimeString('en-US', winT)}`
+                const clock = `${fmtWin(stepDate)} – ${fmtWin(endDate)}`
                 return { clock, rel: `+${i + offset}` }
             }
             const clock = stepDate.toLocaleString('en-US', dOpts)
@@ -829,7 +832,11 @@ const ForecastTimeline = {
         const rowClass = large ? 'ftl-card ftl-card-large' : 'ftl-card'
         // Daily cards use fixed-width steps (see CSS) so a 1-step daily card stays
         // one step wide instead of stretching a lone tick across the whole track.
-        const dailyClass = unit === 'day' ? ' ftl-card-daily' : ''
+        // WFPI additionally gets wider steps to fit its valid-window tick labels
+        // ("Jul 21 5 PM – Jul 22 5 PM") — see .ftl-card-wfpi in the CSS.
+        const dailyClass =
+            (unit === 'day' ? ' ftl-card-daily' : '') +
+            (/wfpi/i.test(fc?.label || '') ? ' ftl-card-wfpi' : '')
         const ticksWrapClass = large ? 'ftl-ticks-wrap' : 'ftl-ticks-wrap mmgisTimeUIExpandedRowContainer'
 
         const unitWord = unit === 'day' ? 'daily' : unit === 'week' ? 'weekly' : 'hourly'
