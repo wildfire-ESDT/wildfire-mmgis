@@ -1283,7 +1283,11 @@ const ForecastTimeline = {
                         const visitKey = `${name}:${this._forecastBase(fc)}:${idx}`
                         if (!this._visitedSteps.has(visitKey)) {
                             this._visitedSteps.add(visitKey)
-                            this._setTickLoading(name, idx, true, 2500)
+                            // Not during playback: prefetch already warmed the
+                            // tiles, and a spinner hopping tick-to-tick at
+                            // frame rate reads as noise, not feedback.
+                            if (!this._isPlaying(name))
+                                this._setTickLoading(name, idx, true, 2500)
                         }
                         leafletLayer.refresh(newUrl, true)
                     }
@@ -1980,7 +1984,10 @@ const ForecastTimeline = {
     //
     // Playback walks a card's steps on a timer. Because each step is a separate
     // network fetch, playing straight away would stutter on every frame, so a
-    // play press first prefetches the whole run and shows a progress bar.
+    // play press first prefetches the run, filling the yellow progress bar
+    // along the card's bottom edge. Both prefetch and the loop stop at the
+    // run's published edge (maxStep) when it's known — unpublished hours would
+    // only 502 and re-probe on every pass.
     //
     // What "prefetch" can mean depends on how the layer carries its forecast hour:
     //   • HRRR gribjson velocity — one JSON per step, so every step is fetched
@@ -2070,8 +2077,20 @@ const ForecastTimeline = {
         })
     },
 
+    // Steps playback and prefetch should cover: the full range, clipped to the
+    // published edge once it's known. Without the clip, prefetch hammers
+    // unpublished hours (each a slow 502) and the loop lands on greyed ticks,
+    // firing their on-demand re-probe every single pass.
+    _playableSteps: function (name, fc) {
+        const total = this._effectiveSteps(fc, name)
+        const maxStep = this.state.cards[name]?.maxStep
+        return typeof maxStep === 'number'
+            ? Math.max(1, Math.min(total, maxStep + 1))
+            : total
+    },
+
     _prefetchSteps: function (name, fc, onProgress) {
-        const steps = this._effectiveSteps(fc, name)
+        const steps = this._playableSteps(name, fc)
         const ld = L_.layers.data[name]
         const key = this._frameKey(name, fc)
         const isVelocity = this._isFxxVelocity(ld)
@@ -2146,6 +2165,7 @@ const ForecastTimeline = {
                 }
                 if (btn) {
                     btn.classList.toggle('ftl-playing', mode !== 'idle')
+                    btn.classList.toggle('ftl-prefetching', mode === 'loading')
                     btn.title =
                         mode === 'loading'
                             ? 'Loading forecast steps — click to cancel'
@@ -2161,7 +2181,7 @@ const ForecastTimeline = {
     // Hover text for the play button. Built at hover time so the step count and
     // playing/stopped wording are always current.
     _playTipHtml: function (name, fc) {
-        const steps = this._effectiveSteps(fc, name)
+        const steps = this._playableSteps(name, fc)
         const unit = (fc?.stepUnit || 'hour') === 'day' ? 'day' : 'hour'
         if (this._isPlaying(name)) {
             return (
@@ -2203,7 +2223,7 @@ const ForecastTimeline = {
             if (!token.cancelled) this._setPlayUI(name, 'loading', total ? done / total : 1)
         }).then(() => {
             if (token.cancelled || this._playTimers[name] !== token) return
-            const steps = this._effectiveSteps(fc, name)
+            const steps = this._playableSteps(name, fc)
             if (steps <= 1) {
                 this._stopPlay(name)
                 return
