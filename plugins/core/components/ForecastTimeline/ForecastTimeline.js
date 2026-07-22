@@ -23,6 +23,12 @@
  *   Daily steps anchor to the latest run at or before the selected time (fixes the
  *   boundary where a PDT calendar date lagged the actual UTC run). WFPI runs at
  *   00:00 UTC (5 PM PDT) → runHourUTC: 0. Set it to each product's real run hour.
+ *
+ * fxx layers (config-driven): a layer opts into per-hour forecast stepping by
+ *   including ?fxx=0 in its configured URL (e.g. the HRRR COG rasters and the
+ *   HRRR gribjson velocity layer). The card steps the forecast hour by rewriting
+ *   that param in place — no product paths are hardcoded here. A URL without
+ *   fxx= (e.g. GFS gribjson, analysis-only) is naturally excluded.
  */
 
 import TimeControl from '@basics/TimeControl_/TimeControl'
@@ -316,6 +322,13 @@ const ForecastTimeline = {
                     self._optimisticOn.delete(name) // user turning it off
                 } else {
                     self._optimisticOn.add(name) // user turning it on
+                    // A fresh toggle-on is a natural retry: forget any cached
+                    // negative/failed availability for this layer so the check
+                    // runs again (a run that 502'd minutes ago may be out now).
+                    Object.keys(self._edgeCache || {}).forEach((k) => {
+                        if (k.slice(0, k.lastIndexOf(':')) === name)
+                            delete self._edgeCache[k]
+                    })
                 }
                 self._rebuildCards()
             }
@@ -480,7 +493,10 @@ const ForecastTimeline = {
         // Sync state: prune removed, init new
         const activeNames = new Set(layers.map((l) => l.name))
         Object.keys(this.state.cards).forEach((n) => {
-            if (!activeNames.has(n)) delete this.state.cards[n]
+            if (!activeNames.has(n)) {
+                delete this.state.cards[n]
+                this._detachLoadIndicator(n)
+            }
         })
         layers.forEach(({ name, config: fc }) => {
             if (!this.state.cards[name]) {
@@ -498,6 +514,9 @@ const ForecastTimeline = {
             layers.forEach(({ name, config: fc }) => {
                 this._attachCardHandlers(name, fc, strip)
                 this._renderCardStep(name, fc, strip)
+                // Tick-spinner tile hooks. No-op until the Leaflet layer is
+                // built; the toggle-settle rebuild retries and hooks it then.
+                this._attachLoadIndicator(name)
                 const cs = this.state.cards[name]?.cardState
                 if (cs && cs !== 'available') {
                     this._setCardState(name, cs)
@@ -580,11 +599,22 @@ const ForecastTimeline = {
 
     // ── Origin / step helpers ──────────────────────────────
 
-    // Model init time floored to the current hour's :00 (e.g. 02:55 → 02:00).
+    // Model init time floored to the selected hour's :00 (e.g. 02:55 → 02:00).
     // All forecast steps are generated from this floored base so ticks land on
     // clean hour boundaries and the "MODEL INITIALIZED AT" readout matches.
+    //
+    // Anchored to the TIMELINE's selected time (TimeControl.currentTime), never
+    // the wall clock: probes and step math must target the run the layers
+    // themselves load. state.originMs (synced in _onTimeChange) is the fallback
+    // for the window before TimeControl has a time. Using Date.now() here made a
+    // freshly-opened page probe the current hour's run — which veloserver 502s
+    // for the ~hour before HRRR publishes it — so cards read "not yet generated"
+    // while the layers themselves loaded fine at the selected time.
     _originBase: function () {
-        const d = new Date(this.state.originMs || Date.now())
+        let t = NaN
+        if (TimeControl.currentTime) t = new Date(TimeControl.currentTime).getTime()
+        if (isNaN(t)) t = this.state.originMs || Date.now()
+        const d = new Date(t)
         d.setMinutes(0, 0, 0)
         return d.getTime()
     },
@@ -609,11 +639,11 @@ const ForecastTimeline = {
         return runToday <= base ? runToday : runToday - STEP_UNITS.day
     },
 
-    // Number of steps the card should offer. veloserver fxx layers (HRRR COG
-    // rasters and the HRRR gribjson velocity layer) know their own range from the
-    // init time -- every run reaches F18, but runs started at 00/06/12/18 UTC reach
-    // F48 -- so no per-layer config. Other forecast layers (WFPI daily, PWWB hourly)
-    // use their configured fc.steps. The init-hour check is on the selected
+    // Number of steps the card should offer. fxx layers (opted in via ?fxx= in
+    // their config URL — the HRRR COG rasters and the HRRR gribjson velocity
+    // layer) know their own range from the init time -- every run reaches F18, but
+    // runs started at 00/06/12/18 UTC reach F48 -- so no per-layer config. Other
+    // forecast layers (WFPI daily, PWWB hourly) use their configured fc.steps. The init-hour check is on the selected
     // instant's UTC hour, so it's correct whatever the PDT display shows (DST-safe).
     _effectiveSteps: function (fc, name) {
         const ld = name ? L_.layers.data[name] : null
@@ -623,15 +653,13 @@ const ForecastTimeline = {
         return (isExtendedRun ? HRRR_FXX_MAX_EXTENDED : HRRR_FXX_MAX) + 1
     },
 
-    // True for a veloserver layer whose forecast hour is carried as a ?fxx=N query
-    // param: an HRRR COG raster (url starts "COG:") or the HRRR gribjson velocity
-    // layer (url has /hrrr/gribjson/). GFS gribjson is winds-only analysis --
-    // veloserver ignores fxx there -- so it is deliberately excluded.
+    // True for a layer whose forecast hour is carried as a ?fxx=N query param.
+    // The opt-in is the CONFIG URL itself: a layer that includes fxx= in its
+    // configured URL (e.g. "…/{time}.tiff?fxx=0") is an fxx layer; nothing about
+    // product paths is hardcoded. GFS gribjson is winds-only analysis — its URL
+    // carries no fxx — so it is naturally excluded.
     _isFxxLayer: function (ld) {
-        if (!ld) return false
-        const url = ld.url || ''
-        if (url.toUpperCase().startsWith('COG:')) return true
-        return ld.type === 'velocity' && /\/hrrr\/gribjson\//i.test(url)
+        return /[?&]fxx=/i.test(ld?.url || '')
     },
 
     // Per-layer configurable step label. time.forecast.stepLabel wins;
@@ -1054,6 +1082,71 @@ const ForecastTimeline = {
         }
     },
 
+    // Busy affordance on a single tick: a small corner spinner on the step
+    // whose data is currently in flight (velocity grib fetch, COG/WMS tile
+    // load). Shows the click registered, exactly where the user clicked.
+    //
+    // Every `on` carries an auto-clear timeout (ttlMs): the COG tile path has
+    // no reliable completion signal (the anti-flicker refresh swaps tile srcs
+    // directly, bypassing Leaflet's load events), and even where callbacks
+    // exist a dropped one must never leave a spinner going forever.
+    _tickSpinTimers: {},
+
+    _setTickLoading: function (name, idx, on, ttlMs) {
+        const strip = document.getElementById('ftl-strip')
+        if (!strip) return
+        if (this._tickSpinTimers[name]) {
+            clearTimeout(this._tickSpinTimers[name])
+            delete this._tickSpinTimers[name]
+        }
+        strip
+            .querySelectorAll(`.ftl-tick[data-layer="${_escSel(name)}"]`)
+            .forEach((el) => {
+                const isTarget = on && parseInt(el.dataset.step) === idx
+                el.classList.toggle('ftl-tick-loading', isTarget)
+            })
+        if (on) {
+            this._tickSpinTimers[name] = setTimeout(() => {
+                delete this._tickSpinTimers[name]
+                this._clearTickLoading(name)
+            }, ttlMs || 8000)
+        }
+    },
+
+    // Clear every tick spinner on a card (used when its state changes wholesale).
+    _clearTickLoading: function (name) {
+        this._setTickLoading(name, -1, false)
+    },
+
+    // Tile layers (COG fxx and WMS urlTemplate) load asynchronously through
+    // Leaflet, which fires 'loading'/'load' on the layer itself. Hook those
+    // once per built layer so the active tick spins while tiles are in flight.
+    // The velocity path instruments its own fetch instead (no Leaflet events).
+    _attachLoadIndicator: function (name) {
+        const leafletLayer = L_.layers.layer[name]
+        if (!leafletLayer || typeof leafletLayer.on !== 'function') return
+        if (!this._loadHooks) this._loadHooks = {}
+        if (this._loadHooks[name]) return // already hooked (hooks survive rebuilds)
+        const onLoading = () => {
+            const idx = this.state.cards[name]?.stepIndex
+            if (typeof idx === 'number') this._setTickLoading(name, idx, true)
+        }
+        const onLoad = () => this._clearTickLoading(name)
+        leafletLayer.on('loading', onLoading)
+        leafletLayer.on('load', onLoad)
+        leafletLayer.on('tileerror', onLoad)
+        this._loadHooks[name] = { layer: leafletLayer, onLoading, onLoad }
+    },
+
+    _detachLoadIndicator: function (name) {
+        const hook = this._loadHooks?.[name]
+        if (!hook) return
+        hook.layer.off('loading', hook.onLoading)
+        hook.layer.off('load', hook.onLoad)
+        hook.layer.off('tileerror', hook.onLoad)
+        delete this._loadHooks[name]
+    },
+
     _renderCardStep: function (name, fc, container) {
         const card = container?.querySelector(`.ftl-card[data-layer="${_escSel(name)}"]`)
         this._dbg('renderCardStep', name, {
@@ -1148,7 +1241,11 @@ const ForecastTimeline = {
             const ld = L_.layers.data[name]
             if (!ld || !L_.layers.on[name]) return
 
-            if (ld.type === 'tile' && (ld.url || '').toUpperCase().startsWith('COG:')) {
+            if (
+                ld.type === 'tile' &&
+                (ld.url || '').toUpperCase().startsWith('COG:') &&
+                this._isFxxLayer(ld)
+            ) {
                 // The forecast hour rides as ?fxx=N, and it MUST sit inside the
                 // veloserver source (the titiler `url=` value), not as a sibling
                 // param on the titiler request. veloserver only honours fxx when
@@ -1174,21 +1271,34 @@ const ForecastTimeline = {
                         /([?&]url=)([^&]*)/i,
                         (_m, pre, src) => pre + setFxx(src)
                     )
-                    if (newUrl !== leafletLayer._url) leafletLayer.refresh(newUrl, true)
+                    if (newUrl !== leafletLayer._url) {
+                        // Spin the clicked tick while tiles come in — but only
+                        // on the FIRST visit to this step this run. Revisited
+                        // steps serve from the browser tile cache near-
+                        // instantly, and a spinner there reads as a false
+                        // "loading" flash. The anti-flicker refresh gives no
+                        // completion event, so the spinner rides the auto-
+                        // clear (tiles typically land well inside it).
+                        if (!this._visitedSteps) this._visitedSteps = new Set()
+                        const visitKey = `${name}:${this._forecastBase(fc)}:${idx}`
+                        if (!this._visitedSteps.has(visitKey)) {
+                            this._visitedSteps.add(visitKey)
+                            this._setTickLoading(name, idx, true, 2500)
+                        }
+                        leafletLayer.refresh(newUrl, true)
+                    }
                 }
                 return
             }
 
-            // HRRR gribjson velocity layer: same ?fxx=N scheme as the COG layers,
-            // but leaflet-velocity has no in-place URL swap like a tile .refresh(),
+            // fxx velocity layer (HRRR gribjson): same ?fxx=N scheme as the COG
+            // layers — opted in by the fxx= in its configured URL — but
+            // leaflet-velocity has no in-place URL swap like a tile .refresh(),
             // so rewrite fxx on ld.url and let reloadLayer re-fetch. reloadLayer's
             // velocity path toggles the layer off/on, re-running makeVelocityLayer
             // -> captureVector against the new URL. {time} stays a live token (the
             // run/init time from the main timeline); step 0 -> fxx=0 (the analysis).
-            if (
-                ld.type === 'velocity' &&
-                /\/hrrr\/gribjson\//i.test(ld.url || '')
-            ) {
+            if (this._isFxxVelocity(ld)) {
                 const setFxx = (u) =>
                     /[?&]fxx=/i.test(u)
                         ? u.replace(/([?&]fxx=)[^&]*/i, `$1${idx}`)
@@ -1222,23 +1332,37 @@ const ForecastTimeline = {
                         .replace(/{time}/g, ld.time.end)
                         .replace(/{endtime}/g, ld.time.end)
                         .replace(/{starttime}/g, ld.time.start || ld.time.end)
+                    // Spin the clicked tick while the grib is in flight — the
+                    // only feedback that the click registered (fetches run 1–3s).
+                    this._setTickLoading(name, idx, true)
                     fetch(fetchUrl)
                         .then((r) => {
                             if (!r.ok) throw new Error(r.status)
                             return r.json()
                         })
                         .then((data) => {
+                            this._setTickLoading(name, idx, false)
                             leafletLayer.setData(data)
+                            // Keep the frame so revisiting this step is instant
+                            // (setData straight from memory — no refetch, no
+                            // spinner). Same per-run store playback prefetch
+                            // uses, so a new model run never serves stale frames.
+                            const fk = this._frameKey(name, fc)
+                            if (!this._frameCache[fk]) this._frameCache[fk] = {}
+                            this._frameCache[fk][idx] = data
                             // This step's data is present — it lies within the
                             // published edge, so nudge the edge out to include it.
                             this._raiseEdge(name, fc, idx)
                         })
                         .catch((e) => {
+                            this._setTickLoading(name, idx, false)
                             console.warn('ForecastTimeline: velocity fxx update failed', e)
-                            // The step fetch is ground truth: this hour isn't
-                            // there, so clamp the published edge to just below it.
-                            // (idx 0 missing → edge -1 → whole card unavailable.)
-                            this._lowerEdge(name, fc, idx)
+                            // The probes said this run exists, but the data
+                            // didn't come back — the services can be briefly
+                            // desynced. Disable just this card with the
+                            // "Forecast not available" message (not the
+                            // "run not generated" one, which would be a lie).
+                            this._failCard(name, fc)
                         })
                 } else {
                     // Fallback when setData isn't available: reload via toggle,
@@ -1472,11 +1596,14 @@ const ForecastTimeline = {
     // ASSUMPTION: the prefix is contiguous (no holes). If a run ever published
     // F0..F5 and F7 but not F6, the binary search could misplace the edge — but
     // clicking a greyed tick re-probes that exact hour (see _setCardStep) and a
-    // velocity step-fetch failure clamps the edge down, so any misplacement is
-    // self-correcting rather than sticky.
+    // velocity step-fetch failure disables the card outright (_failCard), so
+    // any misplacement is self-correcting rather than sticky.
 
-    // Values are: a number (resolved edge, -1 = run missing entirely) or
-    // 'pending'. Keyed `name:base`.
+    // Values are: a number (resolved edge, -1 = run missing entirely),
+    // 'pending' (anchor unresolved — card shows its checking state), or
+    // 'resolving' (anchor proven present, far edge still being searched — the
+    // card is fully usable with every step enabled; ticks past the edge grey
+    // when the search lands). Keyed `name:base`.
     _edgeCache: {},
 
     _probeAllAnchors: function () {
@@ -1495,6 +1622,12 @@ const ForecastTimeline = {
                 this._setCardState(name, 'loading')
                 return
             }
+            if (cached === 'resolving') {
+                // Anchor already proven — keep the card usable while the far
+                // edge search finishes in the background.
+                this._applyEdge(name, undefined)
+                return
+            }
 
             this._edgeCache[key] = 'pending'
             this._setCardState(name, 'loading')
@@ -1502,33 +1635,110 @@ const ForecastTimeline = {
             const baseAtFire = base
             const stillCurrent = () => this._forecastBase(fc) === baseAtFire
 
+            // Commit a probe result, merging with — never clobbering — direct
+            // data evidence. A step fetch that succeeded while probes were in
+            // flight already wrote a number (via _raiseEdge) or marked the run
+            // as evidenced; a slower, failed probe must not blank a card the
+            // map is actively rendering data for.
+            const commit = (edge) => {
+                const cs = this.state.cards[name]
+                const prev = this._edgeCache[key]
+                let merged = edge
+                if (typeof prev === 'number') {
+                    merged = Math.max(prev, edge)
+                } else if (edge < 0 && cs?.evidenceBase === baseAtFire) {
+                    this._edgeCache[key] = 'resolving'
+                    this._dbg('edge probe failed but data evidence wins', name, { key })
+                    if (stillCurrent()) this._applyEdge(name, undefined)
+                    return
+                }
+                this._edgeCache[key] = merged
+                this._dbg('edge RESULT', name, { key, edge: merged, applied: stillCurrent() })
+                if (stillCurrent()) this._applyEdge(name, merged)
+            }
+
             this._dbg('edge RESOLVE', name, { key, base: new Date(base).toISOString() })
-            this._resolveEdge(name, fc)
-                .then((edge) => {
-                    this._edgeCache[key] = edge
-                    this._dbg('edge RESULT', name, { key, edge, applied: stillCurrent() })
-                    if (stillCurrent()) this._applyEdge(name, edge)
+
+            const ld = L_.layers.data[name]
+            if (fc.urlTemplate || !this._isFxxLayer(ld)) {
+                // Atomic publication (WFPI — one GetMap answers for every step)
+                // or unprobeable (STAC etc.) — a single one-shot resolve.
+                this._resolveEdge(name, fc)
+                    .then(commit)
+                    .catch((e) => {
+                        // A thrown probe is a network failure — the case the card
+                        // exists to report. Treat as run-missing, not fail open.
+                        this._dbg('edge ERROR', name, e)
+                        commit(-1)
+                    })
+                return
+            }
+
+            // fxx layers: anchor FIRST, edge in the background. If fxx=0 is
+            // present the card is usable immediately — every step enabled —
+            // while the far-edge search (max probe + binary search, each miss a
+            // slow server-side generation) runs behind it. Blocking the card on
+            // the full search left it saying it was still checking long after
+            // the layer itself had rendered.
+            this._probeFxx(name, fc, 0)
+                .then((ok0) => {
+                    if (!ok0) {
+                        commit(-1)
+                        return
+                    }
+                    const maxFxx = this._effectiveSteps(fc, name) - 1
+                    if (maxFxx <= 0) {
+                        commit(0)
+                        return
+                    }
+                    // Step-fetch evidence may have already resolved a numeric
+                    // edge while this anchor probe was in flight — honor it
+                    // rather than transiently un-greying a step proven missing.
+                    const cur = this._edgeCache[key]
+                    if (cur === 'pending') this._edgeCache[key] = 'resolving'
+                    if (stillCurrent())
+                        this._applyEdge(
+                            name,
+                            typeof cur === 'number' ? cur : undefined
+                        )
+                    return this._resolveMaxEdge(name, fc, maxFxx).then(commit)
                 })
                 .catch((e) => {
-                    // A thrown probe is a network failure — the case the card
-                    // exists to report. Treat as run-missing rather than fail open.
                     this._dbg('edge ERROR', name, e)
-                    this._edgeCache[key] = -1
-                    if (stillCurrent()) this._applyEdge(name, -1)
+                    commit(-1)
                 })
         })
     },
 
+    // Shared fetch options for availability probes. The timeout bounds the
+    // checking state and the background edge search on a hung network.
+    _probeFetchOpts: function (extra) {
+        const opts = { cache: 'no-store', ...extra }
+        if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+            opts.signal = AbortSignal.timeout(20000)
+        }
+        return opts
+    },
+
     // Turn a resolved edge into card state. edge < 0 → whole card unavailable;
-    // otherwise available, and the tick greying (in _renderCardStep) hides the
-    // steps beyond the edge.
+    // edge undefined → anchor present but far edge still resolving (card fully
+    // usable, no ticks greyed); otherwise available with the tick greying (in
+    // _renderCardStep) hiding the steps beyond the edge.
     _applyEdge: function (name, edge) {
         const cs = this.state.cards[name]
         if (!cs) return
-        const wasUnavailable = cs.cardState === 'unavailable'
+        const wasUnavailable =
+            cs.cardState === 'unavailable' || cs.cardState === 'failed'
         cs.maxStep = edge
-        if (edge < 0) {
-            this._setCardState(name, 'unavailable')
+        if (typeof edge === 'number' && edge < 0) {
+            // Distinguish "the run isn't generated" (probe said no) from "the
+            // run should exist but its data failed to fetch" (_failCard).
+            const fc = L_.layers.data[name]?.time?.forecast
+            const failed =
+                cs.failedBase != null &&
+                fc != null &&
+                cs.failedBase === this._forecastBase(fc)
+            this._setCardState(name, failed ? 'failed' : 'unavailable')
         } else {
             this._setCardState(name, 'available')
             // Re-apply the current step so the COG/tile refresh fires now that
@@ -1539,26 +1749,52 @@ const ForecastTimeline = {
 
     // Nudge the cached edge to at least `n` (a step just proven present) and
     // re-render if it grew. Keeps the on-demand re-probe and the velocity
-    // step-fetch success in sync with the card.
+    // step-fetch success in sync with the card. Successful data is also
+    // recorded as evidence for this run, so a slower failed probe of the same
+    // run can't blank the card afterwards (see commit in _probeAllAnchors).
     _raiseEdge: function (name, fc, n) {
         const cs = this.state.cards[name]
         if (!cs) return
-        if ((cs.maxStep ?? -1) >= n && cs.cardState === 'available') return
-        const edge = Math.max(cs.maxStep ?? -1, n)
-        this._edgeCache[`${name}:${this._forecastBase(fc)}`] = edge
+        const base = this._forecastBase(fc)
+        const key = `${name}:${base}`
+        cs.evidenceBase = base
+        // Fresh data supersedes any earlier fetch failure for this card.
+        cs.failedBase = null
+        const cached = this._edgeCache[key]
+        if (typeof cached !== 'number') {
+            // Far edge still unresolved — there is no numeric edge to raise
+            // (every step is already enabled) and writing one here would grey
+            // the untested steps beyond it. Just make sure the card isn't
+            // stuck dark while its data demonstrably loads.
+            if (cached === 'pending') this._edgeCache[key] = 'resolving'
+            if (cs.cardState !== 'available') this._applyEdge(name, undefined)
+            return
+        }
+        if (cached >= n && cs.cardState === 'available') return
+        const edge = Math.max(cached, n)
+        this._edgeCache[key] = edge
         this._applyEdge(name, edge)
     },
 
-    // Clamp the cached edge to just below `n` (a step just proven missing).
-    _lowerEdge: function (name, fc, n) {
+    // A step fetch FAILED while its spinner was going: the availability probes
+    // said this run exists, but the data didn't come back — the probe target
+    // and the data service can be briefly desynced. Disable just this card
+    // with the distinct "Forecast not available" message. Recovery paths: a
+    // new run (new cache key → fresh probe), a successful later fetch
+    // (_raiseEdge clears failedBase), or toggling the layer off/on (the
+    // toggle patch clears this layer's cached availability entirely).
+    _failCard: function (name, fc) {
         const cs = this.state.cards[name]
         if (!cs) return
-        const edge = Math.min(cs.maxStep ?? Infinity, n - 1)
-        this._edgeCache[`${name}:${this._forecastBase(fc)}`] = edge
-        this._applyEdge(name, edge)
+        const base = this._forecastBase(fc)
+        cs.failedBase = base
+        this._edgeCache[`${name}:${base}`] = -1
+        this._applyEdge(name, -1)
     },
 
-    // Resolve the published edge (max fxx present), or -1 if the run is missing.
+    // One-shot resolve for non-fxx layers: atomic publication (WFPI) or
+    // unprobeable (STAC etc.). fxx layers resolve incrementally in
+    // _probeAllAnchors (anchor first, then _resolveMaxEdge in the background).
     _resolveEdge: function (name, fc) {
         // WFPI / urlTemplate: publication is atomic, so it's all-or-nothing —
         // day 1 governs every step. Reuse the existing day-1 GetMap probe.
@@ -1567,23 +1803,19 @@ const ForecastTimeline = {
                 v === 'available' ? (fc.steps || 1) - 1 : -1
             )
         }
-
-        const ld = L_.layers.data[name]
-        // Layers we can't probe (STAC etc.): assume all steps present, but do it
+        // Layers we can't probe: assume all steps present, but do it
         // explicitly rather than by silent fall-through.
-        if (!this._isFxxLayer(ld)) return Promise.resolve((fc.steps || 1) - 1)
+        return Promise.resolve((fc.steps || 1) - 1)
+    },
 
-        const maxFxx = this._effectiveSteps(fc, name) - 1
-        // Anchor first: if fxx=0 is missing the run isn't out — one request.
-        return this._probeFxx(name, fc, 0).then((ok0) => {
-            if (!ok0) return -1
-            if (maxFxx <= 0) return 0
-            // Then the far end: a fully-published run resolves in two requests.
-            return this._probeFxx(name, fc, maxFxx).then((okMax) => {
-                if (okMax) return maxFxx
-                // Mid-publication: binary-search the last present hour.
-                return this._binarySearchEdge(name, fc, 0, maxFxx)
-            })
+    // Far end of a run whose anchor is already proven: max fxx present, in at
+    // most 1 + log2(range) probes.
+    _resolveMaxEdge: function (name, fc, maxFxx) {
+        // A fully-published run resolves in one request.
+        return this._probeFxx(name, fc, maxFxx).then((okMax) => {
+            if (okMax) return maxFxx
+            // Mid-publication: binary-search the last present hour.
+            return this._binarySearchEdge(name, fc, 0, maxFxx)
         })
     },
 
@@ -1612,7 +1844,7 @@ const ForecastTimeline = {
         if (url.toUpperCase().startsWith('COG:')) {
             const info = this._cogInfoUrl(name, fc, n)
             if (!info) return Promise.resolve(true)
-            return fetch(info, { cache: 'no-store' })
+            return fetch(info, this._probeFetchOpts())
                 .then((r) => {
                     this._dbg('probe cog/info', name, 'fxx=' + n, r.status)
                     return r.ok
@@ -1620,10 +1852,10 @@ const ForecastTimeline = {
                 .catch(() => false)
         }
 
-        if (this._isHrrrVelocity(ld)) {
-            const src = this._velocitySourceForFxx(ld, n)
+        if (this._isFxxVelocity(ld)) {
+            const src = this._velocitySourceForFxx(ld, fc, n)
             if (!src) return Promise.resolve(true)
-            return fetch(src, { method: 'HEAD', cache: 'no-store' })
+            return fetch(src, this._probeFetchOpts({ method: 'HEAD' }))
                 .then((r) => {
                     this._dbg('probe velocity HEAD', name, 'fxx=' + n, r.status)
                     return r.ok
@@ -1634,8 +1866,8 @@ const ForecastTimeline = {
         return Promise.resolve(true)
     },
 
-    _isHrrrVelocity: function (ld) {
-        return ld?.type === 'velocity' && /\/hrrr\/gribjson\//i.test(ld.url || '')
+    _isFxxVelocity: function (ld) {
+        return ld?.type === 'velocity' && this._isFxxLayer(ld)
     },
 
     // The titiler base the MAP actually uses, read off the built Leaflet layer's
@@ -1666,12 +1898,19 @@ const ForecastTimeline = {
         return `${this._titilerBase(name)}/cog/info?url=${encodeURIComponent(src)}`
     },
 
-    // The gribjson source URL for forecast hour `n`, {time} resolved.
-    _velocitySourceForFxx: function (ld, n) {
+    // The gribjson source URL for forecast hour `n`. {time} resolves to the
+    // RUN this card is anchored to (_forecastBase) — the same anchor the COG
+    // probe uses — never ld.time.end. That field can be empty at probe time or
+    // hold a different instant than the run, and a probe aimed at the wrong
+    // run reports "not generated" for a layer that is loading fine.
+    _velocitySourceForFxx: function (ld, fc, n) {
         const url = ld?.url || ''
-        const timeStr = ld.time?.end || new Date().toISOString()
+        const timeStr = new Date(this._forecastBase(fc)).toISOString()
         return this._setFxx(
-            url.replace(/{time}/g, timeStr).replace(/{endtime}/g, timeStr),
+            url
+                .replace(/{time}/g, timeStr)
+                .replace(/{endtime}/g, timeStr)
+                .replace(/{starttime}/g, timeStr),
             n
         )
     },
@@ -1684,7 +1923,7 @@ const ForecastTimeline = {
         if (!url) return Promise.resolve('available')
 
         this._dbg('probe WMS GetMap', name, url)
-        return fetch(url, { cache: 'no-store' }).then((r) => {
+        return fetch(url, this._probeFetchOpts()).then((r) => {
             const ct = (r.headers.get('content-type') || '').toLowerCase()
             // GeoServer answers an out-of-extent TIME with HTTP 200 and an OGC
             // ServiceException *XML* body (application/vnd.ogc.se_xml), never an
@@ -1774,7 +2013,7 @@ const ForecastTimeline = {
     _stepUrl: function (name, fc, idx) {
         const ld = L_.layers.data[name]
         if (!ld) return null
-        if (ld.type === 'velocity' && /\/hrrr\/gribjson\//i.test(ld.url || '')) {
+        if (this._isFxxVelocity(ld)) {
             const timeStr = ld.time?.end || new Date().toISOString()
             return this._setFxx(ld.url, idx)
                 .replace(/{time}/g, timeStr)
@@ -1835,10 +2074,11 @@ const ForecastTimeline = {
         const steps = this._effectiveSteps(fc, name)
         const ld = L_.layers.data[name]
         const key = this._frameKey(name, fc)
-        const isVelocity =
-            ld?.type === 'velocity' && /\/hrrr\/gribjson\//i.test(ld.url || '')
+        const isVelocity = this._isFxxVelocity(ld)
         const isCog =
-            ld?.type === 'tile' && (ld.url || '').toUpperCase().startsWith('COG:')
+            ld?.type === 'tile' &&
+            (ld.url || '').toUpperCase().startsWith('COG:') &&
+            this._isFxxLayer(ld)
 
         if (!this._frameCache[key]) this._frameCache[key] = {}
         const frames = this._frameCache[key]
@@ -1989,8 +2229,16 @@ const ForecastTimeline = {
     },
 
     // Set a forecast card's visual state. state is one of:
-    //   'loading'     — probe in flight: ticks/buttons dark, "Fetching…" in init row
-    //   'unavailable' — probe returned error: ticks/buttons dark, warning in init row
+    //   'loading'     — anchor probe in flight: ticks/buttons dark, "Checking
+    //                   availability…" in init row. This is about the PROBE, not
+    //                   the layer's own data load — the layer may already be
+    //                   rendering. With anchor-first probing this window is one
+    //                   request long, not the whole edge search.
+    //   'unavailable' — probe says the run isn't generated: ticks/buttons dark,
+    //                   "run not yet generated" warning in init row
+    //   'failed'      — probe said the run exists but a step's data fetch
+    //                   failed (services briefly desynced): same dark card,
+    //                   "Forecast not available" warning instead
     //   'available'   — probe ok: normal interactive card
     _setCardState: function (name, state) {
         if (this.state.cards[name]) this.state.cards[name].cardState = state
@@ -2007,6 +2255,8 @@ const ForecastTimeline = {
         // A card that just went unavailable must not keep animating against a
         // run that isn't there.
         if (disabled && this._isPlaying(name)) this._stopPlay(name)
+        // Nor keep a step spinner going — the card-level state supersedes it.
+        if (disabled) this._clearTickLoading(name)
         ;[document.getElementById('ftl-strip')]
             .forEach((container) => {
                 const card = container?.querySelector(`.ftl-card[data-layer="${_escSel(name)}"]`)
@@ -2014,7 +2264,12 @@ const ForecastTimeline = {
 
                 // Card-level state classes drive the dark-button CSS
                 card.classList.toggle('ftl-card-loading', state === 'loading')
-                card.classList.toggle('ftl-card-unavailable', state === 'unavailable')
+                // 'failed' shares the unavailable visual treatment; only the
+                // init-row message differs.
+                card.classList.toggle(
+                    'ftl-card-unavailable',
+                    state === 'unavailable' || state === 'failed'
+                )
 
                 // Ticks: ftl-future-item greys them and kills pointer-events.
                 // A tick is greyed when the whole card is disabled OR when the
@@ -2042,7 +2297,20 @@ const ForecastTimeline = {
                     if (captionEl) captionEl.style.display = 'none'
                     initEl?.removeAttribute('title')
                     if (initEl) initEl.innerHTML =
-                        '<span style="color:var(--color-a5);font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-style:italic">Fetching\u2026</span>'
+                        '<span class="ftl-loading-inline">' +
+                        '<i class="mdi mdi-loading mdi-spin"></i> Loading\u2026</span>'
+                } else if (state === 'failed') {
+                    if (captionEl) captionEl.style.display = 'none'
+                    if (initEl) {
+                        initEl.innerHTML =
+                            '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
+                            ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">' +
+                            'Forecast not available</span>'
+                        initEl.setAttribute(
+                            'title',
+                            'The forecast data failed to load — the layer and forecast services may be briefly out of sync. Toggle the layer off and on to retry.'
+                        )
+                    }
                 } else if (state === 'unavailable') {
                     if (captionEl) captionEl.style.display = 'none'
                     if (initEl) {
@@ -2107,6 +2375,14 @@ const ForecastTimeline = {
         this._unpatchToggleLayer()
         if (this._optimisticOn) this._optimisticOn.clear()
         this._toggleTick = {}
+
+        // Detach tile load hooks and clear any pending tick-spinner timers
+        Object.keys(this._loadHooks || {}).forEach((n) =>
+            this._detachLoadIndicator(n)
+        )
+        Object.values(this._tickSpinTimers || {}).forEach(clearTimeout)
+        this._tickSpinTimers = {}
+        if (this._visitedSteps) this._visitedSteps.clear()
 
         // Restore Next button appearance
         const nextBtn = document.getElementById('mmgisTimeUIBottomNext')

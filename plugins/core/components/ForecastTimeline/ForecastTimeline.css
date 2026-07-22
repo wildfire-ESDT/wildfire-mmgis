@@ -476,6 +476,51 @@
     position: relative;
 }
 
+/* ── Busy affordances ───────────────────────────────────────────────────────
+   One visual language ("Loading…") for both the initial availability check
+   (card init row, see .ftl-loading-inline) and a step's data in flight
+   (corner ring on the clicked tick, .ftl-tick-loading). */
+
+/* Small corner ring on the tick whose data is loading. ::after so the
+   two-line label stays untouched; sits top-right inside the tick. Yellow to
+   match the loading text and pop against both idle and active (blue) ticks.
+   Shown instantly — the JS only sets it when a real fetch is happening
+   (unvisited steps); cached revisits never get the class at all. */
+.ftl-tick-loading::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 10px;
+    height: 10px;
+    box-sizing: border-box;
+    border: 2px solid rgba(255, 210, 74, 0.3);
+    border-top-color: #ffd24a;
+    border-radius: 50%;
+    animation: ftl-spin 0.8s linear infinite;
+    pointer-events: none;
+}
+@keyframes ftl-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Init-row "Loading…" (card-level availability check) — yellow so it pops */
+.ftl-loading-inline {
+    color: #ffd24a;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.ftl-loading-inline .mdi-loading {
+    font-size: 12px;
+    line-height: 1;
+}
+
 /* Two-line tick layout: clock on top, relative label below */
 .ftl-tick-twoline {
     display: flex !important;
