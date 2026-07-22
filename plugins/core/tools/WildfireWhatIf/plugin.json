@@ -7,7 +7,7 @@
     "overridable": true,
     "defaultIcon": "fire",
     "name": "WildfireWhatIf",
-    "description": "What-if wildfire scenario tool: draw a fire perimeter, tweak wind, and submit fire spread or smoke dispersion forecasts.",
+    "description": "What-if wildfire scenario tool: draw a fire perimeter (HRRR region auto-derived with a 15 km buffer), edit 12-hr HRRR winds per forecast hour, and submit fire spread or smoke dispersion forecasts.",
     "hasVars": true,
     "toolbarPriority": 60,
     "paths": {
