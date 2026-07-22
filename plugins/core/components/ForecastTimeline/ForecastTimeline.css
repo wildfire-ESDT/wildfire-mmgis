@@ -396,19 +396,13 @@
    line up. Tracks with more steps than fit (24h, 48h) overflow and scroll
    horizontally (.ftl-ticks-wrap) rather than squishing steps to fit. */
 .ftl-card .mmgisTimeUIExpandedItem {
-    padding: 6px 6px;
+    /* Sized so the densest label (WFPI's "6/30–7/1" / "5PM–5PM") sits with a
+       little air on each side, not flush against the tick edges. */
+    padding: 6px 8px;
     font-size: 11px;
-    flex: 0 0 58px;
-    min-width: 58px;
+    flex: 0 0 68px;
+    min-width: 68px;
     box-sizing: border-box;
-}
-
-/* WFPI is the exception: its ticks carry a full valid window
-   ("Dec 30 4 PM – Dec 31 4 PM", nowrap at 11px/600), so only that card's
-   steps get a wider fixed width. Class set in _buildCardHTML. */
-.ftl-card-wfpi .mmgisTimeUIExpandedItem {
-    flex: 0 0 160px;
-    min-width: 160px;
 }
 
 /* ── Future item in main timeline expanded rows (years/months/days/hours) ── */
