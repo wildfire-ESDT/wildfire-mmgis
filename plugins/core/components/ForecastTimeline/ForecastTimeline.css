@@ -396,12 +396,12 @@
    line up. Tracks with more steps than fit (24h, 48h) overflow and scroll
    horizontally (.ftl-ticks-wrap) rather than squishing steps to fit. */
 .ftl-card .mmgisTimeUIExpandedItem {
-    /* Sized so the densest label (WFPI's "6/30–7/1" / "5PM–5PM") sits with a
-       little air on each side, not flush against the tick edges. */
+    /* Sized so the densest label (WFPI's "12/30–12/31" / "5PM–5PM") sits with
+       a little air on each side, not flush against the tick edges. */
     padding: 6px 8px;
     font-size: 11px;
-    flex: 0 0 68px;
-    min-width: 68px;
+    flex: 0 0 78px;
+    min-width: 78px;
     box-sizing: border-box;
 }
 

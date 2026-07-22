@@ -778,22 +778,18 @@ const ForecastTimeline = {
         if (unit === 'day') {
             const dOpts = { timeZone: 'UTC', month: 'short', day: 'numeric' }
             // WFPI: every step shows its full valid window, compacted to fit
-            // the standard 58px tick so all cards keep the same button size —
-            // numeric dates on the clock line ("7/21–22", or "7/31–8/1" across
-            // a month boundary) and the window times on the small line where
-            // other products show "+n" ("5PM–5PM"). A step is valid from its
-            // 00:00Z stamp (5 PM PDT the prior evening) through the next
-            // 00:00Z. Formatting the real instants (rather than hardcoding
-            // "5 PM") keeps the hour right across DST (4PM–4PM in winter).
+            // the standard fixed-width tick so all cards keep the same button
+            // size — full numeric dates on the clock line ("7/21–7/22"; the
+            // month is always shown on both sides) and the window times on the
+            // small line where other products show "+n" ("5PM–5PM"). A step is
+            // valid from its 00:00Z stamp (5 PM PDT the prior evening) through
+            // the next 00:00Z. Formatting the real instants (rather than
+            // hardcoding "5 PM") keeps the hour right across DST (4PM–4PM in
+            // winter).
             if (this._isWfpi(fc)) {
                 const endDate = new Date(stepDate.getTime() + unitMs)
                 const winD = { timeZone: PDT_TZ, month: 'numeric', day: 'numeric' }
-                const startStr = stepDate.toLocaleDateString('en-US', winD)
-                const endStr = endDate.toLocaleDateString('en-US', winD)
-                const sameMonth = startStr.split('/')[0] === endStr.split('/')[0]
-                const clock = sameMonth
-                    ? `${startStr}–${endStr.split('/')[1]}`
-                    : `${startStr}–${endStr}`
+                const clock = `${stepDate.toLocaleDateString('en-US', winD)}–${endDate.toLocaleDateString('en-US', winD)}`
                 const fmtT = (dd) =>
                     dd.toLocaleTimeString('en-US', {
                         timeZone: PDT_TZ,
