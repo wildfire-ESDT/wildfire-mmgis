@@ -105,6 +105,20 @@ const ForecastTimeline = {
         return this.vars?.experimentalPlayback === true
     },
 
+    // For now playback is further limited to the HRRR COG raster layers
+    // (tile + COG: + ?fxx= in the config URL). Velocity's per-frame gribs and
+    // the WMS/STAC products keep manual stepping only until their playback is
+    // worth trusting.
+    _playbackAllowed: function (name) {
+        if (!this._playbackEnabled()) return false
+        const ld = L_.layers.data[name]
+        return (
+            ld?.type === 'tile' &&
+            (ld.url || '').toUpperCase().startsWith('COG:') &&
+            this._isFxxLayer(ld)
+        )
+    },
+
     // ── Lifecycle ──────────────────────────────────────────
 
     init: function (vars) {
@@ -797,8 +811,9 @@ const ForecastTimeline = {
             ? `<button class="ftl-card-info-btn" data-layer="${_escHtml(name)}" type="button" aria-label="Forecast details"><i class="mdi mdi-information-outline"></i></button>`
             : ''
 
-        // Experimental — only rendered when the mission opts in.
-        const playBtnHTML = this._playbackEnabled()
+        // Experimental — only rendered when the mission opts in, and only on
+        // HRRR COG cards for now (see _playbackAllowed).
+        const playBtnHTML = this._playbackAllowed(name)
             ? `<button class="ftl-card-play" data-layer="${_escHtml(name)}" type="button" title="Play forecast animation" aria-label="Play forecast animation"><i class="mdi mdi-play"></i></button>`
             : ''
 
@@ -1031,55 +1046,10 @@ const ForecastTimeline = {
     // ── Step logic ─────────────────────────────────────────
 
     _setCardStep: function (name, fc, idx) {
-        const cs = this.state.cards[name]
-        if (!cs) return
-
-        // Clicking a step past the published edge is the user explicitly asking
-        // "is this hour out yet?". Re-probe just that hour on demand (one
-        // request); advance the edge and step there if it's now present, else
-        // leave it greyed. This keeps the common path free of per-click probing
-        // while still letting a waiting user pull in a freshly-published hour.
-        if (cs.cardState === 'available' && this._tickBeyondEdge(name, idx)) {
-            this._dbg('on-demand edge re-probe', name, 'fxx=' + idx)
-            this._probeFxx(name, fc, idx).then((ok) => {
-                if (ok) {
-                    this._raiseEdge(name, fc, idx)
-                    this._commitStep(name, fc, idx)
-                }
-            })
-            return
-        }
-        this._commitStep(name, fc, idx)
-    },
-
-    _commitStep: function (name, fc, idx) {
         if (!this.state.cards[name]) return
         this.state.cards[name].stepIndex = idx
         this._refreshAllCards()
         this._applyCardStep(name, fc, idx)
-    },
-
-    // Is step `i` past this run's published edge? Steps at or below the edge are
-    // present; a card that hasn't resolved an edge yet (maxStep undefined) treats
-    // every step as present, so it degrades to "enabled" rather than blank.
-    _tickBeyondEdge: function (name, i) {
-        const maxStep = this.state.cards[name]?.maxStep
-        return typeof maxStep === 'number' && i > maxStep
-    },
-
-    // Hover reason on a tick greyed only because it's past the edge (not because
-    // the whole card is down). Cleared otherwise so no stale title lingers.
-    _setTickEdgeTitle: function (el, name, i) {
-        const cs = this.state.cards[name]
-        if (cs && cs.cardState === 'available' && this._tickBeyondEdge(name, i)) {
-            const reached = cs.maxStep < 0 ? 'none' : `F${cs.maxStep}`
-            el.setAttribute(
-                'title',
-                `This forecast hour isn't published yet (run currently reaches ${reached}). Click to check again.`
-            )
-        } else {
-            el.removeAttribute('title')
-        }
     },
 
     // Busy affordance on a single tick: a small corner spinner on the step
@@ -1170,12 +1140,8 @@ const ForecastTimeline = {
         const isDisabled = cardState !== 'available'
 
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
-            // Grey steps past the run's published edge, and suppress the active
-            // (blue) highlight whenever the tick is disabled.
-            const beyond = this._tickBeyondEdge(name, i)
-            el.classList.toggle('ftl-future-item', isDisabled || beyond)
-            el.classList.toggle('active', !isDisabled && !beyond && i === idx)
-            this._setTickEdgeTitle(el, name, i)
+            el.classList.toggle('ftl-future-item', isDisabled)
+            el.classList.toggle('active', !isDisabled && i === idx)
             const { clock, rel } = this._tickLabels(fc, i, originBase)
             const clockEl = el.querySelector('.ftl-tick-clock')
             if (clockEl) clockEl.textContent = clock
@@ -1354,9 +1320,9 @@ const ForecastTimeline = {
                             const fk = this._frameKey(name, fc)
                             if (!this._frameCache[fk]) this._frameCache[fk] = {}
                             this._frameCache[fk][idx] = data
-                            // This step's data is present — it lies within the
-                            // published edge, so nudge the edge out to include it.
-                            this._raiseEdge(name, fc, idx)
+                            // This step's data is present — direct proof the
+                            // run exists.
+                            this._markRunPresent(name, fc)
                         })
                         .catch((e) => {
                             this._setTickLoading(name, idx, false)
@@ -1581,14 +1547,15 @@ const ForecastTimeline = {
         }
     },
 
-    // ── Availability: the published edge ───────────────────
+    // ── Availability: one boolean per run ──────────────────
     //
-    // A forecast run's availability is one integer: the highest forecast hour it
-    // has published (HRRR publishes hours progressively, so availability is
-    // always a contiguous prefix fxx 0..N; N+1.. are simply not out yet). We
-    // resolve that edge once per run and cache it under `name:base`. Everything
-    // else — is the run there at all, is *this* step there — is then a free
-    // in-memory comparison against the edge, so stepping costs no network.
+    // A run is either out or it isn't. One check per run, cached under
+    // `name:base`: for fxx layers a single fxx=0 probe (the anchor hour — if
+    // that exists the run exists), a day-1 GetMap for WFPI, and assumed-present
+    // for layers we can't probe (STAC etc.). Individual forecast hours are NOT
+    // pre-checked — the per-hour "published edge" search this replaced kept
+    // disabling hours veloserver demonstrably served — the data fetch itself is
+    // the only per-step truth: a real failure disables the card (_failCard).
     //
     // We probe out-of-band against the SAME service the map renders through
     // (titiler /cog/info for COG, the gribjson file for velocity, a day-1 GetMap
@@ -1596,18 +1563,9 @@ const ForecastTimeline = {
     // failed tile for a transparent PNG (anti-flicker _refreshTileUrl), so tile
     // events can't see failures. `Access-Control-Allow-Origin: *` on the
     // backends means a plain fetch reads the true status.
-    //
-    // ASSUMPTION: the prefix is contiguous (no holes). If a run ever published
-    // F0..F5 and F7 but not F6, the binary search could misplace the edge — but
-    // clicking a greyed tick re-probes that exact hour (see _setCardStep) and a
-    // velocity step-fetch failure disables the card outright (_failCard), so
-    // any misplacement is self-correcting rather than sticky.
 
-    // Values are: a number (resolved edge, -1 = run missing entirely),
-    // 'pending' (anchor unresolved — card shows its checking state), or
-    // 'resolving' (anchor proven present, far edge still being searched — the
-    // card is fully usable with every step enabled; ticks past the edge grey
-    // when the search lands). Keyed `name:base`.
+    // Values: 1 (run present), -1 (run missing), or 'pending' (check in
+    // flight — card shows Loading…). Keyed `name:base`.
     _edgeCache: {},
 
     _probeAllAnchors: function () {
@@ -1618,18 +1576,12 @@ const ForecastTimeline = {
             const cached = this._edgeCache[key]
 
             if (typeof cached === 'number') {
-                this._dbg('edge (cache hit)', name, { key, edge: cached })
-                this._applyEdge(name, cached)
+                this._dbg('run (cache hit)', name, { key, present: cached >= 0 })
+                this._applyRunPresent(name, cached >= 0)
                 return
             }
             if (cached === 'pending') {
                 this._setCardState(name, 'loading')
-                return
-            }
-            if (cached === 'resolving') {
-                // Anchor already proven — keep the card usable while the far
-                // edge search finishes in the background.
-                this._applyEdge(name, undefined)
                 return
             }
 
@@ -1639,79 +1591,43 @@ const ForecastTimeline = {
             const baseAtFire = base
             const stillCurrent = () => this._forecastBase(fc) === baseAtFire
 
-            // Commit a probe result, merging with — never clobbering — direct
-            // data evidence. A step fetch that succeeded while probes were in
-            // flight already wrote a number (via _raiseEdge) or marked the run
-            // as evidenced; a slower, failed probe must not blank a card the
-            // map is actively rendering data for.
-            const commit = (edge) => {
+            // Commit the check's verdict — unless direct data evidence beat it
+            // there. A step fetch that succeeded while the probe was in flight
+            // proves the run exists; a slower, failed probe must not blank a
+            // card the map is actively rendering data for.
+            const commit = (ok) => {
                 const cs = this.state.cards[name]
-                const prev = this._edgeCache[key]
-                let merged = edge
-                if (typeof prev === 'number') {
-                    merged = Math.max(prev, edge)
-                } else if (edge < 0 && cs?.evidenceBase === baseAtFire) {
-                    this._edgeCache[key] = 'resolving'
-                    this._dbg('edge probe failed but data evidence wins', name, { key })
-                    if (stillCurrent()) this._applyEdge(name, undefined)
-                    return
+                if (!ok && cs?.evidenceBase === baseAtFire) {
+                    this._dbg('probe failed but data evidence wins', name, { key })
+                    ok = true
                 }
-                this._edgeCache[key] = merged
-                this._dbg('edge RESULT', name, { key, edge: merged, applied: stillCurrent() })
-                if (stillCurrent()) this._applyEdge(name, merged)
+                this._edgeCache[key] = ok ? 1 : -1
+                this._dbg('run RESULT', name, { key, present: ok, applied: stillCurrent() })
+                if (stillCurrent()) this._applyRunPresent(name, ok)
             }
 
-            this._dbg('edge RESOLVE', name, { key, base: new Date(base).toISOString() })
-
-            const ld = L_.layers.data[name]
-            if (fc.urlTemplate || !this._isFxxLayer(ld)) {
-                // Atomic publication (WFPI — one GetMap answers for every step)
-                // or unprobeable (STAC etc.) — a single one-shot resolve.
-                this._resolveEdge(name, fc)
-                    .then(commit)
-                    .catch((e) => {
-                        // A thrown probe is a network failure — the case the card
-                        // exists to report. Treat as run-missing, not fail open.
-                        this._dbg('edge ERROR', name, e)
-                        commit(-1)
-                    })
-                return
-            }
-
-            // fxx layers: anchor FIRST, edge in the background. If fxx=0 is
-            // present the card is usable immediately — every step enabled —
-            // while the far-edge search (max probe + binary search, each miss a
-            // slow server-side generation) runs behind it. Blocking the card on
-            // the full search left it saying it was still checking long after
-            // the layer itself had rendered.
-            this._probeFxx(name, fc, 0)
-                .then((ok0) => {
-                    if (!ok0) {
-                        commit(-1)
-                        return
-                    }
-                    const maxFxx = this._effectiveSteps(fc, name) - 1
-                    if (maxFxx <= 0) {
-                        commit(0)
-                        return
-                    }
-                    // Step-fetch evidence may have already resolved a numeric
-                    // edge while this anchor probe was in flight — honor it
-                    // rather than transiently un-greying a step proven missing.
-                    const cur = this._edgeCache[key]
-                    if (cur === 'pending') this._edgeCache[key] = 'resolving'
-                    if (stillCurrent())
-                        this._applyEdge(
-                            name,
-                            typeof cur === 'number' ? cur : undefined
-                        )
-                    return this._resolveMaxEdge(name, fc, maxFxx).then(commit)
-                })
+            this._dbg('run RESOLVE', name, { key, base: new Date(base).toISOString() })
+            this._resolveRunPresent(name, fc)
+                .then(commit)
                 .catch((e) => {
-                    this._dbg('edge ERROR', name, e)
-                    commit(-1)
+                    // A thrown probe is a network failure — the case the card
+                    // exists to report. Treat as run-missing, not fail open.
+                    this._dbg('run ERROR', name, e)
+                    commit(false)
                 })
         })
+    },
+
+    // Is this card's run out at all? fxx layers: does the anchor hour (fxx=0)
+    // exist. WFPI/urlTemplate: day-1 GetMap (publication is atomic, so day 1
+    // answers for every step). Unprobeable layers (STAC etc.): assume present.
+    _resolveRunPresent: function (name, fc) {
+        if (fc.urlTemplate) {
+            return this._probeWmsTime(name, fc).then((v) => v === 'available')
+        }
+        const ld = L_.layers.data[name]
+        if (!this._isFxxLayer(ld)) return Promise.resolve(true)
+        return this._probeFxx(name, fc, 0)
     },
 
     // Shared fetch options for availability probes. The timeout bounds the
@@ -1724,19 +1640,15 @@ const ForecastTimeline = {
         return opts
     },
 
-    // Turn a resolved edge into card state. edge < 0 → whole card unavailable;
-    // edge undefined → anchor present but far edge still resolving (card fully
-    // usable, no ticks greyed); otherwise available with the tick greying (in
-    // _renderCardStep) hiding the steps beyond the edge.
-    _applyEdge: function (name, edge) {
+    // Turn the run check's verdict into card state. Not present → the card is
+    // disabled: 'failed' when a real data fetch for this run failed
+    // (_failCard), else 'unavailable' ("run not yet generated").
+    _applyRunPresent: function (name, present) {
         const cs = this.state.cards[name]
         if (!cs) return
-        const wasUnavailable =
+        const wasDisabled =
             cs.cardState === 'unavailable' || cs.cardState === 'failed'
-        cs.maxStep = edge
-        if (typeof edge === 'number' && edge < 0) {
-            // Distinguish "the run isn't generated" (probe said no) from "the
-            // run should exist but its data failed to fetch" (_failCard).
+        if (!present) {
             const fc = L_.layers.data[name]?.time?.forecast
             const failed =
                 cs.failedBase != null &&
@@ -1746,96 +1658,39 @@ const ForecastTimeline = {
         } else {
             this._setCardState(name, 'available')
             // Re-apply the current step so the COG/tile refresh fires now that
-            // the card is known-available (recovers a card the probe had blanked).
-            if (wasUnavailable) this._reapplyAllSteps()
+            // the card is known-available (recovers a card the check had blanked).
+            if (wasDisabled) this._reapplyAllSteps()
         }
     },
 
-    // Nudge the cached edge to at least `n` (a step just proven present) and
-    // re-render if it grew. Keeps the on-demand re-probe and the velocity
-    // step-fetch success in sync with the card. Successful data is also
-    // recorded as evidence for this run, so a slower failed probe of the same
-    // run can't blank the card afterwards (see commit in _probeAllAnchors).
-    _raiseEdge: function (name, fc, n) {
+    // A step's data just loaded — direct proof this run exists. Recorded as
+    // evidence so a slower failed probe of the same run can't blank the card
+    // (see commit in _probeAllAnchors), and it clears any earlier fetch
+    // failure.
+    _markRunPresent: function (name, fc) {
         const cs = this.state.cards[name]
         if (!cs) return
         const base = this._forecastBase(fc)
-        const key = `${name}:${base}`
         cs.evidenceBase = base
-        // Fresh data supersedes any earlier fetch failure for this card.
         cs.failedBase = null
-        const cached = this._edgeCache[key]
-        if (typeof cached !== 'number') {
-            // Far edge still unresolved — there is no numeric edge to raise
-            // (every step is already enabled) and writing one here would grey
-            // the untested steps beyond it. Just make sure the card isn't
-            // stuck dark while its data demonstrably loads.
-            if (cached === 'pending') this._edgeCache[key] = 'resolving'
-            if (cs.cardState !== 'available') this._applyEdge(name, undefined)
-            return
-        }
-        if (cached >= n && cs.cardState === 'available') return
-        const edge = Math.max(cached, n)
-        this._edgeCache[key] = edge
-        this._applyEdge(name, edge)
+        this._edgeCache[`${name}:${base}`] = 1
+        if (cs.cardState !== 'available') this._applyRunPresent(name, true)
     },
 
-    // A step fetch FAILED while its spinner was going: the availability probes
-    // said this run exists, but the data didn't come back — the probe target
-    // and the data service can be briefly desynced. Disable just this card
-    // with the distinct "Forecast not available" message. Recovery paths: a
-    // new run (new cache key → fresh probe), a successful later fetch
-    // (_raiseEdge clears failedBase), or toggling the layer off/on (the
-    // toggle patch clears this layer's cached availability entirely).
+    // A step fetch FAILED while its spinner was going: the run check said this
+    // run exists, but the data didn't come back — the probe target and the
+    // data service can be briefly desynced. Disable just this card with the
+    // distinct "Forecast not available" message. Recovery paths: a new run
+    // (new cache key → fresh check), a successful later fetch
+    // (_markRunPresent), or toggling the layer off/on (the toggle patch
+    // clears this layer's cached availability entirely).
     _failCard: function (name, fc) {
         const cs = this.state.cards[name]
         if (!cs) return
         const base = this._forecastBase(fc)
         cs.failedBase = base
         this._edgeCache[`${name}:${base}`] = -1
-        this._applyEdge(name, -1)
-    },
-
-    // One-shot resolve for non-fxx layers: atomic publication (WFPI) or
-    // unprobeable (STAC etc.). fxx layers resolve incrementally in
-    // _probeAllAnchors (anchor first, then _resolveMaxEdge in the background).
-    _resolveEdge: function (name, fc) {
-        // WFPI / urlTemplate: publication is atomic, so it's all-or-nothing —
-        // day 1 governs every step. Reuse the existing day-1 GetMap probe.
-        if (fc.urlTemplate) {
-            return this._probeWmsTime(name, fc).then((v) =>
-                v === 'available' ? (fc.steps || 1) - 1 : -1
-            )
-        }
-        // Layers we can't probe: assume all steps present, but do it
-        // explicitly rather than by silent fall-through.
-        return Promise.resolve((fc.steps || 1) - 1)
-    },
-
-    // Far end of a run whose anchor is already proven: max fxx present, in at
-    // most 1 + log2(range) probes.
-    _resolveMaxEdge: function (name, fc, maxFxx) {
-        // A fully-published run resolves in one request.
-        return this._probeFxx(name, fc, maxFxx).then((okMax) => {
-            if (okMax) return maxFxx
-            // Mid-publication: binary-search the last present hour.
-            return this._binarySearchEdge(name, fc, 0, maxFxx)
-        })
-    },
-
-    // Greatest n in (lo, hi) with fxx=n present, given fxx=lo present and
-    // fxx=hi missing. ~log2(range) probes (≤6 for a 49-hour run).
-    _binarySearchEdge: function (name, fc, lo, hi) {
-        const step = () => {
-            if (hi - lo <= 1) return Promise.resolve(lo)
-            const mid = (lo + hi) >> 1
-            return this._probeFxx(name, fc, mid).then((ok) => {
-                if (ok) lo = mid
-                else hi = mid
-                return step()
-            })
-        }
-        return step()
+        this._applyRunPresent(name, false)
     },
 
     // Does forecast hour `n` of this run exist? Probes the render service, not
@@ -1985,9 +1840,7 @@ const ForecastTimeline = {
     // Playback walks a card's steps on a timer. Because each step is a separate
     // network fetch, playing straight away would stutter on every frame, so a
     // play press first prefetches the run, filling the yellow progress bar
-    // along the card's bottom edge. Both prefetch and the loop stop at the
-    // run's published edge (maxStep) when it's known — unpublished hours would
-    // only 502 and re-probe on every pass.
+    // along the card's bottom edge.
     //
     // What "prefetch" can mean depends on how the layer carries its forecast hour:
     //   • HRRR gribjson velocity — one JSON per step, so every step is fetched
@@ -2077,20 +1930,8 @@ const ForecastTimeline = {
         })
     },
 
-    // Steps playback and prefetch should cover: the full range, clipped to the
-    // published edge once it's known. Without the clip, prefetch hammers
-    // unpublished hours (each a slow 502) and the loop lands on greyed ticks,
-    // firing their on-demand re-probe every single pass.
-    _playableSteps: function (name, fc) {
-        const total = this._effectiveSteps(fc, name)
-        const maxStep = this.state.cards[name]?.maxStep
-        return typeof maxStep === 'number'
-            ? Math.max(1, Math.min(total, maxStep + 1))
-            : total
-    },
-
     _prefetchSteps: function (name, fc, onProgress) {
-        const steps = this._playableSteps(name, fc)
+        const steps = this._effectiveSteps(fc, name)
         const ld = L_.layers.data[name]
         const key = this._frameKey(name, fc)
         const isVelocity = this._isFxxVelocity(ld)
@@ -2181,7 +2022,7 @@ const ForecastTimeline = {
     // Hover text for the play button. Built at hover time so the step count and
     // playing/stopped wording are always current.
     _playTipHtml: function (name, fc) {
-        const steps = this._playableSteps(name, fc)
+        const steps = this._effectiveSteps(fc, name)
         const unit = (fc?.stepUnit || 'hour') === 'day' ? 'day' : 'hour'
         if (this._isPlaying(name)) {
             return (
@@ -2212,6 +2053,9 @@ const ForecastTimeline = {
 
     _startPlay: function (name, fc) {
         if (!this._playTimers) this._playTimers = {}
+        // Defense in depth: the button only renders for allowed layers, but
+        // nothing else should be able to start playback either.
+        if (!this._playbackAllowed(name)) return
         if (this.state.cards[name]?.cardState !== 'available') return
 
         // Placeholder entry so a second click during prefetch cancels.
@@ -2223,7 +2067,7 @@ const ForecastTimeline = {
             if (!token.cancelled) this._setPlayUI(name, 'loading', total ? done / total : 1)
         }).then(() => {
             if (token.cancelled || this._playTimers[name] !== token) return
-            const steps = this._playableSteps(name, fc)
+            const steps = this._effectiveSteps(fc, name)
             if (steps <= 1) {
                 this._stopPlay(name)
                 return
@@ -2291,15 +2135,12 @@ const ForecastTimeline = {
                     state === 'unavailable' || state === 'failed'
                 )
 
-                // Ticks: ftl-future-item greys them and kills pointer-events.
-                // A tick is greyed when the whole card is disabled OR when the
-                // step is past this run's published edge (see _tickBeyondEdge).
+                // Ticks: ftl-future-item greys them and kills pointer-events
+                // whenever the whole card is disabled.
                 const cardIdx = this.state.cards[name]?.stepIndex ?? 0
                 card.querySelectorAll('.ftl-tick').forEach((t, i) => {
-                    const off = disabled || this._tickBeyondEdge(name, i)
-                    t.classList.toggle('ftl-future-item', off)
-                    this._setTickEdgeTitle(t, name, i)
-                    if (off) t.classList.remove('active')
+                    t.classList.toggle('ftl-future-item', disabled)
+                    if (disabled) t.classList.remove('active')
                     else t.classList.toggle('active', i === cardIdx)
                 })
 
