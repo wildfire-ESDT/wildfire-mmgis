@@ -313,7 +313,8 @@
    The play button lives in the header label row beside the ⓘ icon, so it's
    sized to match that rather than the chunky prev/next arrows. It turns into a
    stop square while prefetching or playing; the thin bar along the card's
-   bottom edge fills as forecast steps are fetched. */
+   bottom edge fills as forecast steps are fetched — yellow, matching the tick
+   spinner and "Loading…" text so every busy affordance speaks one language. */
 .ftl-card-play {
     display: inline-flex;
     align-items: center;
@@ -335,6 +336,9 @@
 }
 .ftl-card-play.ftl-playing {
     color: #4a9eff;
+}
+.ftl-card-play.ftl-prefetching {
+    color: #ffd24a;
 }
 .ftl-card-play:disabled {
     opacity: 0.25;
@@ -362,7 +366,9 @@
 .ftl-card-prefetch-bar {
     height: 100%;
     width: 0;
-    background: #4a9eff;
+    /* White, not yellow — the card's amber bottom border sits right under
+       this bar, and a yellow fill disappeared into it. */
+    background: rgba(255, 255, 255, 0.9);
     transition: width 0.12s linear;
 }
 
