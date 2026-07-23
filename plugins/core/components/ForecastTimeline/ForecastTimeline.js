@@ -698,9 +698,17 @@ const ForecastTimeline = {
     // Compact label for the model run a probe targeted, for the "not yet
     // generated" warning: "Jul 20, 5 PM" (hourly, PDT) or "Jul 20" (daily,
     // UTC-dated to match the tick labels and the run actually fetched).
+    // WFPI always specifies its FULL valid range instead of a single date —
+    // dates only ("Jul 21 – Jul 28"), no times, so the warning line fits the
+    // init row. The PDT dates match the 5 PM window boundaries the ticks show.
     _runLabel: function (fc) {
         const base = this._forecastBase(fc || {})
         if ((fc?.stepUnit || 'hour') === 'day') {
+            if (this._isWfpi(fc)) {
+                const dOpts = { timeZone: PDT_TZ, month: 'short', day: 'numeric' }
+                const endD = new Date(base + (fc.steps || 7) * STEP_UNITS.day)
+                return `${new Date(base).toLocaleDateString('en-US', dOpts)} – ${endD.toLocaleDateString('en-US', dOpts)}`
+            }
             return new Date(base).toLocaleDateString('en-US', {
                 timeZone: 'UTC',
                 month: 'short',
@@ -2192,15 +2200,22 @@ const ForecastTimeline = {
                     if (captionEl) captionEl.style.display = 'none'
                     if (initEl) {
                         // Name the run that failed to probe — "not yet generated" on its
-                        // own leaves the user guessing which cycle is missing.
+                        // own leaves the user guessing which cycle is missing. WFPI's
+                        // runStr is already a date span, so "run" is dropped there to
+                        // keep the line short enough to fit the init row.
                         const runStr = this._runLabel(fc)
+                        const inlineMsg = this._isWfpi(fc)
+                            ? `${runStr} not yet generated`
+                            : `${runStr} run not yet generated`
                         initEl.innerHTML =
                             '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
                             ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">' +
-                            `${runStr} run not yet generated</span>`
+                            `${inlineMsg}</span>`
                         initEl.setAttribute(
                             'title',
-                            `The ${runStr} model run has not been generated yet.`
+                            this._isWfpi(fc)
+                                ? `Model data for the ${runStr} window has not been generated yet.`
+                                : `The ${runStr} model run has not been generated yet.`
                         )
                     }
                 } else {
