@@ -84,7 +84,12 @@ function _addMonths(ms, n) {
     return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1)
 }
 
-const PDT_TZ = 'America/Los_Angeles'
+// Label timezone: whatever zone the viewer's browser reports — the same
+// display space the LocalTimezone plugin puts the main timeline in. Labels
+// format real instants through this zone, so hours stay DST-correct on their
+// own (a 00:00Z boundary reads 5 PM PDT in summer, 4 PM PST in winter) and a
+// viewer in another zone sees their own local times (EST, UTC, ...).
+const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 // HRRR forecast hours: every run reaches F18, but the runs started at 00/06/12/18
 // UTC reach F48. fxx == step index, so a COG card offers (max fxx + 1) steps.
@@ -712,11 +717,12 @@ const ForecastTimeline = {
     },
 
     // Compact label for the model run a probe targeted, for the "not yet
-    // generated" warning: "Jul 20, 5 PM" (hourly, PDT) or "Jul 20" (daily,
-    // UTC-dated to match the tick labels and the run actually fetched).
-    // WFPI always specifies its FULL valid range instead of a single date —
-    // dates only ("Jul 21 – Jul 28"), no times, so the warning line fits the
-    // init row. The PDT dates match the 5 PM window boundaries the ticks show.
+    // generated" warning: "Jul 20, 5 PM" (hourly, browser-local) or "Jul 20"
+    // (daily, UTC-dated to match the run actually fetched) or "Jul 2026"
+    // (monthly run identity). WFPI always specifies its FULL valid range
+    // instead of a single date — dates only ("Jul 21 – Jul 28"), no times, so
+    // the warning line fits the init row. The local dates match the window
+    // boundaries the ticks show.
     _runLabel: function (fc) {
         const base = this._forecastBase(fc || {})
         const unit = fc?.stepUnit || 'hour'
@@ -729,7 +735,7 @@ const ForecastTimeline = {
         }
         if (unit === 'day') {
             if (this._isWfpi(fc)) {
-                const dOpts = { timeZone: PDT_TZ, month: 'short', day: 'numeric' }
+                const dOpts = { timeZone: LOCAL_TZ, month: 'short', day: 'numeric' }
                 const endD = new Date(base + (fc.steps || 7) * STEP_UNITS.day)
                 return `${new Date(base).toLocaleDateString('en-US', dOpts)} – ${endD.toLocaleDateString('en-US', dOpts)}`
             }
@@ -740,7 +746,7 @@ const ForecastTimeline = {
             })
         }
         return new Date(base).toLocaleString('en-US', {
-            timeZone: PDT_TZ,
+            timeZone: LOCAL_TZ,
             month: 'short',
             day: 'numeric',
             hour: 'numeric',
@@ -748,15 +754,22 @@ const ForecastTimeline = {
         })
     },
 
-    // "Jun 30, 2026 · 2:00 PM PDT"  (hourly)  or  "Jul 7, 2026 · 12:00 AM PDT"  (daily)
+    // "Jun 30, 2026 · 2:00 PM PDT"  (hourly)  or  "Jul 7, 2026"  (daily) —
+    // times rendered in the viewer's browser timezone (PDT here as an example)
     _formatInit: function (ms, unit, fc) {
         const d = new Date(ms)
         if (unit === 'month') {
-            return d.toLocaleDateString('en-US', {
-                timeZone: 'UTC',
-                month: 'long',
-                year: 'numeric',
-            })
+            // Monthly (FDEO): communicate the whole valid span with its real
+            // boundary instants, WFPI-style. The run turns over at 00:00Z on
+            // the 1st, which is the previous evening in local display time —
+            // e.g. "Jun 30, 5 PM – Jul 31, 5 PM PDT" for a 1-month July card.
+            const steps = fc?.steps || 1
+            const endD = new Date(_addMonths(ms, steps))
+            const dOpts = { timeZone: LOCAL_TZ, month: 'short', day: 'numeric' }
+            const tOpts = { timeZone: LOCAL_TZ, hour: 'numeric', hour12: true }
+            const start = `${d.toLocaleDateString('en-US', dOpts)} ${d.toLocaleTimeString('en-US', tOpts)}`
+            const end = `${endD.toLocaleDateString('en-US', dOpts)} ${endD.toLocaleTimeString('en-US', { ...tOpts, timeZoneName: 'short' })}`
+            return `${start} – ${end}`
         }
         if (unit === 'day') {
             // Daily products are UTC-dated (00:00Z run); label by UTC date so the
@@ -773,8 +786,8 @@ const ForecastTimeline = {
             // "Jul 12 5 PM – Jul 19 5 PM PDT" — start to start-plus-N-days.
             if (this._isWfpi(fc)) {
                 const steps = fc.steps || 7
-                const dOpts = { timeZone: PDT_TZ, month: 'short', day: 'numeric' }
-                const tOpts = { timeZone: PDT_TZ, hour: 'numeric', hour12: true }
+                const dOpts = { timeZone: LOCAL_TZ, month: 'short', day: 'numeric' }
+                const tOpts = { timeZone: LOCAL_TZ, hour: 'numeric', hour12: true }
                 const endD = new Date(ms + steps * STEP_UNITS.day)
                 const start = `${d.toLocaleDateString('en-US', dOpts)} ${d.toLocaleTimeString('en-US', tOpts)}`
                 const end = `${endD.toLocaleDateString('en-US', dOpts)} ${endD.toLocaleTimeString('en-US', { ...tOpts, timeZoneName: 'short' })}`
@@ -783,13 +796,13 @@ const ForecastTimeline = {
             return dateStr
         }
         const dateStr = d.toLocaleDateString('en-US', {
-            timeZone: PDT_TZ,
+            timeZone: LOCAL_TZ,
             month: 'short',
             day: 'numeric',
             year: 'numeric',
         })
         const timeStr = d.toLocaleTimeString('en-US', {
-            timeZone: PDT_TZ,
+            timeZone: LOCAL_TZ,
             hour: 'numeric',
             minute: '2-digit',
             hour12: true,
@@ -809,14 +822,24 @@ const ForecastTimeline = {
         const offset = fc.stepOffset || 0
 
         if (unit === 'month') {
-            const stepMs = _addMonths(originBase, i + offset)
-            const stepDate = new Date(stepMs)
-            const clock = stepDate.toLocaleDateString('en-US', {
-                timeZone: 'UTC',
-                month: 'short',
-                year: 'numeric',
-            })
-            return { clock, rel: '' }
+            // Monthly (FDEO): show the step's full valid window the same way
+            // WFPI daily does — dates on the clock line, boundary times on the
+            // rel line. A month is valid from 00:00Z on its 1st through 00:00Z
+            // on the next month's 1st, which in local display time lands the
+            // evening before (e.g. Jul 2026 = "6/30–7/31" + "5PM–5PM" in PDT).
+            // Formatting the real instants keeps the hour DST-correct and in
+            // the viewer's own timezone.
+            const stepDate = new Date(_addMonths(originBase, i + offset))
+            const endDate = new Date(_addMonths(originBase, i + offset + 1))
+            const winD = { timeZone: LOCAL_TZ, month: 'numeric', day: 'numeric' }
+            const clock = `${stepDate.toLocaleDateString('en-US', winD)}–${endDate.toLocaleDateString('en-US', winD)}`
+            const fmtT = (dd) =>
+                dd.toLocaleTimeString('en-US', {
+                    timeZone: LOCAL_TZ,
+                    hour: 'numeric',
+                    hour12: true,
+                }).replace(' ', '')
+            return { clock, rel: `${fmtT(stepDate)}–${fmtT(endDate)}` }
         }
 
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
@@ -839,11 +862,11 @@ const ForecastTimeline = {
             // winter).
             if (this._isWfpi(fc)) {
                 const endDate = new Date(stepDate.getTime() + unitMs)
-                const winD = { timeZone: PDT_TZ, month: 'numeric', day: 'numeric' }
+                const winD = { timeZone: LOCAL_TZ, month: 'numeric', day: 'numeric' }
                 const clock = `${stepDate.toLocaleDateString('en-US', winD)}–${endDate.toLocaleDateString('en-US', winD)}`
                 const fmtT = (dd) =>
                     dd.toLocaleTimeString('en-US', {
-                        timeZone: PDT_TZ,
+                        timeZone: LOCAL_TZ,
                         hour: 'numeric',
                         hour12: true,
                     }).replace(' ', '')
@@ -854,7 +877,7 @@ const ForecastTimeline = {
         }
 
         const clock = stepDate.toLocaleString('en-US', {
-            timeZone: PDT_TZ,
+            timeZone: LOCAL_TZ,
             hour: 'numeric',
             hour12: true,
         })
@@ -1543,14 +1566,14 @@ const ForecastTimeline = {
         if (!(d instanceof Date) || isNaN(d)) return '—'
         if (dateOnly) {
             return d.toLocaleDateString('en-US', {
-                timeZone: PDT_TZ,
+                timeZone: LOCAL_TZ,
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
             })
         }
         return d.toLocaleString('en-US', {
-            timeZone: PDT_TZ,
+            timeZone: LOCAL_TZ,
             month: 'short',
             day: 'numeric',
             year: 'numeric',
