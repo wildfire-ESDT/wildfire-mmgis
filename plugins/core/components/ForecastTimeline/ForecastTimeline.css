@@ -446,6 +446,26 @@
     border-right-color: transparent !important;
     box-shadow: none !important;
 }
+/* Loading skeleton: while a card's availability probe / model data is in
+   flight, its ticks pulse instead of going dark — the dark future-item look
+   is reserved for "model not available". Same cadence as the WhatIf tool's
+   hour-chip skeleton (wwChipPulse). Its own class (not layered on
+   future-item) because future-item's opacity is !important, which would beat
+   the keyframe animation. */
+.ftl-tick.ftl-tick-skeleton {
+    pointer-events: none !important;
+    cursor: default !important;
+    animation: ftl-skeleton-pulse 1.2s ease-in-out infinite;
+}
+@keyframes ftl-skeleton-pulse {
+    0%,
+    100% {
+        opacity: 0.3;
+    }
+    50% {
+        opacity: 0.75;
+    }
+}
 /* Tick container */
 .ftl-ticks-wrap {
     flex: 1;
