@@ -485,6 +485,25 @@ const LocalTimezone = {
             }
         }
 
+        TimeUI._selectYear = function (year) {
+            const startOfYear = TimeUI._displayToUtc(year, 0, 1, 0, 0, 0)
+            let endOfYear = TimeUI._displayToUtc(year, 11, 31, 23, 59, 59)
+            const nowHourFloor = _hourFloor(Date.now())
+            // Same clamp as _selectMonth/_selectDay: core's _selectYear ends the
+            // range at Dec 31, so jumping into the current year landed in the
+            // future (e.g. Dec 2025 -> Dec 2026) instead of at the current hour.
+            if (startOfYear > nowHourFloor) return
+            if (endOfYear > nowHourFloor) endOfYear = nowHourFloor
+
+            TimeUI.updateTimes(startOfYear, endOfYear, endOfYear)
+
+            // Pan the timeline to show the selected extent
+            TimeUI.fitWindowToTime()
+
+            // Refresh the expanded rows to update selection
+            TimeUI._populateExpandedRows()
+        }
+
         TimeUI._selectMonth = function (monthIndex) {
             const selectedYear = TimeUI._utcToDisplay(TimeUI._endTimestamp).year
             const startOfMonth = TimeUI._displayToUtc(selectedYear, monthIndex, 1, 0, 0, 0)
