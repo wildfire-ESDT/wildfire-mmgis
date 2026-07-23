@@ -210,6 +210,10 @@ const ForecastTimeline = {
             self._origPopulateExpandedRows.call(TimeUI)
             self._markFutureExpandedItems()
         }
+        // Core may have populated the rows before this plugin loaded (mobile
+        // populates at TimeUI init) — those items sit unmarked (bright) until
+        // the next repopulate, a visible white flash. Mark what's already there.
+        this._markFutureExpandedItems()
     },
 
     _unpatchPopulateExpandedRows: function () {
@@ -217,6 +221,67 @@ const ForecastTimeline = {
             TimeUI._populateExpandedRows = this._origPopulateExpandedRows
             this._origPopulateExpandedRows = null
         }
+        document.getElementById('ftl-future-style')?.remove()
+    },
+
+    // Mirror of ForecastTimeline.css's .ftl-future-item declarations, applied
+    // through attribute selectors that pre-exist the row DOM. The class pass in
+    // _markFutureExpandedItems only runs AFTER a populate it can see — any row
+    // build it doesn't wrap (or that paints before it runs) shows future items
+    // bright for a beat. Rules keyed on data-year/-month/-day/-hour match the
+    // instant an item is created, so it can never paint undarkened; the class
+    // marking remains the settled state the rest of the plugin keys off.
+    _syncFutureCSS: function (nowYear, nowMonth, nowDay, nowHour, shownYear, shownMonth, shownDay) {
+        let styleEl = document.getElementById('ftl-future-style')
+        if (!styleEl) {
+            styleEl = document.createElement('style')
+            styleEl.id = 'ftl-future-style'
+            document.head.appendChild(styleEl)
+        }
+        const sels = []
+        // Years: the row lists only past years today, but guard a couple
+        // decades ahead in case that changes.
+        for (let y = nowYear + 1; y <= nowYear + 20; y++)
+            sels.push(`#mmgisTimeUIYearsContainer .mmgisTimeUIExpandedItem[data-year="${y}"]`)
+        // Months
+        if (shownYear > nowYear) {
+            sels.push('#mmgisTimeUIMonthsContainer .mmgisTimeUIExpandedItem')
+        } else if (shownYear === nowYear) {
+            for (let m = nowMonth + 1; m < 12; m++)
+                sels.push(`#mmgisTimeUIMonthsContainer .mmgisTimeUIExpandedItem[data-month="${m}"]`)
+        }
+        // Days
+        if (shownYear > nowYear || (shownYear === nowYear && shownMonth > nowMonth)) {
+            sels.push('#mmgisTimeUIDaysContainer .mmgisTimeUIExpandedItem')
+        } else if (shownYear === nowYear && shownMonth === nowMonth) {
+            for (let d = nowDay + 1; d <= 31; d++)
+                sels.push(`#mmgisTimeUIDaysContainer .mmgisTimeUIExpandedItem[data-day="${d}"]`)
+        }
+        // Hours
+        if (
+            shownYear > nowYear ||
+            (shownYear === nowYear && shownMonth > nowMonth) ||
+            (shownYear === nowYear && shownMonth === nowMonth && shownDay > nowDay)
+        ) {
+            sels.push('#mmgisTimeUIHoursContainer .mmgisTimeUIExpandedItem')
+        } else if (shownYear === nowYear && shownMonth === nowMonth && shownDay === nowDay) {
+            for (let h = nowHour + 1; h < 24; h++)
+                sels.push(`#mmgisTimeUIHoursContainer .mmgisTimeUIExpandedItem[data-hour="${h}"]`)
+        }
+        styleEl.textContent = sels.length
+            ? `${sels.join(',\n')} {
+    opacity: 0.3;
+    pointer-events: none;
+    cursor: default;
+    background-image: repeating-linear-gradient(
+        -45deg,
+        rgba(80, 80, 90, 0.25) 0px,
+        rgba(80, 80, 90, 0.25) 2px,
+        transparent 2px,
+        transparent 7px
+    ) !important;
+}`
+            : ''
     },
 
     // After _populateExpandedRows builds the DOM, mark items that represent
@@ -234,6 +299,10 @@ const ForecastTimeline = {
         const shownYear = endDate.getFullYear()
         const shownMonth = endDate.getMonth() // 0-indexed
         const shownDay = endDate.getDate()
+
+        // Refresh the attribute-selector rules first so items REBUILT after
+        // this pass (by any code path) still paint dark on their first frame.
+        this._syncFutureCSS(nowYear, nowMonth, nowDay, nowHour, shownYear, shownMonth, shownDay)
 
         // Years: grey years AFTER current year
         document.querySelectorAll('#mmgisTimeUIYearsContainer .mmgisTimeUIExpandedItem').forEach((el) => {
