@@ -1209,9 +1209,13 @@ const ForecastTimeline = {
 
         const cardState = this.state.cards[name]?.cardState ?? 'available'
         const isDisabled = cardState !== 'available'
+        // While the probe is in flight the ticks pulse (skeleton) instead of
+        // going dark — dark is reserved for "model not available".
+        const isLoading = cardState === 'loading'
 
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
-            el.classList.toggle('ftl-future-item', isDisabled)
+            el.classList.toggle('ftl-tick-skeleton', isLoading)
+            el.classList.toggle('ftl-future-item', isDisabled && !isLoading)
             el.classList.toggle('active', !isDisabled && i === idx)
             const { clock, rel } = this._tickLabels(fc, i, originBase)
             const clockEl = el.querySelector('.ftl-tick-clock')
@@ -1421,10 +1425,15 @@ const ForecastTimeline = {
 
             // The tick is LABELED with the target/valid day (stepMs), but the
             // forecast for that day is what's current the ISSUE day before it, so
-            // the query end is one step earlier: stepMs - unitMs. This makes the
-            // forecast tick for day T show exactly what the normal timeline shows
-            // at day T-1 -- because it's a forecast (issued on T-1, valid for T).
-            const queryEndIso = new Date(stepMs - unitMs).toISOString()
+            // the query end is one step earlier. This makes the forecast tick for
+            // day T show exactly what the normal timeline shows at day T-1 --
+            // because it's a forecast (issued on T-1, valid for T). Computed the
+            // same way stepMs is, so month steps land on the true previous month
+            // boundary rather than a fixed-ms subtraction.
+            const prevStepMs = fc.stepUnit === 'month'
+                ? _addMonths(originMs, idx + offset - 1)
+                : stepMs - (STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour)
+            const queryEndIso = new Date(prevStepMs).toISOString()
 
             const prevStart = ld.time.start
             const prevEnd = ld.time.end
@@ -2207,11 +2216,13 @@ const ForecastTimeline = {
                     state === 'unavailable' || state === 'failed'
                 )
 
-                // Ticks: ftl-future-item greys them and kills pointer-events
-                // whenever the whole card is disabled.
+                // Ticks: while loading they PULSE (skeleton) — dark
+                // ftl-future-item is reserved for unavailable/failed, so a
+                // slow model fetch doesn't read as "model not available".
                 const cardIdx = this.state.cards[name]?.stepIndex ?? 0
                 card.querySelectorAll('.ftl-tick').forEach((t, i) => {
-                    t.classList.toggle('ftl-future-item', disabled)
+                    t.classList.toggle('ftl-tick-skeleton', state === 'loading')
+                    t.classList.toggle('ftl-future-item', disabled && state !== 'loading')
                     if (disabled) t.classList.remove('active')
                     else t.classList.toggle('active', i === cardIdx)
                 })
