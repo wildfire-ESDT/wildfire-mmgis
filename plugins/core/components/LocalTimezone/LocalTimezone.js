@@ -72,6 +72,13 @@ const LocalTimezone = {
         }
         $('#mmgisTimeUIMode').css('display', 'none')
 
+        // In Point mode there is no range end — the one selected instant is
+        // the time the map is showing — so relabel core's "End Time" input.
+        // (Core TimeUI.js is off-limits; DOM relabel from here instead.)
+        $('#mmgisTimeUIEndWrapper span, #mmgisTimeUIEndWrapperFake span').text(
+            'Active Time'
+        )
+
         // Re-seat the already-rendered UI so it displays those same instants in
         // the browser-local frame (identity offsets now in effect). Point mode
         // has no start handle, so only the end/current time is re-seated.
