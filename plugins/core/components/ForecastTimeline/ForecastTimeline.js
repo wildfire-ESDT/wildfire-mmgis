@@ -9,6 +9,8 @@
  *     description: "..." }
  *   { enabled: true, label: "WFPI Daily",  steps: 7,  stepUnit: "day",  stepOffset: 0,
  *     runHourUTC: 0, description: "..." }
+ *   { enabled: true, label: "FDEO Monthly", steps: 1, stepUnit: "month", stepOffset: 0,
+ *     description: "..." }
  *
  * stepOffset (required — must be set explicitly in each layer's time.forecast config):
  *   - 0: first step = model init time (e.g. WFPI day-1=today, HRRR fxx=0)
@@ -73,6 +75,13 @@ function _isMobile() {
 const STEP_UNITS = {
     hour: 3600000,
     day: 86400000,
+    month: null, // variable length — use _addMonths() helper, not a fixed ms
+}
+
+// Add N calendar months to a UTC timestamp, anchoring to the 1st of the month.
+function _addMonths(ms, n) {
+    const d = new Date(ms)
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1)
 }
 
 const PDT_TZ = 'America/Los_Angeles'
@@ -642,7 +651,12 @@ const ForecastTimeline = {
     //    still pointed at yesterday's run for the 7 hours after the new run was out.
     _forecastBase: function (fc) {
         const base = this._originBase()
-        if ((fc?.stepUnit || 'hour') !== 'day') return base
+        const unit = fc?.stepUnit || 'hour'
+        if (unit === 'month') {
+            const d = new Date(base)
+            return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
+        }
+        if (unit !== 'day') return base
         const runHourUTC = Number.isFinite(fc.runHourUTC) ? fc.runHourUTC : 0
         const d = new Date(base)
         const runToday = Date.UTC(
@@ -689,9 +703,11 @@ const ForecastTimeline = {
         const size = fc.stepSize || 1
         const unit = fc.stepUnit || 'hour'
         const abbr =
-            unit === 'day'
-                ? size === 1 ? 'day' : 'days'
-                : size === 1 ? 'hr' : 'hrs'
+            unit === 'month'
+                ? size === 1 ? 'month' : 'months'
+                : unit === 'day'
+                    ? size === 1 ? 'day' : 'days'
+                    : size === 1 ? 'hr' : 'hrs'
         return `${size} ${abbr}`
     },
 
@@ -703,7 +719,15 @@ const ForecastTimeline = {
     // init row. The PDT dates match the 5 PM window boundaries the ticks show.
     _runLabel: function (fc) {
         const base = this._forecastBase(fc || {})
-        if ((fc?.stepUnit || 'hour') === 'day') {
+        const unit = fc?.stepUnit || 'hour'
+        if (unit === 'month') {
+            return new Date(base).toLocaleDateString('en-US', {
+                timeZone: 'UTC',
+                month: 'short',
+                year: 'numeric',
+            })
+        }
+        if (unit === 'day') {
             if (this._isWfpi(fc)) {
                 const dOpts = { timeZone: PDT_TZ, month: 'short', day: 'numeric' }
                 const endD = new Date(base + (fc.steps || 7) * STEP_UNITS.day)
@@ -727,6 +751,13 @@ const ForecastTimeline = {
     // "Jun 30, 2026 · 2:00 PM PDT"  (hourly)  or  "Jul 7, 2026 · 12:00 AM PDT"  (daily)
     _formatInit: function (ms, unit, fc) {
         const d = new Date(ms)
+        if (unit === 'month') {
+            return d.toLocaleDateString('en-US', {
+                timeZone: 'UTC',
+                month: 'long',
+                year: 'numeric',
+            })
+        }
         if (unit === 'day') {
             // Daily products are UTC-dated (00:00Z run); label by UTC date so the
             // readout matches the tick labels and the run that's actually fetched.
@@ -775,12 +806,24 @@ const ForecastTimeline = {
     // the step, so every step stays compact and uniform — see _formatInit.
     _tickLabels: function (fc, i, originBase) {
         const unit = fc.stepUnit || 'hour'
+        const offset = fc.stepOffset || 0
+
+        if (unit === 'month') {
+            const stepMs = _addMonths(originBase, i + offset)
+            const stepDate = new Date(stepMs)
+            const clock = stepDate.toLocaleDateString('en-US', {
+                timeZone: 'UTC',
+                month: 'short',
+                year: 'numeric',
+            })
+            return { clock, rel: '' }
+        }
+
         const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
         // stepOffset is documented as required, but a mission config that omits
         // it must degrade to "first step = init time", not render "hNaN" and
         // "Invalid Date" into an operational forecast card. The chip label
         // below already defaults the same way.
-        const offset = fc.stepOffset || 0
         const stepDate = new Date(originBase + (i + offset) * unitMs)
 
         if (unit === 'day') {
@@ -853,16 +896,20 @@ const ForecastTimeline = {
         // one step wide instead of stretching a lone tick across the whole track.
         // Daily cards use fixed-width steps (see CSS) so a 1-step daily card stays
         // one step wide instead of stretching a lone tick across the whole track.
-        const dailyClass = unit === 'day' ? ' ftl-card-daily' : ''
+        const dailyClass = (unit === 'day' || unit === 'month') ? ' ftl-card-daily' : ''
         const ticksWrapClass = large ? 'ftl-ticks-wrap' : 'ftl-ticks-wrap mmgisTimeUIExpandedRowContainer'
 
-        const unitWord = unit === 'day' ? 'daily' : unit === 'week' ? 'weekly' : 'hourly'
-        const unitPlural = unit === 'day' ? 'days' : unit === 'week' ? 'weeks' : 'hrs'
+        const unitWord = unit === 'month' ? 'monthly' : unit === 'day' ? 'daily' : unit === 'week' ? 'weekly' : 'hourly'
         // Hourly tracks label by max lead time (last tick's hour), so HRRR's
-        // H0..H18 reads "18 hrs" not "19". Daily/weekly label by the step count.
-        const span = unit === 'day' || unit === 'week'
+        // H0..H18 reads "18 hrs" not "19". Daily/weekly/monthly label by step count.
+        const span = unit === 'day' || unit === 'week' || unit === 'month'
             ? steps
             : (steps - 1) + (fc.stepOffset || 0)
+        const unitPlural = unit === 'month'
+            ? (span === 1 ? 'month' : 'months')
+            : unit === 'day'
+                ? (span === 1 ? 'day' : 'days')
+                : unit === 'week' ? 'weeks' : 'hrs'
         const forecastChipLabel = `${unitWord} / ${span} ${unitPlural}`
 
         const isCollapsed = this.state.cards[name]?.collapsed === true
@@ -1200,12 +1247,13 @@ const ForecastTimeline = {
         // Guard the forecast hour to the range this init time offers (fxx == idx
         // for COG layers), so a stale index never requests an unavailable hour.
         idx = Math.max(0, Math.min(idx, this._effectiveSteps(fc, name) - 1))
-        const unitMs = STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour
         const originMs = this._forecastBase(fc)
         // Default to 0 for the same reason _tickLabels does — a config missing
         // stepOffset must not compute a NaN step time and request it.
         const offset = fc.stepOffset || 0
-        let stepMs = originMs + (idx + offset) * unitMs
+        let stepMs = fc.stepUnit === 'month'
+            ? _addMonths(originMs, idx + offset)
+            : originMs + (idx + offset) * (STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour)
 
         // Daily products (WFPI) are already anchored to the UTC model run by
         // _forecastBase, so stepMs lands on 00:00Z of the target day — no PDT
