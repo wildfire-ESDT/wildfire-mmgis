@@ -102,6 +102,11 @@ const HRRR_EXTENDED_INIT_HOURS = [0, 6, 12, 18]
 // enough that a 49-step HRRR run doesn't take a minute to loop.
 const PLAY_INTERVAL_MS = 700
 
+// Delay before a re-check of a "not generated" card shows "Loading…". A fast
+// probe resolves within this window, so the card skips the flash. Only the text
+// is deferred; the probe itself fires immediately.
+const PROBE_LOADING_DELAY_MS = 150
+
 const ForecastTimeline = {
     // ── State ──────────────────────────────────────────────
     state: {
@@ -1615,9 +1620,8 @@ const ForecastTimeline = {
         if (timeData?.currentTime) {
             this.state.originMs = new Date(timeData.currentTime).getTime()
             // A new selected time is a new model run, so snap every card back to
-            // its first step — a forecast always starts at the beginning. The
-            // refresh below moves the active tick to step 0 and _reapplyAllSteps
-            // applies it (fxx=0 / first day) to the layer.
+            // its first step. The refresh below moves the active tick to step 0
+            // and _reapplyAllSteps applies it (fxx=0 / first day) to the layer.
             Object.keys(this.state.cards).forEach((n) => {
                 this.state.cards[n].stepIndex = 0
             })
@@ -1729,10 +1733,12 @@ const ForecastTimeline = {
 
     // ── Availability: one boolean per run ──────────────────
     //
-    // A run is either out or it isn't. One check per run, cached under
-    // `name:base`: for fxx layers a single fxx=0 probe (the anchor hour — if
-    // that exists the run exists), a day-1 GetMap for WFPI, and assumed-present
-    // for layers we can't probe (STAC etc.). Individual forecast hours are NOT
+    // A run is either out or it isn't. One check per run: for fxx layers a
+    // single fxx=0 probe (the anchor hour — if that exists the run exists), a
+    // day-1 GetMap for WFPI, and assumed-present for layers we can't probe
+    // (STAC etc.). A PRESENT verdict is cached under `name:base` (a published
+    // run doesn't un-publish); a missing run is left uncached so it re-probes on
+    // every trigger until it's out. Individual forecast hours are NOT
     // pre-checked — the per-hour "published edge" search this replaced kept
     // disabling hours veloserver demonstrably served — the data fetch itself is
     // the only per-step truth: a real failure disables the card (_failCard).
@@ -1744,9 +1750,12 @@ const ForecastTimeline = {
     // events can't see failures. `Access-Control-Allow-Origin: *` on the
     // backends means a plain fetch reads the true status.
 
-    // Values: 1 (run present), -1 (run missing), or 'pending' (check in
-    // flight — card shows Loading…). Keyed `name:base`.
+    // Keyed `name:base`. Values: 1 (present) or 'pending' (check in flight). A
+    // missing run is not cached, so it re-probes on the next trigger.
     _edgeCache: {},
+
+    // Pending "Loading…" debounce timers, keyed by layer name. See _scheduleLoading.
+    _probeLoadingTimers: {},
 
     _probeAllAnchors: function () {
         if (!this._edgeCache) this._edgeCache = {}
@@ -1755,18 +1764,25 @@ const ForecastTimeline = {
             const key = `${name}:${base}`
             const cached = this._edgeCache[key]
 
-            if (typeof cached === 'number') {
-                this._dbg('run (cache hit)', name, { key, present: cached >= 0 })
-                this._applyRunPresent(name, cached >= 0)
+            // Only present runs are cached (a published run doesn't un-publish).
+            // A missing run isn't cached, so it re-probes every trigger until it's out.
+            if (cached === 1) {
+                this._dbg('run (cache hit)', name, { key, present: true })
+                this._applyRunPresent(name, true)
                 return
             }
-            if (cached === 'pending') {
-                this._setCardState(name, 'loading')
-                return
-            }
+            // Probe already in flight; leave the current label, don't start another.
+            if (cached === 'pending') return
 
             this._edgeCache[key] = 'pending'
-            this._setCardState(name, 'loading')
+            if (this.state.cards[name]?.cardState === 'unavailable') {
+                // A "not generated" card debounces the flip to "Loading…" so a
+                // fast re-check doesn't flash it. commit() cancels the timer.
+                this._scheduleLoading(name)
+            } else {
+                // Fresh or valid card: show "Loading…" right away.
+                this._setCardState(name, 'loading')
+            }
 
             const baseAtFire = base
             const stillCurrent = () => this._forecastBase(fc) === baseAtFire
@@ -1776,12 +1792,14 @@ const ForecastTimeline = {
             // proves the run exists; a slower, failed probe must not blank a
             // card the map is actively rendering data for.
             const commit = (ok) => {
+                this._cancelLoading(name)
                 const cs = this.state.cards[name]
                 if (!ok && cs?.evidenceBase === baseAtFire) {
                     this._dbg('probe failed but data evidence wins', name, { key })
                     ok = true
                 }
-                this._edgeCache[key] = ok ? 1 : -1
+                if (ok) this._edgeCache[key] = 1
+                else delete this._edgeCache[key] // don't cache a miss; re-probe next trigger
                 this._dbg('run RESULT', name, { key, present: ok, applied: stillCurrent() })
                 if (stillCurrent()) this._applyRunPresent(name, ok)
             }
@@ -1796,6 +1814,25 @@ const ForecastTimeline = {
                     commit(false)
                 })
         })
+    },
+
+    // Show "Loading…" after PROBE_LOADING_DELAY_MS unless the probe resolves
+    // first (commit calls _cancelLoading). One timer per layer.
+    _scheduleLoading: function (name) {
+        if (!this._probeLoadingTimers) this._probeLoadingTimers = {}
+        if (this._probeLoadingTimers[name]) return // already scheduled
+        this._probeLoadingTimers[name] = setTimeout(() => {
+            delete this._probeLoadingTimers[name]
+            this._setCardState(name, 'loading')
+        }, PROBE_LOADING_DELAY_MS)
+    },
+
+    _cancelLoading: function (name) {
+        const t = this._probeLoadingTimers?.[name]
+        if (t) {
+            clearTimeout(t)
+            delete this._probeLoadingTimers[name]
+        }
     },
 
     // Is this card's run out at all? fxx layers: does the anchor hour (fxx=0)
@@ -1869,7 +1906,9 @@ const ForecastTimeline = {
         if (!cs) return
         const base = this._forecastBase(fc)
         cs.failedBase = base
-        this._edgeCache[`${name}:${base}`] = -1
+        // Don't cache the miss; a briefly-desynced service usually recovers, so
+        // let the next probe re-check and re-enable the card on its own.
+        delete this._edgeCache[`${name}:${base}`]
         this._applyRunPresent(name, false)
     },
 
@@ -2432,6 +2471,8 @@ const ForecastTimeline = {
         )
         Object.values(this._tickSpinTimers || {}).forEach(clearTimeout)
         this._tickSpinTimers = {}
+        Object.values(this._probeLoadingTimers || {}).forEach(clearTimeout)
+        this._probeLoadingTimers = {}
         if (this._visitedSteps) this._visitedSteps.clear()
 
         // Restore Next button appearance
