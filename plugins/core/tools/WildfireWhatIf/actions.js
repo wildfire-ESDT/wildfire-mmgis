@@ -1,9 +1,18 @@
 // All user-triggered behavior for the Wildfire What-If tool. Components call
-// these; they orchestrate the store (state), map (Leaflet), and the backend.
+// these; they orchestrate the store (state), map (Leaflet), Veloserver (HRRR
+// winds), and the MMGIS server (run history).
 
+import { area, length, polygon, lineString } from '@turf/turf'
 import useWhatIfStore, { BBOX_BUFFER_KM } from './store'
 import * as map from './map'
-import { getMap, meanWind, closeRing, generateId } from './utils'
+import {
+    getMap,
+    meanWind,
+    closeRing,
+    generateId,
+    pdtCycleToUtc,
+    gribjsonToPoints,
+} from './utils'
 
 const S = useWhatIfStore
 
@@ -66,17 +75,37 @@ function recordJob(jobId, payload, name) {
     }).catch(() => {})
 }
 
-// Fetch a single forecast hour from /api/wind (fxx=0…12).
-function fetchWindHour(backendUrl, { date, hourPdt, fxx, bbox }) {
-    const url = new URL(backendUrl + '/api/wind')
-    url.searchParams.set('date', date)
-    url.searchParams.set('hour_pdt', hourPdt)
-    url.searchParams.set('fxx', fxx)
-    url.searchParams.set('lon_min', bbox[0])
-    url.searchParams.set('lat_min', bbox[1])
-    url.searchParams.set('lon_max', bbox[2])
-    url.searchParams.set('lat_max', bbox[3])
-    return fetch(url.toString()).then((r) => r.json())
+// Fetch a single forecast hour (fxx=0…12) from Veloserver's gribjson route,
+// which subsets server-side: /hrrr/gribjson/{cycle-time}/{ulx,uly,lrx,lry}.
+// veloUrl may be absolute or a path relative to the MMGIS origin (the default
+// 'veloserver' rides MMGIS's adjacent-server proxy and its session).
+function fetchWindHour(veloUrl, { date, hourPdt, fxx, bbox }) {
+    const run = pdtCycleToUtc(date, hourPdt)
+    const projwin = `${bbox[0]},${bbox[3]},${bbox[2]},${bbox[1]}`
+    const root = (window.mmgisglobal && window.mmgisglobal.ROOT_PATH) || ''
+    const base = /^https?:\/\//.test(veloUrl)
+        ? veloUrl.replace(/\/$/, '')
+        : (root ? root + '/' : '') + veloUrl.replace(/^\/|\/$/g, '')
+    const cc = String(run.cycle_utc).padStart(2, '0')
+    const ff = String(fxx).padStart(2, '0')
+    return fetch(`${base}/hrrr/gribjson/${run.iso}/${projwin}?fxx=${fxx}`, {
+        credentials: 'same-origin',
+    })
+        .then((r) => {
+            if (!r.ok)
+                return r.text().then((t) => {
+                    throw new Error(t || `Veloserver HTTP ${r.status}`)
+                })
+            return r.json()
+        })
+        .then((records) => ({
+            points: gribjsonToPoints(records),
+            hrrr_ref: `hrrr.t${cc}z.wrfsfcf${ff}.grib2`,
+            date_utc: run.date_utc,
+            cycle_utc: run.cycle_utc,
+            hour_pdt: hourPdt,
+            source: `HRRR ${date} ${String(hourPdt).padStart(2, '0')} PDT (UTC ${run.date_utc} ${cc}Z) f${ff}`,
+        }))
 }
 
 // ─── Perimeter + auto bbox ────────────────────────────────────────────────────
@@ -214,10 +243,10 @@ export function fetchWinds() {
     const gen = ++windFetchGen
     S.setState({ wind: null, hrrrRun: null, fetchingWinds: true, hrrrError: null, windStale: false })
 
-    fetchWindHour(s.backendUrl, { date: s.hrrrDate, hourPdt: s.hrrrHour, fxx: 0, bbox })
+    fetchWindHour(s.veloUrl, { date: s.hrrrDate, hourPdt: s.hrrrHour, fxx: 0, bbox })
         .then((data) => {
             if (gen !== windFetchGen) return
-            const mean = data && !data.error ? meanWind(data.points) : null
+            const mean = data ? meanWind(data.points) : null
             if (!mean) {
                 S.setState({
                     fetchingWinds: false,
@@ -328,6 +357,49 @@ export function drawMockSpread() {
 
 // ─── Submission ───────────────────────────────────────────────────────────────
 
+// Assemble the run result entirely client-side (formerly the whatif-demo
+// backend's POST /api/payload): geodesic-ish perimeter stats via turf,
+// meteorological speed/direction resolved to earth-relative U/V.
+function buildPayloadResult(payload) {
+    const ring = payload.perimeter_coords[0]
+    const props = {
+        meanfrp: 0,
+        isactive: 1,
+        region: 'CONUS',
+        seeded_from: null,
+        ...payload.perimeter_props,
+        farea: Math.round((area(polygon([ring])) / 1e6) * 100) / 100, // km²
+        fperim:
+            Math.round(length(lineString(ring), { units: 'kilometers' }) * 100) /
+            100,
+    }
+    const wm = payload.wind_mods
+    let wind_uv = null
+    if (wm.speed_ms != null && wm.direction_deg != null) {
+        // direction_deg is where the wind comes FROM; u east, v north
+        const mathRad = ((270 - wm.direction_deg) * Math.PI) / 180
+        wind_uv = {
+            u10: Math.round(wm.speed_ms * Math.cos(mathRad) * 1e4) / 1e4,
+            v10: Math.round(wm.speed_ms * Math.sin(mathRad) * 1e4) / 1e4,
+            speed_ms: Math.round(wm.speed_ms * 1e4) / 1e4,
+            direction_deg: Math.round(wm.direction_deg * 100) / 100,
+        }
+    }
+    return {
+        hrrr_ref: payload.hrrr_ref,
+        hrrr_run: payload.hrrr_run,
+        wind_mods: wm,
+        wind_uv,
+        perimeter: {
+            type: 'Feature',
+            geometry: { type: 'Polygon', coordinates: payload.perimeter_coords },
+            properties: props,
+        },
+        resources: { type: 'FeatureCollection', features: [] },
+        generated_at: new Date().toISOString(),
+    }
+}
+
 export function submit() {
     const s = S.getState()
     if (!s.perimeterRing) {
@@ -368,39 +440,35 @@ export function submit() {
         sim_type: s.simType,
     }
     S.setState({ submitting: true })
-    fetch(s.backendUrl + '/api/payload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+    let result
+    try {
+        result = buildPayloadResult(payload)
+    } catch (err) {
+        S.setState({ submitting: false })
+        window.alert('Submission failed: ' + err.message)
+        return
+    }
+    const jobId = generateId()
+    const st = S.getState()
+    S.setState({
+        jobs: {
+            ...st.jobs,
+            [jobId]: {
+                payload,
+                name,
+                status: 'completed',
+                startedAt: Date.now(),
+                result,
+                spreadRing,
+            },
+        },
+        jobIds: [jobId, ...st.jobIds],
+        page: 0,
+        activeJobId: jobId,
+        runName: '',
+        submitting: false,
     })
-        .then((r) => r.json())
-        .then((body) => {
-            const jobId = generateId()
-            const st = S.getState()
-            S.setState({
-                jobs: {
-                    ...st.jobs,
-                    [jobId]: {
-                        payload,
-                        name,
-                        status: 'completed',
-                        startedAt: Date.now(),
-                        result: body,
-                        spreadRing,
-                    },
-                },
-                jobIds: [jobId, ...st.jobIds],
-                page: 0,
-                activeJobId: jobId,
-                runName: '',
-                submitting: false,
-            })
-            recordJob(jobId, payload, name)
-        })
-        .catch((err) => {
-            S.setState({ submitting: false })
-            window.alert('Submission failed: ' + err.message)
-        })
+    recordJob(jobId, payload, name)
 }
 
 // ─── Downloads ────────────────────────────────────────────────────────────────

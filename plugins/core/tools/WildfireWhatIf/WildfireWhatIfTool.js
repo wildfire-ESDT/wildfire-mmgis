@@ -8,7 +8,7 @@ import { loadHistory, restoreScenario, cancelMapDraw, setBboxFromMapFeature } fr
 import { clearScenarioLayers } from './map'
 import WhatIfPanel from './components/WhatIfPanel'
 
-const DEFAULT_BACKEND_URL = 'http://localhost:8000'
+const DEFAULT_VELO_URL = 'veloserver'
 
 const WildfireWhatIf = {
     height: 0,
@@ -22,7 +22,7 @@ const WildfireWhatIf = {
         WildfireWhatIf._wfigsLayerName = vars.wfigsLayerName || 'b449da31-1ed1-473c-87d6-49f0c0ced8e5'
         useWhatIfStore.setState({
             vars,
-            backendUrl: vars.backendUrl || DEFAULT_BACKEND_URL,
+            veloUrl: vars.veloUrl || DEFAULT_VELO_URL,
             // Schema-declared fields seed their defaults from tool variables
             ...seedFromVars(vars),
         })

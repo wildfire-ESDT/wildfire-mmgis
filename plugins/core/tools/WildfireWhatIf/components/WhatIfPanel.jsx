@@ -19,7 +19,7 @@ export default function WhatIfPanel() {
                 <div>
                     <div>
                         <div className="mmgisToolTitle">
-                            Wildfire Scenario Forecast
+                            Wildfire Scenario Forecast Tool
                         </div>
                     </div>
                     <div>

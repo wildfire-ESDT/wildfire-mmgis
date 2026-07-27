@@ -31,7 +31,7 @@ export function nowPDTHour() {
 
 const useWhatIfStore = create((set) => ({
     vars: {},
-    backendUrl: 'http://localhost:8000',
+    veloUrl: 'veloserver', // relative → MMGIS's adjacent-server proxy; may be absolute
     // HRRR model run selection (PDT)
     hrrrDate: nowPDTDate(),
     hrrrHour: nowPDTHour(),

@@ -44,6 +44,49 @@ export function speedColor(speed) {
     return `rgb(${c[0]},${c[1]},${c[2]})`
 }
 
+// HRRR cycles are selected in PDT (UTC-7, matching this tool's hour_pdt
+// convention everywhere). Returns the cycle's UTC identity plus the ISO
+// timestamp Veloserver keys its gribjson routes by.
+export function pdtCycleToUtc(dateStr, hourPdt) {
+    const d = new Date(
+        `${dateStr}T${String(hourPdt).padStart(2, '0')}:00:00-07:00`
+    )
+    return {
+        iso: d.toISOString().replace('.000Z', 'Z'),
+        date_utc: d.toISOString().slice(0, 10),
+        cycle_utc: d.getUTCHours(),
+    }
+}
+
+// Convert a Veloserver gribjson response (leaflet-velocity format: U and V
+// records on a regular lat/lon grid, values as numbers or the string "NaN"
+// outside the model domain) into the [{lon, lat, u, v}] points this tool's
+// wind field consumes. Grids larger than maxPoints are strided down so the
+// map doesn't drown in arrow markers.
+export function gribjsonToPoints(records, maxPoints) {
+    maxPoints = maxPoints || 250
+    if (!Array.isArray(records)) return []
+    const uRec = records.find((r) => r && r.header && r.header.parameterNumber === 2)
+    const vRec = records.find((r) => r && r.header && r.header.parameterNumber === 3)
+    if (!uRec || !vRec) return []
+    const h = uRec.header
+    const { nx, ny, lo1, la1, la2, dx, dy } = h
+    const latStep = la2 >= la1 ? dy : -dy
+    const stride = Math.max(1, Math.ceil(Math.sqrt((nx * ny) / maxPoints)))
+    const points = []
+    for (let j = 0; j < ny; j += stride) {
+        for (let i = 0; i < nx; i += stride) {
+            const u = Number(uRec.data[j * nx + i])
+            const v = Number(vRec.data[j * nx + i])
+            if (!isFinite(u) || !isFinite(v)) continue
+            let lon = lo1 + i * dx
+            if (lon > 180) lon -= 360
+            points.push({ lon, lat: la1 + j * latStep, u, v })
+        }
+    }
+    return points
+}
+
 export function closeRing(ring) {
     if (ring.length < 3) return ring
     const [fx, fy] = ring[0]

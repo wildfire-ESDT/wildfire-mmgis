@@ -30,12 +30,12 @@
             {
                 "components": [
                     {
-                        "field": "variables.backendUrl",
-                        "name": "What-If Backend URL",
-                        "description": "Origin of the whatif-demo FastAPI backend (e.g. http://localhost:8000).",
+                        "field": "variables.veloUrl",
+                        "name": "Veloserver URL",
+                        "description": "Veloserver origin or path serving HRRR gribjson winds. Default 'veloserver' uses MMGIS's built-in proxy (requires WITH_VELOSERVER=true). May be absolute, e.g. https://firepanel.ai/veloserver.",
                         "type": "text",
                         "width": 12,
-                        "placeholder": "http://localhost:8000"
+                        "placeholder": "veloserver"
                     }
                 ]
             },
