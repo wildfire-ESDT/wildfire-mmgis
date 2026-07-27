@@ -12,26 +12,6 @@
 //   description hint line under the input
 const FORM_SECTIONS = [
     {
-        title: 'HRRR Model Run',
-        fields: [
-            {
-                key: 'hrrrDate',
-                type: 'date',
-                var: 'hrrr_date',
-                half: true,
-            },
-            {
-                key: 'hrrrHour',
-                type: 'number',
-                min: 0,
-                max: 23,
-                var: 'hrrr_hour_pdt',
-                suffix: ':00 PDT',
-                half: true,
-            },
-        ],
-    },
-    {
         title: 'Simulation Type',
         fields: [
             {

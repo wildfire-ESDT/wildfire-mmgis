@@ -228,7 +228,7 @@
 }
 
 #wildfireTool .ww-status-none {
-    color: #8a9098;
+    color: #b8c0c8;
     background: transparent;
     padding: 2px 0;
 }
@@ -248,6 +248,24 @@
     background: rgba(239, 83, 80, 0.12);
 }
 
+#wildfireTool .ww-spinner {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    border: 2px solid rgba(77, 201, 240, 0.25);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: wwSpin 0.7s linear infinite;
+}
+
+@keyframes wwSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 /* ── Forecast hour strip — timeline-styled cells ── */
 
 #wildfireTool .ww-hour-strip {
@@ -260,9 +278,8 @@
 }
 
 #wildfireTool .ww-hour-strip-empty {
-    font-size: 11px;
-    color: #6a6e72;
-    font-style: italic;
+    font-size: 12px;
+    color: #aab4bc;
     padding: 3px 0;
     margin-bottom: 4px;
 }
@@ -672,102 +689,6 @@
     background: #ffdd5c;
 }
 
-/* ── WFIGS map-click hint ── */
-
-#wildfireTool .ww-fire-map-hint {
-    font-size: 11px;
-    color: #6a7278;
-    font-style: italic;
-    padding: 3px 0 2px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-/* ── WFIGS active fire picker ── */
-
-#wildfireTool .ww-fire-picker {
-    margin-top: 6px;
-    border: 1px solid #44484a;
-    border-radius: 3px;
-    background: #1e2122;
-    overflow: hidden;
-}
-
-#wildfireTool .ww-fire-picker-status {
-    font-size: 12px;
-    color: #8a9098;
-    padding: 8px 10px;
-    font-style: italic;
-}
-
-#wildfireTool .ww-fire-picker-err {
-    color: #ef9a9a;
-    font-style: normal;
-}
-
-#wildfireTool .ww-fire-picker-filter {
-    width: 100%;
-    box-sizing: border-box;
-    background: #26292b;
-    border: none;
-    border-bottom: 1px solid #44484a;
-    color: #eceff1;
-    font-size: 13px;
-    padding: 6px 10px;
-    outline: none;
-}
-
-#wildfireTool .ww-fire-picker-filter:focus {
-    border-bottom-color: var(--color-mmgis, #08aeea);
-}
-
-#wildfireTool .ww-fire-picker-list {
-    max-height: 180px;
-    overflow-y: auto;
-}
-
-#wildfireTool .ww-fire-picker-empty {
-    font-size: 12px;
-    color: #5a5e62;
-    padding: 8px 10px;
-    font-style: italic;
-}
-
-#wildfireTool .ww-fire-picker-item {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    width: 100%;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid #2e3234;
-    color: #eceff1;
-    padding: 6px 10px;
-    cursor: pointer;
-    text-align: left;
-    gap: 1px;
-}
-
-#wildfireTool .ww-fire-picker-item:last-child {
-    border-bottom: none;
-}
-
-#wildfireTool .ww-fire-picker-item:hover {
-    background: #2e3234;
-    color: #fff;
-}
-
-#wildfireTool .ww-fire-picker-name {
-    font-size: 13px;
-    font-weight: 500;
-}
-
-#wildfireTool .ww-fire-picker-meta {
-    font-size: 11px;
-    color: #6a7278;
-}
-
 /* ── Login gate ── */
 
 #wildfireTool .ww-login-form {
@@ -827,7 +748,7 @@
 }
 
 #wildfireTool .ww-login-hint {
-    font-size: 11px;
-    color: #6a7278;
+    font-size: 12px;
+    color: #99a3ab;
     text-align: center;
 }

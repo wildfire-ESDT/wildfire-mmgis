@@ -2,7 +2,6 @@ import React, { useRef } from 'react'
 import useWhatIfStore, { BBOX_BUFFER_KM } from '../store'
 import { startMapDraw, cancelMapDraw, clearPerimeter, uploadPerimeter } from '../actions'
 import { Button, IconButton } from '@design/components'
-import FirePickerSection from './FirePickerSection'
 
 function BboxStatus({ bounds }) {
     const [[latMin, lonMin], [latMax, lonMax]] = bounds
@@ -13,14 +12,27 @@ function BboxStatus({ bounds }) {
     )
     return (
         <div className="ww-status ww-status-bbox">
-            HRRR region: {widthKm} × {heightKm} km
+            Wind region: {widthKm} × {heightKm} km (perimeter +{' '}
+            {BBOX_BUFFER_KM} km)
         </div>
     )
+}
+
+// Handles only exist on editable perimeters small enough for map.js to spawn
+// them (MAX_EDIT_VERTICES); map-selected fire perimeters are never editable.
+function perimeterStatus(source, ring) {
+    const editable = source !== 'selected' && ring.length - 1 <= 60
+    const adjust = editable ? '. Drag the map handles to adjust it' : ''
+    if (source === 'selected') return 'Fire perimeter selected from the map'
+    if (source === 'uploaded') return 'Perimeter uploaded' + adjust
+    if (source === 'run') return 'Perimeter loaded from the selected run'
+    return 'Perimeter drawn' + adjust
 }
 
 export default function PerimeterSection() {
     const drawing = useWhatIfStore((s) => s.drawing)
     const perimeterRing = useWhatIfStore((s) => s.perimeterRing)
+    const perimeterSource = useWhatIfStore((s) => s.perimeterSource)
     const bboxBounds = useWhatIfStore((s) => s.bboxBounds)
     const fileRef = useRef(null)
 
@@ -71,16 +83,15 @@ export default function PerimeterSection() {
             )}
             {perimeterRing ? (
                 <div className="ww-status ww-status-ok">
-                    Perimeter set · {perimeterRing.length - 1} vertices · drag
-                    handles to adjust, right-click one to remove
+                    {perimeterStatus(perimeterSource, perimeterRing)}
                 </div>
             ) : (
                 <div className="ww-status ww-status-none">
-                    No perimeter drawn
+                    No fire perimeter yet. Draw one, upload a GeoJSON, or
+                    click a fire on the map.
                 </div>
             )}
             {bboxBounds && <BboxStatus bounds={bboxBounds} />}
-            <FirePickerSection />
         </>
     )
 }

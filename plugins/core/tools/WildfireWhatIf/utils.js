@@ -44,13 +44,13 @@ export function speedColor(speed) {
     return `rgb(${c[0]},${c[1]},${c[2]})`
 }
 
-// HRRR cycles are selected in PDT (UTC-7, matching this tool's hour_pdt
-// convention everywhere). Returns the cycle's UTC identity plus the ISO
-// timestamp Veloserver keys its gribjson routes by.
-export function pdtCycleToUtc(dateStr, hourPdt) {
-    const d = new Date(
-        `${dateStr}T${String(hourPdt).padStart(2, '0')}:00:00-07:00`
-    )
+// The HRRR cycle `hoursBack` hours before now (floored to the hour), as the
+// UTC identity Veloserver keys its gribjson routes by. hoursBack=0 is the
+// current hour; the fetch walks back from there to the latest published cycle.
+export function utcCycle(hoursBack) {
+    const d = new Date()
+    d.setUTCMinutes(0, 0, 0)
+    d.setUTCHours(d.getUTCHours() - hoursBack)
     return {
         iso: d.toISOString().replace('.000Z', 'Z'),
         date_utc: d.toISOString().slice(0, 10),

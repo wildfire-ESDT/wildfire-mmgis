@@ -7,7 +7,7 @@
     "overridable": true,
     "defaultIcon": "fire",
     "name": "WildfireWhatIf",
-    "description": "What-if wildfire scenario tool: draw a fire perimeter (HRRR region auto-derived with a 15 km buffer), edit 12-hr HRRR winds per forecast hour, and submit fire spread or smoke dispersion forecasts.",
+    "description": "What-if wildfire scenario tool: draw a fire perimeter (HRRR region auto-derived with a 15 km buffer), the latest available HRRR wind loads automatically from Veloserver, tweak speed/direction, and submit fire spread or smoke dispersion forecasts.",
     "hasVars": true,
     "toolbarPriority": 60,
     "paths": {
@@ -36,27 +36,6 @@
                         "type": "text",
                         "width": 12,
                         "placeholder": "veloserver"
-                    }
-                ]
-            },
-            {
-                "components": [
-                    {
-                        "field": "variables.hrrr_date",
-                        "name": "HRRR Date (YYYY-MM-DD)",
-                        "description": "Default HRRR forecast date.",
-                        "type": "text",
-                        "width": 6,
-                        "placeholder": "2026-07-14"
-                    },
-                    {
-                        "field": "variables.hrrr_hour_pdt",
-                        "name": "HRRR Hour (PDT)",
-                        "description": "Hour of the HRRR cycle in PDT (0-23).",
-                        "type": "number",
-                        "width": 6,
-                        "min": 0,
-                        "max": 23
                     }
                 ]
             }

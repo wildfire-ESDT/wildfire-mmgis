@@ -10,7 +10,7 @@ import {
     meanWind,
     closeRing,
     generateId,
-    pdtCycleToUtc,
+    utcCycle,
     gribjsonToPoints,
 } from './utils'
 
@@ -18,7 +18,13 @@ const S = useWhatIfStore
 
 const ENDPOINT_TAG = 'wildfire-whatif:/api/payload'
 
+// How many hours back from now to search for the latest published HRRR cycle
+const LATEST_MAX_HOURS_BACK = 4
+// Debounce for the automatic wind fetch while a perimeter is being edited
+const AUTO_FETCH_DEBOUNCE_MS = 400
+
 let drawSession = null
+let autoFetchTimer = null
 
 // ─── Backend / MMGIS-server requests ──────────────────────────────────────────
 
@@ -75,12 +81,11 @@ function recordJob(jobId, payload, name) {
     }).catch(() => {})
 }
 
-// Fetch a single forecast hour (fxx=0…12) from Veloserver's gribjson route,
-// which subsets server-side: /hrrr/gribjson/{cycle-time}/{ulx,uly,lrx,lry}.
-// veloUrl may be absolute or a path relative to the MMGIS origin (the default
-// 'veloserver' rides MMGIS's adjacent-server proxy and its session).
-function fetchWindHour(veloUrl, { date, hourPdt, fxx, bbox }) {
-    const run = pdtCycleToUtc(date, hourPdt)
+// Fetch one HRRR cycle from Veloserver's gribjson route, which subsets
+// server-side: /hrrr/gribjson/{cycle-time}/{ulx,uly,lrx,lry}. veloUrl may be
+// absolute or a path relative to the MMGIS origin (the default 'veloserver'
+// rides MMGIS's adjacent-server proxy and its session).
+function fetchWindHour(veloUrl, { run, fxx, bbox }) {
     const projwin = `${bbox[0]},${bbox[3]},${bbox[2]},${bbox[1]}`
     const root = (window.mmgisglobal && window.mmgisglobal.ROOT_PATH) || ''
     const base = /^https?:\/\//.test(veloUrl)
@@ -103,8 +108,8 @@ function fetchWindHour(veloUrl, { date, hourPdt, fxx, bbox }) {
             hrrr_ref: `hrrr.t${cc}z.wrfsfcf${ff}.grib2`,
             date_utc: run.date_utc,
             cycle_utc: run.cycle_utc,
-            hour_pdt: hourPdt,
-            source: `HRRR ${date} ${String(hourPdt).padStart(2, '0')} PDT (UTC ${run.date_utc} ${cc}Z) f${ff}`,
+            valid_iso: run.iso,
+            source: `HRRR ${run.date_utc} ${cc}Z f${ff}`,
         }))
 }
 
@@ -153,9 +158,22 @@ export function setPerimeter(ring, opts) {
     S.setState({
         perimeterRing: closed,
         bboxBounds: bounds,
+        // Edit-handle drags re-enter without opts — keep the original source
+        perimeterSource:
+            (opts && opts.source) || S.getState().perimeterSource || 'drawn',
         windStale: S.getState().wind != null && !(opts && opts.fromRun),
     })
     if (S.getState().wind) renderWindVectors()
+    // Selecting/editing a perimeter fetches the latest wind for it — debounced
+    // so a stream of edit-handle drags collapses into one request. Restored
+    // runs keep their saved wind instead.
+    if (!(opts && opts.fromRun)) {
+        if (autoFetchTimer) clearTimeout(autoFetchTimer)
+        autoFetchTimer = setTimeout(() => {
+            autoFetchTimer = null
+            fetchWinds()
+        }, AUTO_FETCH_DEBOUNCE_MS)
+    }
 }
 
 // Redraw a scenario already held in the store (e.g. after tool close/reopen)
@@ -170,6 +188,7 @@ export function clearPerimeter() {
     map.clearScenarioLayers()
     S.setState({
         perimeterRing: null,
+        perimeterSource: null,
         bboxBounds: null,
         wind: null,
         hrrrRun: null,
@@ -194,7 +213,7 @@ export function uploadPerimeter(file) {
             if (geom.type === 'Polygon') ring = geom.coordinates[0]
             else if (geom.type === 'MultiPolygon') ring = geom.coordinates[0][0]
             else throw new Error('Geometry must be a Polygon or MultiPolygon')
-            setPerimeter(ring)
+            setPerimeter(ring, { source: 'uploaded' })
         } catch (err) {
             window.alert('Invalid GeoJSON: ' + err.message)
         }
@@ -216,7 +235,7 @@ export function startMapDraw() {
         onDone: (ring) => {
             drawSession = null
             S.setState({ drawing: false })
-            if (ring) setPerimeter(ring)
+            if (ring) setPerimeter(ring, { source: 'drawn' })
         },
     })
 }
@@ -231,19 +250,35 @@ let windFetchGen = 0
 
 export function cancelWindFetch() {
     windFetchGen++
+    if (autoFetchTimer) {
+        clearTimeout(autoFetchTimer)
+        autoFetchTimer = null
+    }
 }
 
 export function fetchWinds() {
     const s = S.getState()
     const bbox = bboxLonLat()
     if (!bbox) {
-        window.alert('Draw a fire perimeter first — the HRRR region is derived from it.')
+        window.alert('Draw a fire perimeter first. The wind region is derived from it.')
         return
     }
     const gen = ++windFetchGen
     S.setState({ wind: null, hrrrRun: null, fetchingWinds: true, hrrrError: null, windStale: false })
 
-    fetchWindHour(s.veloUrl, { date: s.hrrrDate, hourPdt: s.hrrrHour, fxx: 0, bbox })
+    // Latest available wind: HRRR analyses publish ~1 h behind wall clock, so
+    // walk back hour-by-hour from the current UTC hour until Veloserver has
+    // data (LATEST_MAX_HOURS_BACK bounds a fully-down upstream).
+    const tryCycle = (hoursBack) =>
+        fetchWindHour(s.veloUrl, { run: utcCycle(hoursBack), fxx: 0, bbox }).catch(
+            (err) => {
+                if (gen !== windFetchGen || hoursBack >= LATEST_MAX_HOURS_BACK)
+                    throw err
+                return tryCycle(hoursBack + 1)
+            }
+        )
+
+    tryCycle(0)
         .then((data) => {
             if (gen !== windFetchGen) return
             const mean = data ? meanWind(data.points) : null
@@ -266,7 +301,7 @@ export function fetchWinds() {
                 patch.hrrrRun = {
                     date_utc: data.date_utc,
                     cycle_utc: data.cycle_utc,
-                    hour_pdt: Number(data.hour_pdt),
+                    valid_iso: data.valid_iso,
                     source: data.source,
                 }
             }
@@ -412,18 +447,18 @@ export function submit() {
         return
     }
     if (!s.wind) {
-        window.alert('Fetch HRRR winds first — the forecast needs a wind field.')
+        window.alert('Fetch winds first. The forecast needs a wind field.')
         return
     }
     const spreadRing = drawMockSpread()
     map.removeWindVectors()
     const wind = s.wind.target
     if (!wind) {
-        window.alert('No usable wind data — refetch HRRR winds.')
+        window.alert('No usable wind data. Refetch the latest winds.')
         return
     }
     const payload = {
-        hrrr_ref: s.wind.hrrr_ref || `hrrr.t${String(s.hrrrHour).padStart(2, '0')}z.wrfsfcf00.grib2`,
+        hrrr_ref: s.wind.hrrr_ref,
         hrrr_run: s.hrrrRun
             ? { date: s.hrrrRun.date_utc, cycle: s.hrrrRun.cycle_utc, fxx: 0 }
             : null,
@@ -546,7 +581,7 @@ export function setBboxFromMapFeature(feature) {
 
     // Treat exactly like a drawn/uploaded perimeter — sets perimeterRing,
     // draws the polygon on the map, derives the bbox, and enables forecast.
-    setPerimeter(ring, { noEdit: true })
+    setPerimeter(ring, { noEdit: true, source: 'selected' })
 
     const leafletMap = getMap()
     if (leafletMap) leafletMap.fitBounds(bufferedBounds(ring), { padding: [40, 40] })
@@ -610,7 +645,7 @@ export function selectRun(id) {
         fetchingWinds: false,
     })
     if (p.perimeter_coords && p.perimeter_coords[0]) {
-        setPerimeter(p.perimeter_coords[0], { fromRun: true })
+        setPerimeter(p.perimeter_coords[0], { fromRun: true, source: 'run' })
     }
     if (job.spreadRing) {
         const perimRing = p.perimeter_coords && p.perimeter_coords[0]
