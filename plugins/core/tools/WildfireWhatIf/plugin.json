@@ -18,6 +18,18 @@
             {
                 "components": [
                     {
+                        "field": "variables.wfigsLayerName",
+                        "name": "WFIGS Layer Name",
+                        "description": "UUID of the WFIGS active fire perimeters layer (from the layer config). When the tool is open, clicking a feature on that layer draws the HRRR bbox around its centroid.",
+                        "type": "text",
+                        "width": 12,
+                        "placeholder": "WFIGS Active Perimeters"
+                    }
+                ]
+            },
+            {
+                "components": [
+                    {
                         "field": "variables.backendUrl",
                         "name": "What-If Backend URL",
                         "description": "Origin of the whatif-demo FastAPI backend (e.g. http://localhost:8000).",

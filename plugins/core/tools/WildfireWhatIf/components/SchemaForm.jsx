@@ -79,7 +79,6 @@ export default function SchemaForm({ sections }) {
                         {f.label && (
                             <div className="ww-field-label">
                                 <label>{f.label}</label>
-                                <span className="ww-field-type">{f.type}</span>
                             </div>
                         )}
                         <FieldInput f={f} />

@@ -1,7 +1,7 @@
 // All user-triggered behavior for the Wildfire What-If tool. Components call
 // these; they orchestrate the store (state), map (Leaflet), and the backend.
 
-import useWhatIfStore, { BBOX_BUFFER_KM, FORECAST_HOURS, hourEdited } from './store'
+import useWhatIfStore, { BBOX_BUFFER_KM } from './store'
 import * as map from './map'
 import { getMap, meanWind, closeRing, generateId } from './utils'
 
@@ -124,9 +124,9 @@ export function setPerimeter(ring, opts) {
     S.setState({
         perimeterRing: closed,
         bboxBounds: bounds,
-        windStale: S.getState().hours != null && !(opts && opts.fromRun),
+        windStale: S.getState().wind != null && !(opts && opts.fromRun),
     })
-    if (S.getState().hours) renderWindVectors()
+    if (S.getState().wind) renderWindVectors()
 }
 
 // Redraw a scenario already held in the store (e.g. after tool close/reopen)
@@ -142,13 +142,11 @@ export function clearPerimeter() {
     S.setState({
         perimeterRing: null,
         bboxBounds: null,
-        hours: null,
+        wind: null,
         hrrrRun: null,
         hrrrError: null,
         windStale: false,
         fetchingWinds: false,
-        windProgress: null,
-        selectedFxx: 0,
     })
 }
 
@@ -198,14 +196,9 @@ export function cancelMapDraw() {
     if (drawSession) drawSession.cancel()
 }
 
-// ─── HRRR 12-hour wind bundle ─────────────────────────────────────────────────
+// ─── HRRR fxx=0 wind fetch ────────────────────────────────────────────────────
 
-// Streams the 13 forecast hours in individually: f00 lands first (so editing
-// can start immediately), the rest load with limited concurrency while chips
-// fill in. `windFetchGen` guards against stale responses after a refetch or
-// perimeter clear.
 let windFetchGen = 0
-const WIND_FETCH_CONCURRENCY = 4
 
 export function cancelWindFetch() {
     windFetchGen++
@@ -219,146 +212,118 @@ export function fetchWinds() {
         return
     }
     const gen = ++windFetchGen
-    const params = { date: s.hrrrDate, hourPdt: s.hrrrHour, bbox }
-    S.setState({
-        hours: Array.from({ length: FORECAST_HOURS }, (_, fxx) => ({
-            fxx,
-            hrrr_ref: null,
-            points: [],
-            error: null,
-            base: null,
-            target: null,
-            loading: true,
-        })),
-        hrrrRun: null,
-        selectedFxx: 0,
-        editScope: 'hour',
-        fetchingWinds: true,
-        windProgress: { done: 0, total: FORECAST_HOURS },
-        hrrrError: null,
-        windStale: false,
-    })
+    S.setState({ wind: null, hrrrRun: null, fetchingWinds: true, hrrrError: null, windStale: false })
 
-    function applyHour(fxx, data) {
-        if (gen !== windFetchGen) return
-        const st = S.getState()
-        if (!st.hours) return
-        const mean = data && !data.error ? meanWind(data.points) : null
-        const base = mean
-            ? {
-                  speed_ms: Math.round(mean.speed_ms * 10) / 10,
-                  direction_deg: Math.round(mean.direction_deg),
-              }
-            : null
-        const hours = st.hours.map((h) =>
-            h.fxx === fxx
-                ? {
-                      ...h,
-                      loading: false,
-                      hrrr_ref: (data && data.hrrr_ref) || h.hrrr_ref,
-                      points: (data && data.points) || [],
-                      error: base
-                          ? null
-                          : (data && data.error) || 'No wind data',
-                      base,
-                      target: base ? { ...base } : null,
-                  }
-                : h
-        )
-        const done = (st.windProgress ? st.windProgress.done : 0) + 1
-        const patch = { hours, windProgress: { done, total: FORECAST_HOURS } }
-        if (!st.hrrrRun && base && data.cycle_utc != null) {
-            patch.hrrrRun = {
-                date_utc: data.date_utc,
-                cycle_utc: data.cycle_utc,
-                hour_pdt: Number(data.hour_pdt),
-                source: data.source,
-            }
-        }
-        if (done >= FORECAST_HOURS) {
-            patch.fetchingWinds = false
-            patch.windProgress = null
-            if (!hours.some((h) => h.base)) {
-                patch.hours = null
-                patch.hrrrError =
-                    (hours[0] && hours[0].error) || 'No wind data returned'
-            }
-        }
-        S.setState(patch)
-        if (fxx === S.getState().selectedFxx) renderWindVectors()
-    }
-
-    const fetchOne = (fxx) =>
-        fetchWindHour(s.backendUrl, { ...params, fxx })
-            .then((data) => applyHour(fxx, data))
-            .catch((err) => applyHour(fxx, { error: err.message }))
-
-    fetchOne(0).then(() => {
-        if (gen !== windFetchGen) return
-        const queue = []
-        for (let fxx = 1; fxx < FORECAST_HOURS; fxx++) queue.push(fxx)
-        const next = () => {
+    fetchWindHour(s.backendUrl, { date: s.hrrrDate, hourPdt: s.hrrrHour, fxx: 0, bbox })
+        .then((data) => {
             if (gen !== windFetchGen) return
-            const fxx = queue.shift()
-            if (fxx == null) return
-            return fetchOne(fxx).then(next)
-        }
-        for (let i = 0; i < WIND_FETCH_CONCURRENCY; i++) next()
-    })
+            const mean = data && !data.error ? meanWind(data.points) : null
+            if (!mean) {
+                S.setState({
+                    fetchingWinds: false,
+                    hrrrError: (data && data.error) || 'No wind data returned',
+                })
+                return
+            }
+            const base = {
+                speed_ms: Math.round(mean.speed_ms * 10) / 10,
+                direction_deg: Math.round(mean.direction_deg),
+            }
+            const patch = {
+                fetchingWinds: false,
+                wind: { base, target: { ...base }, hrrr_ref: data.hrrr_ref, points: data.points },
+            }
+            if (data.cycle_utc != null) {
+                patch.hrrrRun = {
+                    date_utc: data.date_utc,
+                    cycle_utc: data.cycle_utc,
+                    hour_pdt: Number(data.hour_pdt),
+                    source: data.source,
+                }
+            }
+            S.setState(patch)
+            renderWindVectors()
+        })
+        .catch((err) => {
+            if (gen !== windFetchGen) return
+            S.setState({ fetchingWinds: false, hrrrError: err.message })
+        })
 }
 
-export function selectHour(fxx) {
-    S.setState({ selectedFxx: fxx })
-    renderWindVectors()
-}
-
-// Set speed/direction for the selected hour. In 'all' scope the change is a
-// delta applied to every forecast hour together (anchored at the selected
-// hour), preserving hour-to-hour differences.
 export function setWind(field, value) {
     const s = S.getState()
-    if (!s.hours) return
-    const all = s.editScope === 'all'
-    const sel = s.hours[s.selectedFxx]
-    if (!sel || !sel.target) return
-    const delta = value - sel.target[field]
-    const hours = s.hours.map((h, i) => {
-        if (!h.target) return h
-        if (!all && i !== s.selectedFxx) return h
-        const target = { ...h.target }
-        if (field === 'speed_ms') {
-            const v = all ? target.speed_ms + delta : value
-            target.speed_ms = Math.round(Math.max(0, Math.min(40, v)) * 10) / 10
-        } else {
-            const v = all ? target.direction_deg + delta : value
-            target.direction_deg = ((Math.round(v) % 360) + 360) % 360
-        }
-        return { ...h, target }
-    })
-    S.setState({ hours })
+    if (!s.wind) return
+    const target = { ...s.wind.target }
+    if (field === 'speed_ms') {
+        target.speed_ms = Math.round(Math.max(0, Math.min(40, value)) * 10) / 10
+    } else {
+        target.direction_deg = ((Math.round(value) % 360) + 360) % 360
+    }
+    S.setState({ wind: { ...s.wind, target } })
     renderWindVectors()
 }
 
-export function resetHours(all) {
+export function resetWind() {
     const s = S.getState()
-    if (!s.hours) return
-    const hours = s.hours.map((h, i) => {
-        if (!h.base) return h
-        if (!all && i !== s.selectedFxx) return h
-        return { ...h, target: { ...h.base } }
-    })
-    S.setState({ hours })
+    if (!s.wind || !s.wind.base) return
+    S.setState({ wind: { ...s.wind, target: { ...s.wind.base } } })
     renderWindVectors()
 }
 
 export function renderWindVectors() {
     const s = S.getState()
-    const h = s.hours && s.hours[s.selectedFxx]
-    if (!h || !h.points || h.points.length === 0 || !h.base) {
+    const w = s.wind
+    if (!w || !w.points || w.points.length === 0) {
         map.removeWindVectors()
         return
     }
-    map.showWindVectors(h.points, h.base, h.target)
+    map.showWindVectors(w.points, w.base, w.target)
+}
+
+// ─── Mock spread polygon ──────────────────────────────────────────────────────
+
+// Builds a crescent-shaped spread polygon that never overlaps the original
+// perimeter. Only vertices on the downwind side are displaced; upwind vertices
+// stay at their original position. The resulting polygon shares an edge with
+// the original perimeter on the upwind side and extends outward downwind.
+export function drawMockSpread() {
+    const s = S.getState()
+    const ring = s.perimeterRing
+    const wind = s.wind && s.wind.target
+    if (!ring || !wind) { map.removeMockSpread(); return }
+
+    // Fire spreads in the direction opposite to wind origin
+    const spreadDeg = (wind.direction_deg + 180) % 360
+    const spreadRad = (spreadDeg * Math.PI) / 180
+    const spreadVecX = Math.sin(spreadRad) // lon component
+    const spreadVecY = Math.cos(spreadRad) // lat component
+
+    // Scale: 1 m/s ≈ 0.5 km, max 10 km
+    const spreadKm = Math.min(wind.speed_ms * 0.5, 10)
+
+    // Pre-compute centroid and per-degree offsets
+    const cx = ring.reduce((a, p) => a + p[0], 0) / ring.length
+    const cy = ring.reduce((a, p) => a + p[1], 0) / ring.length
+    const dLat = spreadKm / 111.32
+    const dLon = spreadKm / (111.32 * Math.cos((cy * Math.PI) / 180))
+
+    // For each vertex compute its dot product with the spread vector.
+    // Positive = downwind side (gets displaced), negative = upwind (stays put).
+    // Cosine weight tapers displacement smoothly at the flanks.
+    const maxDot = Math.max(...ring.map(([lx, ly]) =>
+        (lx - cx) * spreadVecX + (ly - cy) * spreadVecY
+    ))
+    const spreadRing = ring.map(([lon, lat]) => {
+        const dot = (lon - cx) * spreadVecX + (lat - cy) * spreadVecY
+        const weight = maxDot > 0 ? Math.max(0, dot / maxDot) : 0
+        return [
+            lon + dLon * spreadVecX * weight,
+            lat + dLat * spreadVecY * weight,
+        ]
+    })
+
+    map.showMockSpread(spreadRing)
+    return spreadRing
 }
 
 // ─── Submission ───────────────────────────────────────────────────────────────
@@ -374,40 +339,26 @@ export function submit() {
         S.setState({ nameError: true })
         return
     }
-    if (!s.hours) {
-        window.alert('Fetch the 12-hr HRRR winds first — the forecast needs a wind field.')
+    if (!s.wind) {
+        window.alert('Fetch HRRR winds first — the forecast needs a wind field.')
         return
     }
-    const sel = s.hours[s.selectedFxx]
-    const wind =
-        (sel && sel.target) ||
-        (s.hours.find((h) => h.target) || {}).target
+    const spreadRing = drawMockSpread()
+    map.removeWindVectors()
+    const wind = s.wind.target
     if (!wind) {
         window.alert('No usable wind data — refetch HRRR winds.')
         return
     }
     const payload = {
-        hrrr_ref: sel
-            ? sel.hrrr_ref
-            : `hrrr.t${String(s.hrrrHour).padStart(2, '0')}z.wrfsfcf00.grib2`,
+        hrrr_ref: s.wind.hrrr_ref || `hrrr.t${String(s.hrrrHour).padStart(2, '0')}z.wrfsfcf00.grib2`,
         hrrr_run: s.hrrrRun
-            ? { date: s.hrrrRun.date_utc, cycle: s.hrrrRun.cycle_utc, fxx: s.selectedFxx }
+            ? { date: s.hrrrRun.date_utc, cycle: s.hrrrRun.cycle_utc, fxx: 0 }
             : null,
         wind_mods: {
             speed_ms: wind.speed_ms,
             direction_deg: wind.direction_deg,
         },
-        // Full edited 12-hour profile (recorded with the run; extra fields are
-        // ignored by the payload endpoint)
-        wind_profile: s.hours
-            ? s.hours.map((h) => ({
-                  fxx: h.fxx,
-                  hrrr_ref: h.hrrr_ref,
-                  speed_ms: h.target ? h.target.speed_ms : null,
-                  direction_deg: h.target ? h.target.direction_deg : null,
-                  edited: !!hourEdited(h),
-              }))
-            : null,
         perimeter_coords: [s.perimeterRing],
         perimeter_props: {
             runid: generateId(),
@@ -435,6 +386,7 @@ export function submit() {
                         status: 'completed',
                         startedAt: Date.now(),
                         result: body,
+                        spreadRing,
                     },
                 },
                 jobIds: [jobId, ...st.jobIds],
@@ -449,6 +401,87 @@ export function submit() {
             S.setState({ submitting: false })
             window.alert('Submission failed: ' + err.message)
         })
+}
+
+// ─── Downloads ────────────────────────────────────────────────────────────────
+
+function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+}
+
+export function downloadSpreadGeoJSON(job) {
+    const p = job && job.payload
+    const spreadRing = job && job.spreadRing
+    const features = []
+    if (p && p.perimeter_coords && p.perimeter_coords[0]) {
+        features.push({
+            type: 'Feature',
+            properties: { type: 'current_perimeter', name: job.name || '' },
+            geometry: { type: 'Polygon', coordinates: p.perimeter_coords },
+        })
+    }
+    if (spreadRing) {
+        features.push({
+            type: 'Feature',
+            properties: {
+                type: 'predicted_spread',
+                name: job.name || '',
+                speed_ms: p && p.wind_mods ? p.wind_mods.speed_ms : null,
+                direction_deg: p && p.wind_mods ? p.wind_mods.direction_deg : null,
+            },
+            geometry: { type: 'Polygon', coordinates: [spreadRing] },
+        })
+    }
+    const geojson = { type: 'FeatureCollection', features }
+    const blob = new Blob([JSON.stringify(geojson, null, 2)], {
+        type: 'application/geo+json',
+    })
+    const safeName = (job.name || 'prediction').replace(/[^a-z0-9_-]/gi, '_')
+    triggerDownload(blob, `${safeName}_prediction.geojson`)
+}
+
+export function downloadSpreadPNG(job) {
+    const leafletMap = getMap()
+    if (!leafletMap) return
+    import('html2canvas').then(({ default: html2canvas }) => {
+        const container = leafletMap.getContainer()
+        html2canvas(container, { useCORS: true, allowTaint: true, scale: 2 }).then((canvas) => {
+            canvas.toBlob((blob) => {
+                const safeName = (job.name || 'prediction').replace(/[^a-z0-9_-]/gi, '_')
+                triggerDownload(blob, `${safeName}_prediction.png`)
+            }, 'image/png')
+        })
+    })
+}
+
+// ─── WFIGS / map-layer fire click ────────────────────────────────────────────
+
+// Called when the user clicks a fire polygon on the WFIGS map layer while the
+// tool is open. Uses the full perimeter extent + BBOX_BUFFER_KM padding on
+// every side — identical to the drawn-perimeter bbox behaviour.
+export function setBboxFromMapFeature(feature) {
+    if (!feature || !feature.geometry) return
+    const geom = feature.geometry
+    let ring
+    if (geom.type === 'Polygon') ring = geom.coordinates[0]
+    else if (geom.type === 'MultiPolygon') {
+        ring = geom.coordinates
+            .map((poly) => poly[0])
+            .reduce((best, r) => (r.length > best.length ? r : best), [])
+    }
+    if (!ring || ring.length < 3) return
+
+    // Treat exactly like a drawn/uploaded perimeter — sets perimeterRing,
+    // draws the polygon on the map, derives the bbox, and enables forecast.
+    setPerimeter(ring, { noEdit: true })
+
+    const leafletMap = getMap()
+    if (leafletMap) leafletMap.fitBounds(bufferedBounds(ring), { padding: [40, 40] })
 }
 
 // ─── Run history / swapping ───────────────────────────────────────────────────
@@ -491,6 +524,7 @@ export function selectRun(id) {
     const s = S.getState()
     if (s.activeJobId === id) {
         S.setState({ activeJobId: null, showActiveJson: false })
+        map.removeMockSpread()
         return
     }
     const job = s.jobs[id]
@@ -498,18 +532,20 @@ export function selectRun(id) {
     S.setState({ activeJobId: id, showActiveJson: false })
     if (!p) return
     // Restore the run's scenario onto the map and controls
+    cancelWindFetch()
+    map.removeWindVectors()
+    map.removeMockSpread()
+    S.setState({
+        wind: null,
+        hrrrRun: null,
+        windStale: false,
+        fetchingWinds: false,
+    })
     if (p.perimeter_coords && p.perimeter_coords[0]) {
-        cancelWindFetch()
-        map.removeWindVectors()
-        S.setState({
-            hours: null,
-            hrrrRun: null,
-            windStale: false,
-            fetchingWinds: false,
-            windProgress: null,
-            selectedFxx: 0,
-        })
         setPerimeter(p.perimeter_coords[0], { fromRun: true })
+    }
+    if (job.spreadRing) {
+        map.showMockSpread(job.spreadRing)
     }
     if (p.sim_type) S.setState({ simType: p.sim_type })
 }

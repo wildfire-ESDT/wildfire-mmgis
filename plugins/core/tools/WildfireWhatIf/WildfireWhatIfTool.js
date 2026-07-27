@@ -4,7 +4,7 @@ import './WildfireWhatIfTool.css'
 import L_ from '@basics/Layers_/Layers_'
 import useWhatIfStore from './store'
 import { seedFromVars } from './formConfig'
-import { loadHistory, restoreScenario, cancelMapDraw } from './actions'
+import { loadHistory, restoreScenario, cancelMapDraw, setBboxFromMapFeature } from './actions'
 import { clearScenarioLayers } from './map'
 import WhatIfPanel from './components/WhatIfPanel'
 
@@ -15,9 +15,11 @@ const WildfireWhatIf = {
     width: 380,
     _root: null,
     MMGISInterface: null,
+    _wfigsLayerName: null,
 
     make: function () {
         const vars = L_.getToolVars('wildfire-whatif') || {}
+        WildfireWhatIf._wfigsLayerName = vars.wfigsLayerName || 'b449da31-1ed1-473c-87d6-49f0c0ced8e5'
         useWhatIfStore.setState({
             vars,
             backendUrl: vars.backendUrl || DEFAULT_BACKEND_URL,
@@ -29,9 +31,18 @@ const WildfireWhatIf = {
         restoreScenario() // redraw a perimeter kept in the store from a previous open
     },
 
+    notify: function (type, payload) {
+        if (type === 'setActiveFeature' && payload) {
+            if (payload.layerName === WildfireWhatIf._wfigsLayerName) {
+                setBboxFromMapFeature(payload.feature)
+            }
+        }
+    },
+
     destroy: function () {
         cancelMapDraw()
         clearScenarioLayers()
+        WildfireWhatIf._wfigsLayerName = null
         if (WildfireWhatIf.MMGISInterface)
             WildfireWhatIf.MMGISInterface.separateFromMMGIS()
         WildfireWhatIf.MMGISInterface = null

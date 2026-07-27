@@ -2,6 +2,7 @@ import React, { useRef } from 'react'
 import useWhatIfStore, { BBOX_BUFFER_KM } from '../store'
 import { startMapDraw, cancelMapDraw, clearPerimeter, uploadPerimeter } from '../actions'
 import { Button, IconButton } from '@design/components'
+import FirePickerSection from './FirePickerSection'
 
 function BboxStatus({ bounds }) {
     const [[latMin, lonMin], [latMax, lonMax]] = bounds
@@ -12,8 +13,7 @@ function BboxStatus({ bounds }) {
     )
     return (
         <div className="ww-status ww-status-bbox">
-            HRRR region: {widthKm} × {heightKm} km — perimeter extent +{' '}
-            {BBOX_BUFFER_KM} km on every side
+            HRRR region: {widthKm} × {heightKm} km
         </div>
     )
 }
@@ -80,6 +80,7 @@ export default function PerimeterSection() {
                 </div>
             )}
             {bboxBounds && <BboxStatus bounds={bboxBounds} />}
+            <FirePickerSection />
         </>
     )
 }

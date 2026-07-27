@@ -18,14 +18,14 @@
 /* ── Section label — yellow rule, echoing the timeline bars ── */
 
 #wildfireTool .ww-section-label {
-    font-size: 12px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--color-h, #ffdd5c);
-    margin-top: 10px;
+    margin-top: 12px;
     margin-bottom: 4px;
-    padding-bottom: 3px;
-    border-bottom: 1px solid rgba(255, 221, 92, 0.55);
+    padding-bottom: 2px;
+    border-bottom: 1px solid rgba(255, 221, 92, 0.25);
 }
 
 /* ── Buttons — solid, visible ── */
@@ -99,9 +99,7 @@
 }
 
 #wildfireTool .ww-field-label .ww-field-type {
-    font-size: 10px;
-    color: #b4bac0;
-    text-transform: lowercase;
+    display: none;
 }
 
 #wildfireTool .ww-field-description {
@@ -230,8 +228,9 @@
 }
 
 #wildfireTool .ww-status-none {
-    color: #d6dade;
-    background: rgba(255, 255, 255, 0.07);
+    color: #8a9098;
+    background: transparent;
+    padding: 2px 0;
 }
 
 #wildfireTool .ww-status-ok {
@@ -261,12 +260,11 @@
 }
 
 #wildfireTool .ww-hour-strip-empty {
-    font-size: 13px;
-    color: #d6dade;
-    background: rgba(255, 255, 255, 0.07);
-    border-radius: 2px;
-    padding: 6px 8px;
-    margin-bottom: 6px;
+    font-size: 11px;
+    color: #6a6e72;
+    font-style: italic;
+    padding: 3px 0;
+    margin-bottom: 4px;
 }
 
 #wildfireTool .ww-hour-chip {
@@ -584,6 +582,13 @@
     color: #b4bac0;
 }
 
+#wildfireTool .ww-exp-downloads {
+    display: flex;
+    gap: 6px;
+    margin: 6px 0 4px 0;
+    flex-wrap: wrap;
+}
+
 #wildfireTool .ww-params-grid {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -665,4 +670,164 @@
 
 .ww-vertex-dot:hover {
     background: #ffdd5c;
+}
+
+/* ── WFIGS map-click hint ── */
+
+#wildfireTool .ww-fire-map-hint {
+    font-size: 11px;
+    color: #6a7278;
+    font-style: italic;
+    padding: 3px 0 2px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* ── WFIGS active fire picker ── */
+
+#wildfireTool .ww-fire-picker {
+    margin-top: 6px;
+    border: 1px solid #44484a;
+    border-radius: 3px;
+    background: #1e2122;
+    overflow: hidden;
+}
+
+#wildfireTool .ww-fire-picker-status {
+    font-size: 12px;
+    color: #8a9098;
+    padding: 8px 10px;
+    font-style: italic;
+}
+
+#wildfireTool .ww-fire-picker-err {
+    color: #ef9a9a;
+    font-style: normal;
+}
+
+#wildfireTool .ww-fire-picker-filter {
+    width: 100%;
+    box-sizing: border-box;
+    background: #26292b;
+    border: none;
+    border-bottom: 1px solid #44484a;
+    color: #eceff1;
+    font-size: 13px;
+    padding: 6px 10px;
+    outline: none;
+}
+
+#wildfireTool .ww-fire-picker-filter:focus {
+    border-bottom-color: var(--color-mmgis, #08aeea);
+}
+
+#wildfireTool .ww-fire-picker-list {
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+#wildfireTool .ww-fire-picker-empty {
+    font-size: 12px;
+    color: #5a5e62;
+    padding: 8px 10px;
+    font-style: italic;
+}
+
+#wildfireTool .ww-fire-picker-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #2e3234;
+    color: #eceff1;
+    padding: 6px 10px;
+    cursor: pointer;
+    text-align: left;
+    gap: 1px;
+}
+
+#wildfireTool .ww-fire-picker-item:last-child {
+    border-bottom: none;
+}
+
+#wildfireTool .ww-fire-picker-item:hover {
+    background: #2e3234;
+    color: #fff;
+}
+
+#wildfireTool .ww-fire-picker-name {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+#wildfireTool .ww-fire-picker-meta {
+    font-size: 11px;
+    color: #6a7278;
+}
+
+/* ── Login gate ── */
+
+#wildfireTool .ww-login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 24px 10px 16px;
+    flex: 1;
+}
+
+#wildfireTool .ww-login-logo {
+    text-align: center;
+    margin-bottom: 4px;
+}
+
+#wildfireTool .ww-login-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #e8ebee;
+    text-align: center;
+    margin-bottom: 4px;
+}
+
+#wildfireTool .ww-login-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#wildfireTool .ww-login-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-h, #ffdd5c);
+}
+
+#wildfireTool .ww-login-input {
+    background: #1e2224;
+    border: 1px solid #3a3e40;
+    border-radius: 3px;
+    color: #e8ebee;
+    font-size: 13px;
+    padding: 7px 10px;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: lato-light, sans-serif;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+#wildfireTool .ww-login-input:focus {
+    border-color: #0288d1;
+}
+
+#wildfireTool .ww-login-btn {
+    margin-top: 4px;
+}
+
+#wildfireTool .ww-login-hint {
+    font-size: 11px;
+    color: #6a7278;
+    text-align: center;
 }

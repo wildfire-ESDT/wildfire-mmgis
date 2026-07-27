@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import useWhatIfStore, { PAGE_SIZE } from '../store'
-import { selectRun, renameRun } from '../actions'
+import { selectRun, renameRun, downloadSpreadGeoJSON, downloadSpreadPNG } from '../actions'
 import { dirLabel } from '../utils'
 import { Button } from '@design/components'
 
@@ -59,12 +59,6 @@ function ActiveRunDetails({ id, job }) {
                     {dirLabel(p.wind_mods.direction_deg)}
                 </div>
             )}
-            {profile && (
-                <div className="ww-exp-row">
-                    12-hr profile: {profile.length} hours,{' '}
-                    {profile.filter((h) => h.edited).length} edited
-                </div>
-            )}
             {params.length > 0 && (
                 <div className="ww-params-grid">
                     {params.map(([k, v]) => (
@@ -80,14 +74,22 @@ function ActiveRunDetails({ id, job }) {
             <div className="ww-exp-row ww-exp-dim">
                 Scenario restored to map · click the row again to deselect
             </div>
-            <Button
-                size="sm"
-                onClick={() =>
-                    useWhatIfStore.setState({ showActiveJson: !showActiveJson })
-                }
-            >
-                {showActiveJson ? 'Hide' : 'Show'} payload JSON
-            </Button>
+            <div className="ww-exp-downloads">
+                <Button size="sm" onClick={() => downloadSpreadGeoJSON(job)}>
+                    <i className="mdi mdi-download mdi-14px" /> GeoJSON
+                </Button>
+                <Button size="sm" onClick={() => downloadSpreadPNG(job)}>
+                    <i className="mdi mdi-image mdi-14px" /> PNG
+                </Button>
+                <Button
+                    size="sm"
+                    onClick={() =>
+                        useWhatIfStore.setState({ showActiveJson: !showActiveJson })
+                    }
+                >
+                    {showActiveJson ? 'Hide' : 'Show'} JSON
+                </Button>
+            </div>
             {showActiveJson && (
                 <pre className="ww-exp-json">
                     {JSON.stringify(job.result || job.payload, null, 2)}

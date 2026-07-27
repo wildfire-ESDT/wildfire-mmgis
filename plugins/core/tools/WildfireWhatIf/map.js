@@ -6,12 +6,13 @@ import { getMap, closeRing, speedColor } from './utils'
 
 export const COLOR_PERIM = '#ff6b35'
 export const COLOR_BBOX = '#08aeea' // --color-mmgis
+export const COLOR_SPREAD = '#00e5ff' // mock spread prediction — cyan, clearly distinct from orange perimeter and historic data
 
 const MAX_EDIT_VERTICES = 60 // don't spawn drag handles on huge uploaded perimeters
 
 // ─── Scenario layers ──────────────────────────────────────────────────────────
 
-const refs = { perimeter: null, vertices: null, bbox: null, wind: null }
+const refs = { perimeter: null, vertices: null, bbox: null, wind: null, mockSpread: null }
 
 function remove(key) {
     const leafletMap = getMap()
@@ -95,11 +96,31 @@ export function removeWindVectors() {
     remove('wind')
 }
 
+export function showMockSpread(ring) {
+    const leafletMap = getMap()
+    if (!leafletMap) return
+    remove('mockSpread')
+    const latlngs = ring.map(([lon, lat]) => [lat, lon])
+    refs.mockSpread = window.L.polygon(latlngs, {
+        color: COLOR_SPREAD,
+        weight: 2,
+        dashArray: '6,4',
+        fillColor: COLOR_SPREAD,
+        fillOpacity: 0.18,
+        interactive: false,
+    }).addTo(leafletMap)
+}
+
+export function removeMockSpread() {
+    remove('mockSpread')
+}
+
 export function clearScenarioLayers() {
     remove('perimeter')
     remove('vertices')
     remove('bbox')
     remove('wind')
+    remove('mockSpread')
 }
 
 // ─── Wind vectors ─────────────────────────────────────────────────────────────

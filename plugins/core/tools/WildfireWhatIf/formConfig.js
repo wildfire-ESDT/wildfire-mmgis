@@ -16,14 +16,12 @@ const FORM_SECTIONS = [
         fields: [
             {
                 key: 'hrrrDate',
-                label: 'Run Date',
                 type: 'date',
                 var: 'hrrr_date',
                 half: true,
             },
             {
                 key: 'hrrrHour',
-                label: 'Cycle Hour',
                 type: 'number',
                 min: 0,
                 max: 23,

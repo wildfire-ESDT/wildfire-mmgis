@@ -7,11 +7,13 @@ import PerimeterSection from './PerimeterSection'
 import WindSection from './WindSection'
 import SchemaForm from './SchemaForm'
 import RunsList from './RunsList'
+import LoginGate from './LoginGate'
 
 export default function WhatIfPanel() {
     const submitting = useWhatIfStore((s) => s.submitting)
 
     return (
+        <LoginGate>
         <div id="wildfireTool" className="mmgisScrollbar">
             <div className="mmgisToolHeader">
                 <div>
@@ -46,5 +48,6 @@ export default function WhatIfPanel() {
 
             <RunsList />
         </div>
+        </LoginGate>
     )
 }
