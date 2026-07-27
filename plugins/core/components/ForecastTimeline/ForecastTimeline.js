@@ -1614,6 +1614,13 @@ const ForecastTimeline = {
         if (this._applyingStep || this._reapplying) return
         if (timeData?.currentTime) {
             this.state.originMs = new Date(timeData.currentTime).getTime()
+            // A new selected time is a new model run, so snap every card back to
+            // its first step — a forecast always starts at the beginning. The
+            // refresh below moves the active tick to step 0 and _reapplyAllSteps
+            // applies it (fxx=0 / first day) to the layer.
+            Object.keys(this.state.cards).forEach((n) => {
+                this.state.cards[n].stepIndex = 0
+            })
             // If a card's tick count changed (e.g. HRRR crossed a 00/06/12/18z
             // boundary, F18↔F48), rebuild so the new ticks appear immediately;
             // otherwise just refresh the existing ticks in place.
