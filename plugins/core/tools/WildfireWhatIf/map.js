@@ -6,7 +6,7 @@ import { getMap, closeRing, speedColor } from './utils'
 
 export const COLOR_PERIM = '#ff6b35'
 export const COLOR_BBOX = '#08aeea' // --color-mmgis
-export const COLOR_SPREAD = '#00e5ff' // mock spread prediction — cyan, clearly distinct from orange perimeter and historic data
+export const COLOR_SPREAD = '#d32f2f' // mock spread prediction — deep red, standard wildfire-risk color
 
 const MAX_EDIT_VERTICES = 60 // don't spawn drag handles on huge uploaded perimeters
 
@@ -96,19 +96,33 @@ export function removeWindVectors() {
     remove('wind')
 }
 
-export function showMockSpread(ring) {
+export function showMockSpread(spreadRing, perimRing) {
     const leafletMap = getMap()
     if (!leafletMap) return
     remove('mockSpread')
-    const latlngs = ring.map(([lon, lat]) => [lat, lon])
-    refs.mockSpread = window.L.polygon(latlngs, {
+    const L = window.L
+    const outer = spreadRing.map(([lon, lat]) => [lat, lon])
+
+    // Fill layer: polygon-with-hole so the original perimeter area is
+    // completely transparent. stroke:false means no line is drawn around
+    // the inner hole edge — it simply vanishes.
+    const holeRings = perimRing ? [outer, perimRing.map(([lon, lat]) => [lat, lon])] : [outer]
+    const fill = L.polygon(holeRings, {
+        stroke: false,
+        fillColor: COLOR_SPREAD,
+        fillOpacity: 0.28,
+        interactive: false,
+    })
+
+    // Stroke layer: dashed border only around the outer spread boundary.
+    const stroke = L.polyline([...outer, outer[0]], {
         color: COLOR_SPREAD,
         weight: 2,
         dashArray: '6,4',
-        fillColor: COLOR_SPREAD,
-        fillOpacity: 0.18,
         interactive: false,
-    }).addTo(leafletMap)
+    })
+
+    refs.mockSpread = L.layerGroup([fill, stroke]).addTo(leafletMap)
 }
 
 export function removeMockSpread() {

@@ -322,7 +322,7 @@ export function drawMockSpread() {
         ]
     })
 
-    map.showMockSpread(spreadRing)
+    map.showMockSpread(spreadRing, ring)
     return spreadRing
 }
 
@@ -545,7 +545,8 @@ export function selectRun(id) {
         setPerimeter(p.perimeter_coords[0], { fromRun: true })
     }
     if (job.spreadRing) {
-        map.showMockSpread(job.spreadRing)
+        const perimRing = p.perimeter_coords && p.perimeter_coords[0]
+        map.showMockSpread(job.spreadRing, perimRing || null)
     }
     if (p.sim_type) S.setState({ simType: p.sim_type })
 }
