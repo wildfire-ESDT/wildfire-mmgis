@@ -391,6 +391,21 @@
     pointer-events: none;
 }
 
+/* STAC forecast cards (FDEO, PWWB) keep their controls LIVE while
+   unavailable: the init-row warning names the missing period, but prev/next
+   and the ticks stay clickable so steps that DO exist remain reachable.
+   The JS adds .ftl-card-navigable alongside .ftl-card-unavailable. */
+.ftl-card-unavailable.ftl-card-navigable .ftl-card-prev,
+.ftl-card-unavailable.ftl-card-navigable .ftl-card-next {
+    background: rgba(0, 0, 0, 0.25);
+    color: rgba(255, 255, 255, 0.75);
+    cursor: pointer;
+    pointer-events: auto;
+}
+.ftl-card-unavailable.ftl-card-navigable .ftl-ticks-wrap {
+    pointer-events: auto;
+}
+
 /* ── Forecast card ticks ──
    Every step — hourly, daily, whatever — is the SAME fixed width so all cards
    line up. Tracks with more steps than fit (24h, 48h) overflow and scroll

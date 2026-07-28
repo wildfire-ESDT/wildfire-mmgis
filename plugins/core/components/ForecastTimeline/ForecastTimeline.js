@@ -107,6 +107,16 @@ const PLAY_INTERVAL_MS = 700
 // is deferred; the probe itself fires immediately.
 const PROBE_LOADING_DELAY_MS = 150
 
+// How long a "model not generated" verdict is trusted before the run is
+// re-probed over the network. Applies to every probe kind (STAC items,
+// WFPI GetMap, HRRR fxx). Within the TTL a re-check resolves instantly
+// from memory, well inside PROBE_LOADING_DELAY_MS, so the card doesn't
+// flash through "Loading…" on every toggle settle or time change. After
+// the TTL a real probe runs again, so newly published data still surfaces
+// within a minute. A manual layer toggle off/on clears the miss cache and
+// retries immediately.
+const PROBE_MISS_TTL_MS = 60000
+
 const ForecastTimeline = {
     // ── State ──────────────────────────────────────────────
     state: {
@@ -165,6 +175,9 @@ const ForecastTimeline = {
 
         // Patch TimeUI navigation to prevent stepping past wall-clock "now"
         this._patchTimeUINavigation()
+
+        // Pin STAC forecast tile requests (FDEO, PWWB) to an instant (start == end)
+        this._patchSetLayerWmsParams()
 
         // Show a forecast card as soon as its layer is toggled on, without
         // waiting for the layer's data to load (see _patchToggleLayer).
@@ -393,6 +406,237 @@ const ForecastTimeline = {
         }
     },
 
+    // ── Monthly STAC datetime pinning (FDEO) ───────────────────────────
+
+    // True for any STAC-collection forecast layer (FDEO, PWWB).
+    _isStacForecast: function (ld) {
+        return (
+            ld?.sourceType === 'stac-collection' &&
+            ld.time?.forecast?.enabled === true
+        )
+    },
+
+    // Pin a STAC forecast layer's tile request to an instant: START = END.
+    // Core keeps the timeline's open start (epoch), so the titiler-pgstac
+    // query [1970, end] matched EVERY item up to the end, and with
+    // skipcovered=false the mosaic composited them in no guaranteed order,
+    // painting different data load to load. An instant intersects exactly
+    // one item. The server answers a true zero-length interval with 204
+    // (verified live), so the end is widened by one second.
+    //  - month unit (FDEO): items span their whole month, so the instant is
+    //    the requested end itself; an end sitting exactly on a month
+    //    boundary is a forecast-month request and gets the boundary's first
+    //    hour instead.
+    //  - day/hour units (PWWB): items are stamped at a single point (the
+    //    period's 00:00Z), so the end is floored to the period start; an
+    //    unfloored instant would match nothing (verified live).
+    _pinStacInstant: function (ld) {
+        if (!this._isStacForecast(ld) || ld.type !== 'tile') return
+        const l = L_.layers.layer[ld.name]
+        const t0 = Date.parse(l?.options?.endtime)
+        if (isNaN(t0)) return
+        const unit = ld.time?.forecast?.stepUnit || 'hour'
+        const iso = (ms) => new Date(ms).toISOString().split('.')[0] + 'Z'
+        if (unit === 'month') {
+            const d = new Date(t0)
+            const atBoundary =
+                d.getUTCDate() === 1 &&
+                d.getUTCHours() === 0 &&
+                d.getUTCMinutes() === 0 &&
+                d.getUTCSeconds() === 0
+            l.options.starttime = iso(t0)
+            l.options.endtime = iso(t0 + (atBoundary ? 3600000 : 1000))
+        } else {
+            const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
+            const t = Math.floor(t0 / unitMs) * unitMs
+            l.options.starttime = iso(t)
+            l.options.endtime = iso(t + 1000)
+        }
+    },
+
+    _patchSetLayerWmsParams: function () {
+        if (this._origSetLayerWmsParams) return
+        const orig = TimeControl.setLayerWmsParams.bind(TimeControl)
+        this._origSetLayerWmsParams = TimeControl.setLayerWmsParams
+        const self = this
+        TimeControl.setLayerWmsParams = function (layer) {
+            orig(layer)
+            self._pinStacInstant(layer)
+        }
+        // Tile layers are pre-built at config load, so their options may
+        // already carry the open epoch start from before this patch
+        // installed. Pin them now.
+        for (const name in L_.layers.data) {
+            this._pinStacInstant(L_.layers.data[name])
+        }
+    },
+
+    _unpatchSetLayerWmsParams: function () {
+        if (this._origSetLayerWmsParams) {
+            TimeControl.setLayerWmsParams = this._origSetLayerWmsParams
+            this._origSetLayerWmsParams = null
+        }
+    },
+
+    // Does the layer's STAC collection hold an item within the step period
+    // (unit-aligned: the UTC month, day, or hour) containing ms? Asks the
+    // collection's items endpoint (limit=1) so the answer matches exactly
+    // what the tile mosaic would find. Present periods are cached (an
+    // ingested item doesn't un-ingest); missing periods re-probe every
+    // trigger until the data lands.
+    _probeStacStepPresent: function (name, ms) {
+        const ld = L_.layers.data[name]
+        // The runtime url may carry the stac-collection: protocol prefix;
+        // strip it or fetch() rejects the URL outright.
+        const tilerUrl = (ld?.url || '').replace(/^stac-collection:/i, '')
+        const stacUrl = tilerUrl.replace('/titilerpgstac/', '/stac/')
+        if (!stacUrl || stacUrl === tilerUrl) return Promise.resolve(true)
+        const unit = ld.time?.forecast?.stepUnit || 'hour'
+        let startMs, endMs
+        if (unit === 'month') {
+            const d = new Date(ms)
+            startMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
+            endMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) - 1000
+        } else {
+            const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
+            startMs = Math.floor(ms / unitMs) * unitMs
+            endMs = startMs + unitMs - 1000
+        }
+        if (!this._stacStepCache) this._stacStepCache = {}
+        if (!this._stacStepMiss) this._stacStepMiss = {}
+        const key = `${name}:${startMs}`
+        if (this._stacStepCache[key]) return Promise.resolve(true)
+        // A recent miss answers immediately (no network, no "Loading…"
+        // flash); see PROBE_MISS_TTL_MS.
+        const missAt = this._stacStepMiss[key]
+        if (missAt != null && Date.now() - missAt < PROBE_MISS_TTL_MS)
+            return Promise.resolve(false)
+        const iso = (t) => new Date(t).toISOString().split('.')[0] + 'Z'
+        const url = `${stacUrl}/items?limit=1&datetime=${iso(startMs)}/${iso(endMs)}`
+        this._dbg('probe STAC step', name, url)
+        return fetch(url, this._probeFetchOpts())
+            .then((r) => {
+                if (!r.ok) throw new Error(r.status)
+                return r.json()
+            })
+            .then((j) => {
+                const present = (j?.features?.length || 0) > 0
+                if (present) {
+                    this._stacStepCache[key] = true
+                    delete this._stacStepMiss[key]
+                } else {
+                    this._stacStepMiss[key] = Date.now()
+                }
+                return present
+            })
+            .catch((e) => {
+                // Fail OPEN: only a definitive 200-with-no-features means the
+                // model isn't generated. A failed or unreachable items API
+                // must not blank a card whose tiles may be rendering fine.
+                this._dbg('probe STAC step ERROR (failing open)', name, e)
+                return true
+            })
+    },
+
+    // Resolve which of a STAC card's step periods actually have items, in
+    // ONE items request spanning the whole card (a 24-tick hourly card
+    // costs one fetch, not 24). Missing steps render dark and unclickable
+    // per tick; steps with data stay live. Re-resolved when the card's
+    // base changes or after PROBE_MISS_TTL_MS so newly ingested periods
+    // light back up.
+    _resolveStacPresence: function (name, fc) {
+        const ld = L_.layers.data[name]
+        if (!this._isStacForecast(ld)) return
+        if (!this._stacPresence) this._stacPresence = {}
+        const base = this._forecastBase(fc)
+        // Keyed per base, so revisiting a recently swept day answers from
+        // memory with no refetch and no skeleton frame.
+        const key = `${name}:${base}`
+        const rec = this._stacPresence[key]
+        if (rec && (rec.pending || Date.now() - rec.at < PROBE_MISS_TTL_MS))
+            return
+        const tilerUrl = (ld.url || '').replace(/^stac-collection:/i, '')
+        const stacUrl = tilerUrl.replace('/titilerpgstac/', '/stac/')
+        if (!stacUrl || stacUrl === tilerUrl) return
+        const unit = fc.stepUnit || 'hour'
+        const steps = this._effectiveSteps(fc, name)
+        const first = this._stacQueryPeriodStart(fc, 0, base)
+        const lastStart = this._stacQueryPeriodStart(fc, steps - 1, base)
+        const endMs =
+            unit === 'month'
+                ? _addMonths(lastStart, 1) - 1000
+                : lastStart + (STEP_UNITS[unit] || STEP_UNITS.hour) - 1000
+        const iso = (ms) => new Date(ms).toISOString().split('.')[0] + 'Z'
+        const url = `${stacUrl}/items?limit=200&datetime=${iso(first)}/${iso(endMs)}`
+        this._stacPresence[key] = {
+            present: rec ? rec.present : null,
+            at: Date.now(),
+            pending: true,
+        }
+        this._dbg('resolve STAC presence', name, url)
+        fetch(url, this._probeFetchOpts())
+            .then((r) => {
+                if (!r.ok) throw new Error(r.status)
+                return r.json()
+            })
+            .then((j) => {
+                const present = new Set()
+                for (const f of j?.features || []) {
+                    const t = Date.parse(f?.properties?.datetime)
+                    if (!isNaN(t)) present.add(this._periodStart(unit, t))
+                }
+                this._stacPresence[key] = { present, at: Date.now() }
+                this._refreshAllCards()
+            })
+            .catch((e) => {
+                // Fail open: a null presence set means no per-tick darkening.
+                this._dbg('resolve STAC presence ERROR', name, e)
+                const cur = this._stacPresence[key]
+                if (cur) cur.pending = false
+            })
+    },
+
+    _periodStart: function (unit, ms) {
+        if (unit === 'month') {
+            const d = new Date(ms)
+            return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
+        }
+        const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
+        return Math.floor(ms / unitMs) * unitMs
+    },
+
+    // The period a tick's QUERY actually targets: its own month for monthly
+    // cards, the issue period (one step earlier) for day/hour cards.
+    _stacQueryPeriodStart: function (fc, idx, base) {
+        const offset = fc.stepOffset || 0
+        if ((fc.stepUnit || 'hour') === 'month')
+            return _addMonths(base, idx + offset)
+        const unitMs = STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour
+        return base + (idx + offset - 1) * unitMs
+    },
+
+    // True once the presence sweep for the card's CURRENT base has
+    // resolved (always true for non-STAC layers). Until then ticks render
+    // as skeleton, never active: painting a tick blue before presence is
+    // known flashes blue-then-grey on every day change.
+    _stacPresenceReady: function (name, fc) {
+        const ld = L_.layers.data[name]
+        if (!this._isStacForecast(ld)) return true
+        const rec = this._stacPresence?.[`${name}:${this._forecastBase(fc)}`]
+        return !!rec?.present
+    },
+
+    // True when a STAC card's tick targets a period the collection has no
+    // item for. An unresolved or failed presence sweep fails open to
+    // "not missing".
+    _stacMissingStep: function (name, fc, idx) {
+        if (!fc) return false
+        const base = this._forecastBase(fc)
+        const rec = this._stacPresence?.[`${name}:${base}`]
+        if (!rec || !rec.present) return false
+        return !rec.present.has(this._stacQueryPeriodStart(fc, idx, base))
+    },
+
     // Core's L_.toggleLayer notifies its toggle subscribers only AFTER awaiting
     // the layer build. A velocity layer's build is a full grib fetch, so a
     // forecast card would not appear until the wind data finished loading --
@@ -431,8 +675,19 @@ const ForecastTimeline = {
                         if (k.slice(0, k.lastIndexOf(':')) === name)
                             delete self._edgeCache[k]
                     })
+                    Object.keys(self._stacStepMiss || {}).forEach((k) => {
+                        if (k.slice(0, k.lastIndexOf(':')) === name)
+                            delete self._stacStepMiss[k]
+                    })
                 }
                 self._rebuildCards()
+                // Pin the STAC datetime BEFORE the toggle adds the
+                // pre-built layer to the map, so the very first tile
+                // requests already carry the single-month interval. Without
+                // this, the first paint queried [epoch, end] (a
+                // nondeterministic multi-month mosaic) until a tick click or
+                // time change finally re-ran setLayerWmsParams.
+                self._pinStacInstant(s)
             }
             return orig(s, ...rest)
         }
@@ -1058,17 +1313,26 @@ const ForecastTimeline = {
             ?.addEventListener('click', () => {
                 this._toggleCardCollapsed(name)
             })
+        // Prev/next skip over STAC steps whose period has no data (their
+        // ticks are individually darkened); for other layers every step is
+        // eligible, so this walks exactly one step.
+        const stepBy = (dir) => {
+            const cur = this.state.cards[name]?.stepIndex ?? 0
+            const max = this._effectiveSteps(fc, name) - 1
+            let idx = cur + dir
+            while (
+                idx >= 0 &&
+                idx <= max &&
+                this._stacMissingStep(name, fc, idx)
+            )
+                idx += dir
+            if (idx < 0 || idx > max) return
+            this._setCardStep(name, fc, idx)
+        }
         container.querySelector(`.ftl-card-prev[data-layer="${_escSel(name)}"]`)
-            ?.addEventListener('click', () => {
-                const cur = this.state.cards[name]?.stepIndex ?? 0
-                this._setCardStep(name, fc, Math.max(0, cur - 1))
-            })
+            ?.addEventListener('click', () => stepBy(-1))
         container.querySelector(`.ftl-card-next[data-layer="${_escSel(name)}"]`)
-            ?.addEventListener('click', () => {
-                const cur = this.state.cards[name]?.stepIndex ?? 0
-                const max = this._effectiveSteps(fc, name) - 1
-                this._setCardStep(name, fc, Math.min(max, cur + 1))
-            })
+            ?.addEventListener('click', () => stepBy(1))
         const playBtn = container.querySelector(`.ftl-card-play[data-layer="${_escSel(name)}"]`)
         if (playBtn) {
             playBtn.addEventListener('click', () => {
@@ -1309,11 +1573,31 @@ const ForecastTimeline = {
         // While the probe is in flight the ticks pulse (skeleton) instead of
         // going dark — dark is reserved for "model not available".
         const isLoading = cardState === 'loading'
+        // STAC forecast cards stay navigable while unavailable (see
+        // _setCardState).
+        const isNavigable =
+            isDisabled &&
+            !isLoading &&
+            this._isStacForecast(L_.layers.data[name])
 
+        const presenceReady = this._stacPresenceReady(name, fc)
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
-            el.classList.toggle('ftl-tick-skeleton', isLoading)
-            el.classList.toggle('ftl-future-item', isDisabled && !isLoading)
-            el.classList.toggle('active', !isDisabled && i === idx)
+            const missing = this._stacMissingStep(name, fc, i)
+            el.classList.toggle('ftl-tick-skeleton', isLoading || !presenceReady)
+            el.classList.toggle(
+                'ftl-future-item',
+                (isDisabled && !isLoading && !isNavigable) || missing
+            )
+            // A step with no data must never carry the active highlight,
+            // even when it is the selected index; nor may a tick claim
+            // active before this base's presence sweep has resolved.
+            el.classList.toggle(
+                'active',
+                (!isDisabled || isNavigable) &&
+                    i === idx &&
+                    !missing &&
+                    presenceReady
+            )
             const { clock, rel } = this._tickLabels(fc, i, originBase)
             const clockEl = el.querySelector('.ftl-tick-clock')
             if (clockEl) clockEl.textContent = clock
@@ -1327,8 +1611,8 @@ const ForecastTimeline = {
             if (initEl) initEl.textContent = this._formatInit(originBase, unit, fc)
         }
 
-        card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', isDisabled || idx === 0)
-        card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', isDisabled || idx === steps - 1)
+        card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', (isDisabled && !isNavigable) || idx === 0)
+        card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', (isDisabled && !isNavigable) || idx === steps - 1)
         card.querySelector('.ftl-card-play')?.toggleAttribute('disabled', isDisabled || steps <= 1)
 
         // Ticks are fixed width and the track scrolls horizontally, so keep the
@@ -1520,17 +1804,47 @@ const ForecastTimeline = {
                 return
             }
 
-            // The tick is LABELED with the target/valid day (stepMs), but the
-            // forecast for that day is what's current the ISSUE day before it, so
-            // the query end is one step earlier. This makes the forecast tick for
-            // day T show exactly what the normal timeline shows at day T-1 --
-            // because it's a forecast (issued on T-1, valid for T). Computed the
-            // same way stepMs is, so month steps land on the true previous month
-            // boundary rather than a fixed-ms subtraction.
-            const prevStepMs = fc.stepUnit === 'month'
-                ? _addMonths(originMs, idx + offset - 1)
-                : stepMs - (STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour)
-            const queryEndIso = new Date(prevStepMs).toISOString()
+            let queryEndIso
+            let isFutureMonth = false
+            if (fc.stepUnit === 'month') {
+                // Monthly STAC (FDEO): an item IS the forecast for its own
+                // month, so a tick queries the month it is labeled with. The
+                // current month queries the selected time itself, which is
+                // exactly what the main time loop requests, so both paths
+                // share one canonical request. A month ahead of now queries
+                // its boundary instant, which _pinStacInstant widens to
+                // the boundary's first hour.
+                const nowMs = Date.parse(TimeControl.currentTime || ld.time.end)
+                isFutureMonth = stepMs > nowMs
+                queryEndIso = isFutureMonth
+                    ? new Date(stepMs).toISOString().split('.')[0] + 'Z'
+                    : TimeControl.currentTime || ld.time.end
+            } else {
+                // The tick is LABELED with the target/valid day (stepMs), but the
+                // forecast for that day is what's current the ISSUE day before it, so
+                // the query end is one step earlier. This makes the forecast tick for
+                // day T show exactly what the normal timeline shows at day T-1 --
+                // because it's a forecast (issued on T-1, valid for T).
+                const prevStepMs = stepMs - (STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour)
+                queryEndIso = new Date(prevStepMs).toISOString()
+            }
+
+            // Per-step availability for STAC collections: a step period with
+            // no item in the collection (an ingestion gap, or a run not yet
+            // published) shows the "not yet generated" warning for THAT
+            // period. The card stays navigable (see _setCardState) so steps
+            // that do exist remain reachable.
+            if (this._isStacForecast(ld)) {
+                this._probeStacStepPresent(name, Date.parse(queryEndIso)).then(
+                    (present) => {
+                        if (this.state.cards[name]?.stepIndex !== idx) return
+                        this._setCardState(
+                            name,
+                            present ? 'available' : 'unavailable'
+                        )
+                    }
+                )
+            }
 
             const prevStart = ld.time.start
             const prevEnd = ld.time.end
@@ -1548,7 +1862,19 @@ const ForecastTimeline = {
                 // Update tile layer options then force-refresh existing tiles
                 TimeControl.setLayerWmsParams(ld)
                 const leafletLayer = L_.layers.layer[name]
-                if (leafletLayer) leafletLayer.refresh(null, true)
+                // During a main-timeline change (_reapplyAllSteps runs under
+                // _reapplying) core's reloadTimeLayers reloads this layer
+                // itself, and the monthly current-month target is identical
+                // to core's request. Refreshing here too would fire the same
+                // request twice, so the card only refreshes when it targets
+                // something core does not (a future month, or a direct tick
+                // click outside a timeline change).
+                const coreCovers =
+                    this._reapplying &&
+                    fc.stepUnit === 'month' &&
+                    !isFutureMonth
+                if (leafletLayer && !coreCovers)
+                    leafletLayer.refresh(null, true)
             } else {
                 TimeControl.reloadLayer(ld, false, false, false)
             }
@@ -1760,15 +2086,40 @@ const ForecastTimeline = {
     _probeAllAnchors: function () {
         if (!this._edgeCache) this._edgeCache = {}
         this._detectForecastLayers().forEach(({ name, config: fc }) => {
+            // STAC cards also sweep per-step item presence so missing steps
+            // render individually dark (see _resolveStacPresence).
+            if (this._isStacForecast(L_.layers.data[name]))
+                this._resolveStacPresence(name, fc)
             const base = this._forecastBase(fc)
             const key = `${name}:${base}`
             const cached = this._edgeCache[key]
 
-            // Only present runs are cached (a published run doesn't un-publish).
-            // A missing run isn't cached, so it re-probes every trigger until it's out.
+            // Present runs are cached for the session (a published run
+            // doesn't un-publish). A missing run is cached for
+            // PROBE_MISS_TTL_MS (stored as a negative timestamp) so
+            // back-to-back triggers answer from memory instead of flashing
+            // the card through "Loading…"; after the TTL it re-probes every
+            // trigger until the run is out.
             if (cached === 1) {
                 this._dbg('run (cache hit)', name, { key, present: true })
                 this._applyRunPresent(name, true)
+                return
+            }
+            // A cached miss is only trusted to KEEP an unavailable card
+            // steady (that is the anti-flicker case). A fresh or available
+            // card always gets a real probe: a run that probed missing
+            // minutes ago may have published since (HRRR 502s right up
+            // until a run lands), and stamping "not generated" from a stale
+            // cache while the tiles load fine flashes the card wrong.
+            const cardStateNow = this.state.cards[name]?.cardState
+            if (
+                typeof cached === 'number' &&
+                cached < 0 &&
+                Date.now() + cached < PROBE_MISS_TTL_MS &&
+                (cardStateNow === 'unavailable' || cardStateNow === 'failed')
+            ) {
+                this._dbg('run (miss cache hit)', name, { key, present: false })
+                this._applyRunPresent(name, false)
                 return
             }
             // Probe already in flight; leave the current label, don't start another.
@@ -1799,7 +2150,9 @@ const ForecastTimeline = {
                     ok = true
                 }
                 if (ok) this._edgeCache[key] = 1
-                else delete this._edgeCache[key] // don't cache a miss; re-probe next trigger
+                // Cache the miss briefly (negative timestamp) so the next
+                // minute of triggers resolves without a network probe.
+                else this._edgeCache[key] = -Date.now()
                 this._dbg('run RESULT', name, { key, present: ok, applied: stillCurrent() })
                 if (stillCurrent()) this._applyRunPresent(name, ok)
             }
@@ -1837,12 +2190,15 @@ const ForecastTimeline = {
 
     // Is this card's run out at all? fxx layers: does the anchor hour (fxx=0)
     // exist. WFPI/urlTemplate: day-1 GetMap (publication is atomic, so day 1
-    // answers for every step). Unprobeable layers (STAC etc.): assume present.
+    // answers for every step). STAC collections (FDEO, PWWB): does the
+    // anchor step's period have an item. Other layers: assume present.
     _resolveRunPresent: function (name, fc) {
         if (fc.urlTemplate) {
             return this._probeWmsTime(name, fc).then((v) => v === 'available')
         }
         const ld = L_.layers.data[name]
+        if (this._isStacForecast(ld))
+            return this._probeStacStepPresent(name, this._forecastBase(fc))
         if (!this._isFxxLayer(ld)) return Promise.resolve(true)
         return this._probeFxx(name, fc, 0)
     },
@@ -1863,6 +2219,14 @@ const ForecastTimeline = {
     _applyRunPresent: function (name, present) {
         const cs = this.state.cards[name]
         if (!cs) return
+        // The anchor verdict describes the card's base period. A STAC card
+        // stepped to another period is governed by that step's own probe in
+        // _applyCardStep, so don't overwrite its state from here.
+        if (
+            this._isStacForecast(L_.layers.data[name]) &&
+            (cs.stepIndex ?? 0) !== 0
+        )
+            return
         const wasDisabled =
             cs.cardState === 'unavailable' || cs.cardState === 'failed'
         if (!present) {
@@ -2335,6 +2699,13 @@ const ForecastTimeline = {
                 { hasStrip: !!strip })
         }
         const disabled = state !== 'available'
+        // STAC forecast cards stay NAVIGABLE while unavailable: the warning
+        // names the missing period, but the ticks and prev/next stay live
+        // so steps that do exist remain reachable.
+        const navigable =
+            disabled &&
+            state !== 'loading' &&
+            this._isStacForecast(L_.layers.data[name])
         // A card that just went unavailable must not keep animating against a
         // run that isn't there.
         if (disabled && this._isPlaying(name)) this._stopPlay(name)
@@ -2353,23 +2724,38 @@ const ForecastTimeline = {
                     'ftl-card-unavailable',
                     state === 'unavailable' || state === 'failed'
                 )
+                card.classList.toggle('ftl-card-navigable', navigable)
 
                 // Ticks: while loading they PULSE (skeleton) — dark
                 // ftl-future-item is reserved for unavailable/failed, so a
                 // slow model fetch doesn't read as "model not available".
                 const cardIdx = this.state.cards[name]?.stepIndex ?? 0
+                const fc = L_.layers.data[name]?.time?.forecast
+                const presenceReady = this._stacPresenceReady(name, fc)
                 card.querySelectorAll('.ftl-tick').forEach((t, i) => {
-                    t.classList.toggle('ftl-tick-skeleton', state === 'loading')
-                    t.classList.toggle('ftl-future-item', disabled && state !== 'loading')
-                    if (disabled) t.classList.remove('active')
+                    const missing = this._stacMissingStep(name, fc, i)
+                    t.classList.toggle(
+                        'ftl-tick-skeleton',
+                        state === 'loading' || !presenceReady
+                    )
+                    t.classList.toggle(
+                        'ftl-future-item',
+                        (disabled && state !== 'loading' && !navigable) ||
+                            missing
+                    )
+                    // A step with no data must never carry the active
+                    // highlight, even when it is the selected index; nor may
+                    // a tick claim active before this base's presence sweep
+                    // has resolved.
+                    if ((disabled && !navigable) || missing || !presenceReady)
+                        t.classList.remove('active')
                     else t.classList.toggle('active', i === cardIdx)
                 })
 
                 // Buttons: also set disabled attr for semantics/keyboard
-                const fc = L_.layers.data[name]?.time?.forecast
                 const steps = fc ? this._effectiveSteps(fc, name) : 1
-                card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', disabled || cardIdx === 0)
-                card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', disabled || cardIdx === steps - 1)
+                card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', (disabled && !navigable) || cardIdx === 0)
+                card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', (disabled && !navigable) || cardIdx === steps - 1)
                 card.querySelector('.ftl-card-play')?.toggleAttribute('disabled', disabled || steps <= 1)
 
                 // Init row text
@@ -2400,7 +2786,24 @@ const ForecastTimeline = {
                         // own leaves the user guessing which cycle is missing. WFPI's
                         // runStr is already a date span, so "run" is dropped there to
                         // keep the line short enough to fit the init row.
-                        const runStr = this._runLabel(fc)
+                        let runStr = this._runLabel(fc)
+                        if (fc?.stepUnit === 'month') {
+                            // Name the ACTIVE tick's month: a stepped-to
+                            // missing month (an ingestion gap) is not the
+                            // anchor month _runLabel would name.
+                            const stepIdx =
+                                this.state.cards[name]?.stepIndex ?? 0
+                            runStr = new Date(
+                                _addMonths(
+                                    this._forecastBase(fc),
+                                    stepIdx + (fc.stepOffset || 0)
+                                )
+                            ).toLocaleDateString('en-US', {
+                                timeZone: 'UTC',
+                                month: 'short',
+                                year: 'numeric',
+                            })
+                        }
                         const inlineMsg = this._isWfpi(fc)
                             ? `${runStr} not yet generated`
                             : `${runStr} run not yet generated`
@@ -2462,6 +2865,7 @@ const ForecastTimeline = {
         this._unpatchTimeUINavigation()
         this._unpatchPopulateExpandedRows()
         this._unpatchToggleLayer()
+        this._unpatchSetLayerWmsParams()
         if (this._optimisticOn) this._optimisticOn.clear()
         this._toggleTick = {}
 
