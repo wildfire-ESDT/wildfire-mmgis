@@ -420,6 +420,15 @@
     box-sizing: border-box;
 }
 
+/* ── Main timeline expanded rows: hide sliding range bar, underline selected ── */
+.mmgisTimeUIExpandedRowRange {
+    display: none !important;
+}
+.mmgisTimeUIExpandedItem.selected {
+    border-bottom: 2px solid var(--color-h);
+    box-sizing: border-box;
+}
+
 /* ── Future item in main timeline expanded rows (years/months/days/hours) ── */
 .mmgisTimeUIExpandedItem {
     transition: opacity 0.15s;
