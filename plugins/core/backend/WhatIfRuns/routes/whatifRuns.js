@@ -10,15 +10,20 @@ const wr = require("../models/whatif_run");
 const WhatIfRun = wr.WhatIfRun;
 
 /**
- * Lists run history rows, newest first.
- * @query username *optional* Only rows recorded under this username.
- *   Without it, only rows recorded with no username are returned.
+ * Lists run history rows, newest first, scoped to one user.
+ * @query user_id *optional* Only rows recorded under this Keycloak `sub`.
+ *   Falls back to `username` for legacy callers. Without either, only rows
+ *   recorded with no user_id are returned.
  */
 router.get("/", function (req, res) {
-  const where =
-    req.query.username != null && req.query.username !== ""
-      ? { username: String(req.query.username) }
-      : { username: null };
+  let where;
+  if (req.query.user_id != null && req.query.user_id !== "") {
+    where = { user_id: String(req.query.user_id) };
+  } else if (req.query.username != null && req.query.username !== "") {
+    where = { username: String(req.query.username) };
+  } else {
+    where = { user_id: null };
+  }
   WhatIfRun.findAll({
     where,
     order: [["created_on", "DESC"]],
@@ -60,6 +65,8 @@ router.post("/", function (req, res) {
   if (b.endpoint !== undefined) fields.endpoint = b.endpoint;
   if (b.name !== undefined) fields.name = b.name;
   if (b.payload !== undefined) fields.payload = b.payload;
+  if (b.result !== undefined) fields.result = b.result;
+  if (b.user_id !== undefined) fields.user_id = b.user_id;
   if (b.username !== undefined) fields.username = b.username;
 
   WhatIfRun.findOne({ where: { workflow_id: b.workflow_id } })

@@ -57,16 +57,25 @@ function readSession() {
 function applyTokens(data) {
     const payload = jwtPayload(data.access_token)
     const user = payload.preferred_username || payload.name || 'user'
+    // `sub` is the stable per-user key; username is kept only for display.
+    const userId = payload.sub || null
     const session = {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
         expires_at: Date.now() + (data.expires_in || 300) * 1000,
         user,
+        userId,
     }
     saveSession(session)
     scheduleRefresh(session)
     const wasLoggedIn = S.getState().loggedIn
-    S.setState({ loggedIn: true, authUser: user, authError: null, authBusy: false })
+    S.setState({
+        loggedIn: true,
+        authUser: user,
+        authUserId: userId,
+        authError: null,
+        authBusy: false,
+    })
     if (!wasLoggedIn) loadHistory()
 }
 
@@ -99,6 +108,7 @@ function signedOutState(authError) {
     return {
         loggedIn: false,
         authUser: null,
+        authUserId: null,
         authError,
         authBusy: false,
         jobs: {},
@@ -166,7 +176,12 @@ export function restoreSession() {
     if (session.expires_at - Date.now() > REFRESH_EARLY_MS) {
         scheduleRefresh(session)
         const wasLoggedIn = S.getState().loggedIn
-        S.setState({ loggedIn: true, authUser: session.user, authError: null })
+        S.setState({
+            loggedIn: true,
+            authUser: session.user,
+            authUserId: session.userId || null,
+            authError: null,
+        })
         if (!wasLoggedIn) loadHistory()
     } else {
         refresh(session.refresh_token)

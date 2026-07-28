@@ -32,7 +32,8 @@ const useWhatIfStore = create((set) => ({
 
     // Keycloak auth (Direct Access Grant; gates the tool UI)
     loggedIn: false,
-    authUser: null,
+    authUser: null, // preferred_username — display label only
+    authUserId: null, // Keycloak `sub` (immutable UUID) — the key runs are scoped by
     authError: null,
     authBusy: false,
     kcUrl: 'http://localhost:8885',

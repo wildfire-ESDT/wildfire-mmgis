@@ -44,10 +44,10 @@ function mmgisFetch(path, init) {
 // Run history, persisted per-user in MMGIS Postgres via the WhatIfRuns
 // backend plugin (/api/whatif-runs), keyed by the Keycloak username.
 function fetchJobHistory() {
-    const user = S.getState().authUser
+    const userId = S.getState().authUserId
     return mmgisFetch(
         'api/whatif-runs' +
-            (user ? '?username=' + encodeURIComponent(user) : '')
+            (userId ? '?user_id=' + encodeURIComponent(userId) : '')
     )
         .then((r) => r.json())
         .then((d) => {
@@ -59,8 +59,21 @@ function fetchJobHistory() {
                     (row.endpoint && row.endpoint.includes('wildfire')) ||
                     (row.payload && row.payload.sim_type != null)
                 if (!isWildfire) return
+                // The result column stores the computed result with the
+                // predicted spreadRing folded in; split them back into the
+                // same shape a freshly submitted job has in memory.
+                const stored = row.result || null
+                const spreadRing =
+                    stored && stored.spreadRing ? stored.spreadRing : null
+                let result = stored
+                if (stored && spreadRing) {
+                    result = { ...stored }
+                    delete result.spreadRing
+                }
                 out[row.workflow_id] = {
                     payload: row.payload || null,
+                    result,
+                    spreadRing,
                     name: row.name || '',
                     ts: row.created_on
                         ? new Date(row.created_on).getTime()
@@ -72,7 +85,7 @@ function fetchJobHistory() {
         .catch(() => ({}))
 }
 
-function recordJob(jobId, payload, name) {
+function recordJob(jobId, payload, name, result) {
     return mmgisFetch('api/whatif-runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,7 +93,9 @@ function recordJob(jobId, payload, name) {
             workflow_id: jobId,
             endpoint: ENDPOINT_TAG,
             payload,
+            result: result || null,
             name: name || '',
+            user_id: S.getState().authUserId || null,
             username: S.getState().authUser || null,
         }),
     }).catch(() => {})
@@ -508,7 +523,9 @@ export function submit() {
         runName: '',
         submitting: false,
     })
-    recordJob(jobId, payload, name)
+    // Persist the frozen prediction (computed result plus the predicted spread
+    // polygon) so it reloads exactly as generated, not recomputed on load.
+    recordJob(jobId, payload, name, { ...result, spreadRing })
 }
 
 // ─── Downloads ────────────────────────────────────────────────────────────────
@@ -643,14 +660,42 @@ export function selectRun(id) {
     cancelWindFetch()
     map.removeWindVectors()
     map.removeMockSpread()
+    // Replay the saved wind (speed/direction) so the loaded run is immediately
+    // re-runnable — Generate works without re-fetching, and it keeps working
+    // even after that HRRR cycle ages out of the archive. hrrrRun is restored
+    // too so a re-run records the same date/cycle/fxx. Gridded points aren't
+    // persisted, so the raw wind vectors stay hidden (the frozen spread shows
+    // instead); a manual re-fetch brings the live wind field back.
+    const wm = p.wind_mods
+    const restoredWind = wm
+        ? {
+              base: { speed_ms: wm.speed_ms, direction_deg: wm.direction_deg },
+              target: { speed_ms: wm.speed_ms, direction_deg: wm.direction_deg },
+              hrrr_ref: p.hrrr_ref || null,
+              points: [],
+          }
+        : null
+    const restoredHrrrRun = p.hrrr_run
+        ? {
+              date_utc: p.hrrr_run.date,
+              cycle_utc: p.hrrr_run.cycle,
+              source: 'restored',
+          }
+        : null
     S.setState({
-        wind: null,
-        hrrrRun: null,
+        wind: restoredWind,
+        hrrrRun: restoredHrrrRun,
         windStale: false,
         fetchingWinds: false,
     })
     if (p.perimeter_coords && p.perimeter_coords[0]) {
         setPerimeter(p.perimeter_coords[0], { fromRun: true, source: 'run' })
+        // Snap the map to the restored perimeter, same as clicking a fire does.
+        const leafletMap = getMap()
+        if (leafletMap)
+            leafletMap.fitBounds(bufferedBounds(p.perimeter_coords[0]), {
+                padding: [40, 40],
+            })
     }
     if (job.spreadRing) {
         const perimRing = p.perimeter_coords && p.perimeter_coords[0]
