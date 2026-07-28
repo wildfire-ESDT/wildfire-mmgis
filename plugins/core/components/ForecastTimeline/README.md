@@ -1,6 +1,8 @@
 # ForecastTimeline
 
-Adds a forecast card for every active forecast layer inside the TimeUI expanded area. Each card shows the model run it is anchored to and a row of clickable time steps. Clicking a step loads that forecast step for that one layer, while the main timeline keeps owning the selected time. When the selected time changes, every card snaps back to its first step and re-anchors to the new run.
+Adds a forecast stepper row inside the TimeUI expanded area for each layer that is toggled on and opts in with a `time.forecast` config block. Layers without that block never get a row, even if they serve forecast data. The code and CSS call each row a card (`.ftl-card`, `state.cards`), so this doc does too.
+
+Each card shows the model run it is anchored to and a strip of clickable time steps. Clicking a step loads that forecast step for that one layer, while the main timeline keeps owning the selected time. When the selected time changes, every card snaps back to its first step and re-anchors to the new run.
 
 Cards also check whether their model run actually exists. A run that is not published yet renders a dark card with a "run not yet generated" message, and re-checks about once a minute until it appears.
 
