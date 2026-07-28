@@ -12,7 +12,7 @@ require("dotenv").config();
 var WhatIfRun = sequelize.define(
   "whatif_runs",
   {
-    workflow_id: {
+    scenario_id: {
       type: Sequelize.STRING,
       unique: true,
       allowNull: false,

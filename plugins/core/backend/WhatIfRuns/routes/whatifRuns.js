@@ -46,16 +46,16 @@ router.get("/", function (req, res) {
 });
 
 /**
- * Upserts a run history row by workflow_id. Only fields present in the
- * body are updated, so a rename POST of {workflow_id, name} keeps the
+ * Upserts a run history row by scenario_id. Only fields present in the
+ * body are updated, so a rename POST of {scenario_id, name} keeps the
  * original payload/endpoint/username.
  */
 router.post("/", function (req, res) {
   const b = req.body || {};
-  if (b.workflow_id == null || b.workflow_id === "") {
+  if (b.scenario_id == null || b.scenario_id === "") {
     res.status(400).send({
       status: "failure",
-      message: "workflow_id is required.",
+      message: "scenario_id is required.",
       body: {},
     });
     return;
@@ -69,10 +69,10 @@ router.post("/", function (req, res) {
   if (b.user_id !== undefined) fields.user_id = b.user_id;
   if (b.username !== undefined) fields.username = b.username;
 
-  WhatIfRun.findOne({ where: { workflow_id: b.workflow_id } })
+  WhatIfRun.findOne({ where: { scenario_id: b.scenario_id } })
     .then((existing) => {
       if (existing) return existing.update(fields);
-      return WhatIfRun.create({ workflow_id: b.workflow_id, ...fields });
+      return WhatIfRun.create({ scenario_id: b.scenario_id, ...fields });
     })
     .then((row) => {
       res.send({

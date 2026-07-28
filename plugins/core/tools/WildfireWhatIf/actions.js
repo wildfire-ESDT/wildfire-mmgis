@@ -54,7 +54,7 @@ function fetchJobHistory() {
             if (!d || d.status !== 'success' || !Array.isArray(d.body)) return {}
             const out = {}
             d.body.forEach((row) => {
-                if (!row || !row.workflow_id) return
+                if (!row || !row.scenario_id) return
                 const isWildfire =
                     (row.endpoint && row.endpoint.includes('wildfire')) ||
                     (row.payload && row.payload.sim_type != null)
@@ -70,7 +70,7 @@ function fetchJobHistory() {
                     result = { ...stored }
                     delete result.spreadRing
                 }
-                out[row.workflow_id] = {
+                out[row.scenario_id] = {
                     payload: row.payload || null,
                     result,
                     spreadRing,
@@ -90,7 +90,7 @@ function recordJob(jobId, payload, name, result) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            workflow_id: jobId,
+            scenario_id: jobId,
             endpoint: ENDPOINT_TAG,
             payload,
             result: result || null,
@@ -641,7 +641,7 @@ export function renameRun(id, name) {
     mmgisFetch('api/whatif-runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflow_id: id, name: name || '' }),
+        body: JSON.stringify({ scenario_id: id, name: name || '' }),
     }).catch(() => {})
 }
 

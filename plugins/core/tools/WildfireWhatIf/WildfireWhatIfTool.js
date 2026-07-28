@@ -9,7 +9,7 @@ import { restoreSession } from './auth'
 import { clearScenarioLayers } from './map'
 import WhatIfPanel from './components/WhatIfPanel'
 
-const DEFAULT_VELO_URL = 'veloserver'
+const DEFAULT_VELO_URL = 'https://firepanel.ai/veloserver'
 
 const WildfireWhatIf = {
     height: 0,
