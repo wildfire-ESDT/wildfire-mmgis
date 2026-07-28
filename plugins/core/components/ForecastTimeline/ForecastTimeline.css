@@ -444,8 +444,7 @@
      - .ftl-tick.active / .active          (opacity:1 !important) */
 .ftl-card .mmgisTimeUIExpandedItem.ftl-future-item,
 #ftl-strip .mmgisTimeUIExpandedItem.ftl-future-item,
-.ftl-tick.ftl-future-item,
-.ftl-tick-large.ftl-future-item {
+.ftl-tick.ftl-future-item {
     opacity: 0.3 !important;
     pointer-events: none !important;
     cursor: default !important;
@@ -623,128 +622,9 @@
     box-shadow: inset 0 -2px 0 0 var(--color-h);
 }
 
-/* Ticks in detached mode — full standalone styling (no mmgisTimeUIExpandedItem base) */
-.ftl-tick-large {
-    flex: 0 0 58px;
-    min-width: 58px;
-    box-sizing: border-box;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 4px;
-    font-size: 12px;
-    color: var(--color-a6);
-    cursor: pointer;
-    white-space: nowrap;
-    border-left: 1px solid var(--color-a2);
-    transition: background 0.15s, color 0.15s;
-    user-select: none;
-    text-align: center;
-}
-.ftl-tick-large:first-child {
-    border-left: none;
-}
-.ftl-tick-large:hover {
-    background: rgba(61, 139, 255, 0.14);
-    color: var(--color-f);
-}
-.ftl-tick-large.active {
-    background: var(--color-o) !important;
-    color: white !important;
-    font-weight: bold;
-    opacity: 1 !important;
-    box-shadow: inset 0 -2px 0 0 var(--color-h);
-}
-
 /* Visibility utility */
 .ftl-hidden {
     display: none !important;
-}
-
-.ftl-picker-label {
-    font-size: 10px;
-    text-transform: uppercase;
-    color: var(--color-a6);
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-}
-
-.ftl-picker-input {
-    background: var(--color-a-5);
-    border: 1px solid var(--color-a1-5);
-    border-radius: 4px;
-    color: var(--color-f);
-    font-size: 12px;
-    font-family: 'roboto', sans-serif;
-    padding: 2px 6px;
-    height: 26px;
-    outline: none;
-}
-.ftl-picker-input:focus {
-    border-color: var(--color-h);
-}
-.ftl-picker-input[type="date"] {
-    width: 130px;
-    cursor: pointer; /* click anywhere opens the native picker */
-}
-.ftl-picker-short {
-    width: 48px;
-    text-align: center;
-    cursor: ns-resize; /* scroll to change value */
-}
-
-.ftl-go-btn {
-    background: var(--color-a1);
-    border: 1px solid var(--color-a2);
-    border-radius: 4px;
-    color: var(--color-f);
-    font-size: 11px;
-    font-family: 'roboto', sans-serif;
-    padding: 2px 10px;
-    height: 26px;
-    cursor: pointer;
-    transition: background 0.15s;
-    white-space: nowrap;
-}
-.ftl-go-btn:hover {
-    background: var(--color-h);
-    color: var(--color-a);
-}
-
-.ftl-close-btn {
-    flex-shrink: 0;
-}
-
-/* Detached card rows */
-.ftl-card-large {
-    height: 54px;
-    min-height: 54px;
-    background: rgba(255, 160, 0, 0.06);
-    border-bottom: 1px solid rgba(255, 180, 0, 0.15);
-}
-.ftl-card-large .ftl-card-header {
-    /* Hug the content (layer name + full "INITIALIZED: … PDT" line) so there's
-       no dead space before the ticks, but keep a floor so short labels still
-       align and a cap so a long name can't run away. The old fixed 220px was
-       too narrow and overflowed the init into the ticks. Detached ticks scroll
-       (overflow-x:auto) so a wider header is free. */
-    width: fit-content;
-    min-width: 240px;
-    max-width: 380px;
-    background: rgba(255, 160, 0, 0.12);
-}
-.ftl-card-large .ftl-card-label {
-    font-size: 12px;
-}
-.ftl-card-large .ftl-card-origin {
-    font-size: 10px;
-}
-.ftl-card-large .ftl-ticks-wrap {
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-a3) transparent;
 }
 
 /* ── Bottom-element offset ──
