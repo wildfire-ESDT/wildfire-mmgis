@@ -8,9 +8,11 @@ import WindSection from './WindSection'
 import SchemaForm from './SchemaForm'
 import RunsList from './RunsList'
 import LoginGate from './LoginGate'
+import { logout } from '../auth'
 
 export default function WhatIfPanel() {
     const submitting = useWhatIfStore((s) => s.submitting)
+    const authUser = useWhatIfStore((s) => s.authUser)
 
     return (
         <LoginGate>
@@ -32,6 +34,17 @@ export default function WhatIfPanel() {
                         </IconButton>
                     </div>
                 </div>
+            </div>
+
+            <div className="ww-signed-in">
+                <span>Signed in as {authUser || 'user'}</span>
+                <button
+                    type="button"
+                    className="ww-logout-btn"
+                    onClick={() => logout()}
+                >
+                    Log Out
+                </button>
             </div>
 
             <PerimeterSection />

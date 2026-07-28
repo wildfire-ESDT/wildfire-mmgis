@@ -2,9 +2,12 @@ import React, { useState } from 'react'
 import useWhatIfStore from '../store'
 import ToolController_ from '@basics/ToolController_/ToolController_'
 import { IconButton } from '@design/components'
+import { login } from '../auth'
 
 export default function LoginGate({ children }) {
     const loggedIn = useWhatIfStore((s) => s.loggedIn)
+    const authBusy = useWhatIfStore((s) => s.authBusy)
+    const authError = useWhatIfStore((s) => s.authError)
     const [username, setUsername] = useState('')
     const [password, setPassword] = useState('')
     const [error, setError] = useState('')
@@ -17,9 +20,11 @@ export default function LoginGate({ children }) {
             setError('Please enter a username.')
             return
         }
-        // Placeholder: auto-approve any credentials
-        useWhatIfStore.setState({ loggedIn: true })
+        setError('')
+        login(username.trim(), password)
     }
+
+    const shownError = error || authError
 
     return (
         <div id="wildfireTool" className="mmgisScrollbar">
@@ -47,8 +52,8 @@ export default function LoginGate({ children }) {
                     <i className="mdi mdi-fire mdi-36px" style={{ color: '#ff6b35' }} />
                 </div>
                 <div className="ww-login-title">Sign in to continue</div>
-                {error && (
-                    <div className="ww-status ww-status-err">{error}</div>
+                {shownError && (
+                    <div className="ww-status ww-status-err">{shownError}</div>
                 )}
                 <div className="ww-login-field">
                     <label className="ww-login-label" htmlFor="ww-username">
@@ -81,11 +86,15 @@ export default function LoginGate({ children }) {
                         onChange={(e) => setPassword(e.target.value)}
                     />
                 </div>
-                <button type="submit" className="ww-full ww-submit ww-login-btn">
-                    Log In
+                <button
+                    type="submit"
+                    className="ww-full ww-submit ww-login-btn"
+                    disabled={authBusy}
+                >
+                    {authBusy ? 'Signing in…' : 'Log In'}
                 </button>
                 <div className="ww-login-hint">
-                    Access restricted to authorized personnel.
+                    This is a resource intensive operation. Please login.
                 </div>
             </form>
         </div>

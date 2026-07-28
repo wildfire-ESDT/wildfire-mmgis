@@ -38,6 +38,38 @@
                         "placeholder": "veloserver"
                     }
                 ]
+            },
+            {
+                "components": [
+                    {
+                        "field": "variables.keycloakUrl",
+                        "name": "Keycloak URL",
+                        "description": "Origin of the Keycloak server used to sign in to this tool.",
+                        "type": "text",
+                        "width": 12,
+                        "placeholder": "http://localhost:8885"
+                    }
+                ]
+            },
+            {
+                "components": [
+                    {
+                        "field": "variables.keycloakRealm",
+                        "name": "Keycloak Realm",
+                        "description": "Realm containing the tool's users.",
+                        "type": "text",
+                        "width": 6,
+                        "placeholder": "wildfire"
+                    },
+                    {
+                        "field": "variables.keycloakClientId",
+                        "name": "Keycloak Client ID",
+                        "description": "Public client with Direct Access Grants enabled.",
+                        "type": "text",
+                        "width": 6,
+                        "placeholder": "wildfire-whatif"
+                    }
+                ]
             }
         ]
     }

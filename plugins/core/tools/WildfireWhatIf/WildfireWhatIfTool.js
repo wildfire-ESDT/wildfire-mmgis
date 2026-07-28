@@ -4,7 +4,8 @@ import './WildfireWhatIfTool.css'
 import L_ from '@basics/Layers_/Layers_'
 import useWhatIfStore from './store'
 import { seedFromVars } from './formConfig'
-import { loadHistory, restoreScenario, cancelMapDraw, setBboxFromMapFeature } from './actions'
+import { restoreScenario, cancelMapDraw, setBboxFromMapFeature } from './actions'
+import { restoreSession } from './auth'
 import { clearScenarioLayers } from './map'
 import WhatIfPanel from './components/WhatIfPanel'
 
@@ -23,11 +24,15 @@ const WildfireWhatIf = {
         useWhatIfStore.setState({
             vars,
             veloUrl: vars.veloUrl || DEFAULT_VELO_URL,
+            kcUrl: vars.keycloakUrl || useWhatIfStore.getState().kcUrl,
+            kcRealm: vars.keycloakRealm || useWhatIfStore.getState().kcRealm,
+            kcClientId:
+                vars.keycloakClientId || useWhatIfStore.getState().kcClientId,
             // Schema-declared fields seed their defaults from tool variables
             ...seedFromVars(vars),
         })
         WildfireWhatIf.MMGISInterface = new interfaceWithMMGIS()
-        loadHistory()
+        restoreSession() // rehydrates login and loads the user's run history
         restoreScenario() // redraw a perimeter kept in the store from a previous open
     },
 

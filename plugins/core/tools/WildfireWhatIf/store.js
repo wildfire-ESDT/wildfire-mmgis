@@ -30,7 +30,14 @@ const useWhatIfStore = create((set) => ({
     activeJobId: null,
     showActiveJson: false,
 
+    // Keycloak auth (Direct Access Grant; gates the tool UI)
     loggedIn: false,
+    authUser: null,
+    authError: null,
+    authBusy: false,
+    kcUrl: 'http://localhost:8885',
+    kcRealm: 'wildfire',
+    kcClientId: 'wildfire-whatif',
 
     set: (patch) => set(patch),
 }))

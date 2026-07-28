@@ -41,10 +41,14 @@ function mmgisFetch(path, init) {
     })
 }
 
-// Run history, persisted via MMGIS's workflows-history table (same pattern as
-// WorkflowsTool). Only rows tagged as wildfire submissions are loaded.
+// Run history, persisted per-user in MMGIS Postgres via the WhatIfRuns
+// backend plugin (/api/whatif-runs), keyed by the Keycloak username.
 function fetchJobHistory() {
-    return mmgisFetch('api/workflows-history')
+    const user = S.getState().authUser
+    return mmgisFetch(
+        'api/whatif-runs' +
+            (user ? '?username=' + encodeURIComponent(user) : '')
+    )
         .then((r) => r.json())
         .then((d) => {
             if (!d || d.status !== 'success' || !Array.isArray(d.body)) return {}
@@ -69,7 +73,7 @@ function fetchJobHistory() {
 }
 
 function recordJob(jobId, payload, name) {
-    return mmgisFetch('api/workflows-history', {
+    return mmgisFetch('api/whatif-runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -77,6 +81,7 @@ function recordJob(jobId, payload, name) {
             endpoint: ENDPOINT_TAG,
             payload,
             name: name || '',
+            username: S.getState().authUser || null,
         }),
     }).catch(() => {})
 }
@@ -616,7 +621,7 @@ export function renameRun(id, name) {
     const job = s.jobs[id]
     if (!job) return
     S.setState({ jobs: { ...s.jobs, [id]: { ...job, name } } })
-    mmgisFetch('api/workflows-history', {
+    mmgisFetch('api/whatif-runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workflow_id: id, name: name || '' }),
