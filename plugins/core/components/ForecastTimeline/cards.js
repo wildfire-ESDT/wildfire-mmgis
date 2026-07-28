@@ -13,6 +13,7 @@ import {
     isMobile,
     isStacForecast,
     isWfpi,
+    showWindow,
     pruneCacheInactive,
 } from './common'
 import { stepTime } from './time'
@@ -494,7 +495,7 @@ const cardMethods = {
                         year: 'numeric',
                     })
                 }
-                const inlineMsg = isWfpi(fc)
+                const inlineMsg = showWindow(fc)
                     ? `${runStr} not yet generated`
                     : `${runStr} run not yet generated`
                 initEl.innerHTML =
@@ -503,7 +504,7 @@ const cardMethods = {
                     `${inlineMsg}</span>`
                 initEl.setAttribute(
                     'title',
-                    isWfpi(fc)
+                    showWindow(fc)
                         ? `Model data for the ${runStr} window has not been generated yet.`
                         : `The ${runStr} model run has not been generated yet.`
                 )

@@ -59,6 +59,13 @@ export function isWfpi(fc) {
     return /wfpi/i.test(fc?.label || '')
 }
 
+// True when a daily card should show per-step valid windows ("5 PM – 5 PM")
+// instead of a plain UTC date. WFPI always qualifies; any other daily layer
+// can opt in via showWindow: true in its time.forecast config.
+export function showWindow(fc) {
+    return isWfpi(fc) || fc?.showWindow === true
+}
+
 // ── Small shared utilities ─────────────────────────────────
 
 // For HTML text nodes and double-quoted attribute values.

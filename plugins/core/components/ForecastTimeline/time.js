@@ -21,6 +21,7 @@ import {
     HRRR_EXTENDED_INIT_HOURS,
     isFxxLayer,
     isWfpi,
+    showWindow,
 } from './common'
 
 // ── Pure unit math ─────────────────────────────────────────
@@ -156,7 +157,7 @@ const timeMethods = {
             })
         }
         if (unit === 'day') {
-            if (isWfpi(fc)) {
+            if (showWindow(fc)) {
                 return windowLabel(
                     base,
                     base + (fc.steps || 7) * STEP_UNITS.day,
@@ -182,7 +183,7 @@ const timeMethods = {
             return windowLabel(ms, addMonths(ms, fc?.steps || 1), 'init')
         }
         if (unit === 'day') {
-            if (isWfpi(fc)) {
+            if (showWindow(fc)) {
                 return windowLabel(ms, ms + (fc.steps || 7) * STEP_UNITS.day, 'init')
             }
             return d.toLocaleDateString('en-US', {
@@ -224,7 +225,7 @@ const timeMethods = {
         const stepMs = stepTime(fc, i, originBase)
 
         if (unit === 'day') {
-            if (isWfpi(fc)) {
+            if (showWindow(fc)) {
                 return windowLabel(stepMs, stepMs + STEP_UNITS.day, 'tick')
             }
             return {
