@@ -12,7 +12,6 @@ import {
     escSel,
     isMobile,
     isStacForecast,
-    isWfpi,
     showWindow,
     pruneCacheInactive,
 } from './common'
@@ -86,7 +85,8 @@ const cardMethods = {
     },
 
     // True when a card's rendered tick count no longer matches its effective
-    // step count (HRRR F18/F48 boundary), meaning the tick DOM must rebuild.
+    // step count (an fxx run-length boundary, e.g. HRRR F18/F48), meaning
+    // the tick DOM must rebuild.
     _stepCountsStale: function () {
         const container = document.getElementById('ftl-strip')
         if (!container) return false
@@ -347,11 +347,32 @@ const cardMethods = {
         const state = this.state.cards[name]?.cardState ?? 'available'
         const disabled = state !== 'available'
         const loading = state === 'loading'
+        // An uninitialized card is never navigable: there is no run to step
+        // through at this hour.
         const navigable =
-            disabled && !loading && isStacForecast(L_.layers.data[name])
+            disabled &&
+            !loading &&
+            state !== 'uninitialized' &&
+            isStacForecast(L_.layers.data[name])
         const idx = this.state.cards[name]?.stepIndex ?? 0
         const steps = fc ? this._effectiveSteps(fc, name) : 1
-        const presenceReady = this._stacPresenceReady(name, fc)
+        // The gate skips the presence sweep, so an uninitialized card would
+        // otherwise wear the skeleton pulse forever.
+        const presenceReady =
+            state === 'uninitialized' || this._stacPresenceReady(name, fc)
+
+        // Card-level state classes assert on EVERY paint (state changes and
+        // refreshes alike) so no repaint can leave a stale combination, e.g.
+        // a leftover ftl-card-navigable brightening a disabled card's
+        // buttons. 'failed' and 'uninitialized' share the unavailable look.
+        card.classList.toggle('ftl-card-loading', loading)
+        card.classList.toggle(
+            'ftl-card-unavailable',
+            state === 'unavailable' ||
+                state === 'failed' ||
+                state === 'uninitialized'
+        )
+        card.classList.toggle('ftl-card-navigable', navigable)
 
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
             const missing = this._stacMissingStep(name, fc, i)
@@ -426,6 +447,10 @@ const cardMethods = {
     //   'unavailable' run not published, dark card, "run not yet generated"
     //   'failed'      run probed present but data failed (brief service
     //                 desync), dark card, "Forecast not available"
+    //   'uninitialized' the selected hour is not the model's declared init
+    //                 hour (runHourLocal/runHourUTC on an hourly card).
+    //                 Renders exactly like 'unavailable' but names the
+    //                 selected hour; no probes, not navigable
     _setCardState: function (name, state) {
         if (this.state.cards[name]) this.state.cards[name].cardState = state
         if (typeof window !== 'undefined' && window.FTL_DEBUG) {
@@ -448,14 +473,9 @@ const cardMethods = {
 
         const fc = L_.layers.data[name]?.time?.forecast
 
-        card.classList.toggle('ftl-card-loading', state === 'loading')
-        // 'failed' shares the unavailable visuals; only the message differs.
-        card.classList.toggle(
-            'ftl-card-unavailable',
-            state === 'unavailable' || state === 'failed'
-        )
-        const { navigable } = this._paintCardTicks(card, name, fc)
-        card.classList.toggle('ftl-card-navigable', navigable)
+        // Card-level classes (loading/unavailable/navigable) are asserted
+        // inside _paintCardTicks with everything else state-derived.
+        this._paintCardTicks(card, name, fc)
 
         // Init row text per state.
         const initEl = card.querySelector('.ftl-card-init')
@@ -478,14 +498,18 @@ const cardMethods = {
                     'The forecast data failed to load. The layer and forecast services may be briefly out of sync. Toggle the layer off and on to retry.'
                 )
             }
-        } else if (state === 'unavailable') {
+        } else if (state === 'unavailable' || state === 'uninitialized') {
             if (captionEl) captionEl.style.display = 'none'
             if (initEl) {
                 // Name the run so the user knows which cycle is missing.
                 // Monthly names the ACTIVE tick's month (a stepped-to gap is
-                // not the anchor month). WFPI's span already reads as dates.
+                // not the anchor month). showWindow spans already read as dates.
+                // Uninitialized names the SELECTED hour, which has no run,
+                // not the pinned anchor.
                 let runStr = this._runLabel(fc)
-                if (fc?.stepUnit === 'month') {
+                if (state === 'uninitialized') {
+                    runStr = this._runLabel(fc, this._originBase())
+                } else if (fc?.stepUnit === 'month') {
                     const stepIdx = this.state.cards[name]?.stepIndex ?? 0
                     runStr = new Date(
                         stepTime(fc, stepIdx, this._forecastBase(fc))

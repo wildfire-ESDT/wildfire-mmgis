@@ -26,7 +26,7 @@ const playbackMethods = {
         return this.vars?.experimentalPlayback === true
     },
 
-    // Further limited to HRRR COG raster cards for now.
+    // Further limited to COG fxx raster cards for now.
     _playbackAllowed: function (name) {
         if (!this._playbackEnabled()) return false
         return isCogFxx(L_.layers.data[name])

@@ -5,8 +5,8 @@
  * Anchoring: steps generate from the timeline's selected time floored to the
  * hour, never the wall clock. Daily products anchor to the latest UTC run at
  * or before the selected time (runHourUTC). Anchoring by local calendar date
- * instead pointed at yesterday's run for 7 hours after the new 00:00Z run was
- * out (the 5 PM PDT boundary bug). Labels format real instants through the
+ * instead pointed at the previous run for hours after a new run was out (a
+ * viewer-timezone boundary bug). Labels format real instants through the
  * browser timezone, so hours stay correct across DST and other timezones.
  */
 
@@ -16,11 +16,11 @@ import L_ from '@basics/Layers_/Layers_'
 import {
     STEP_UNITS,
     LOCAL_TZ,
-    HRRR_FXX_MAX,
-    HRRR_FXX_MAX_EXTENDED,
-    HRRR_EXTENDED_INIT_HOURS,
+    FXX_MAX_DEFAULT,
+    FXX_MAX_EXTENDED_DEFAULT,
+    EXTENDED_RUN_HOURS_UTC_DEFAULT,
+    hasInitHour,
     isFxxLayer,
-    isWfpi,
     showWindow,
 } from './common'
 
@@ -39,6 +39,35 @@ export function stepTime(fc, i, baseMs) {
     return fc.stepUnit === 'month'
         ? addMonths(baseMs, i + offset)
         : baseMs + (i + offset) * (STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour)
+}
+
+// What tz's wall clock reads at instant ms, re-encoded as a UTC timestamp so
+// two wall-clock readings can be subtracted.
+function wallClockUTC(ms, tz) {
+    const p = {}
+    new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: 'numeric', minute: 'numeric', second: 'numeric',
+        hourCycle: 'h23',
+    })
+        .formatToParts(new Date(ms))
+        .forEach((x) => { if (x.type !== 'literal') p[x.type] = Number(x.value) })
+    return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)
+}
+
+// The UTC instant when tz's wall clock reads hour:00 on the tz-calendar day
+// containing ms. Guess assuming tz == UTC, then correct by the zone's real
+// offset; the second pass settles dates that straddle a DST transition.
+function zonedRunInstant(ms, tz, hour) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(ms))
+    const [y, m, d] = parts.split('-').map(Number)
+    const target = Date.UTC(y, m - 1, d, hour)
+    let t = target
+    for (let i = 0; i < 2; i++) t += target - wallClockUTC(t, tz)
+    return t
 }
 
 // [start, end) of the unit-aligned period (UTC month/day/hour) containing ms.
@@ -101,8 +130,11 @@ const timeMethods = {
     },
 
     // The instant a forecast's steps are generated from. Daily products anchor
-    // to the latest UTC run (runHourUTC) at or before the selected time, which
-    // fixes the 5 PM PDT / 00:00Z boundary (see the header above).
+    // to the latest UTC run (runHourUTC) at or before the selected time (see
+    // the header above). Hourly products anchor to the selected hour, except
+    // an init-hour card pins to that day's init instant so its labels, caches
+    // and probes don't drift with the timeline; _initHourMismatch gates the
+    // other hours.
     _forecastBase: function (fc) {
         const base = this._originBase()
         const unit = fc?.stepUnit || 'hour'
@@ -110,7 +142,8 @@ const timeMethods = {
             const d = new Date(base)
             return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
         }
-        if (unit !== 'day') return base
+        if (unit !== 'day')
+            return hasInitHour(fc) ? this._initHourInstant(fc) : base
         const runHourUTC = Number.isFinite(fc.runHourUTC) ? fc.runHourUTC : 0
         const d = new Date(base)
         const runToday = Date.UTC(
@@ -120,14 +153,47 @@ const timeMethods = {
         return runToday <= base ? runToday : runToday - STEP_UNITS.day
     },
 
-    // Step count. fxx layers derive theirs from the run's UTC init hour
-    // (F18, or F48 for 00/06/12/18Z runs); others use configured fc.steps.
+    // The instant of an hourly model's configured init hour on the selected
+    // day. runHourLocal is a wall-clock hour in runTimezone (default: the
+    // viewer's zone), resolved per day so DST never shifts it; runHourUTC is
+    // a plain UTC hour.
+    _initHourInstant: function (fc) {
+        const base = this._originBase()
+        if (Number.isFinite(fc?.runHourLocal)) {
+            return zonedRunInstant(
+                base, fc.runTimezone || LOCAL_TZ, fc.runHourLocal
+            )
+        }
+        const d = new Date(base)
+        return Date.UTC(
+            d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(),
+            Number.isFinite(fc?.runHourUTC) ? fc.runHourUTC : 0
+        )
+    },
+
+    // True when an init-hour card's selected hour is not the init hour. Such
+    // a card renders "Model not initialized" and never touches its layer.
+    _initHourMismatch: function (fc) {
+        if (!hasInitHour(fc)) return false
+        return this._initHourInstant(fc) !== this._originBase()
+    },
+
+    // Step count. fxx layers derive theirs from the run's UTC init hour and
+    // the model's run schedule (config overrides, defaults in common.js);
+    // others use configured fc.steps.
     _effectiveSteps: function (fc, name) {
         const ld = name ? L_.layers.data[name] : null
         if (!isFxxLayer(ld)) return fc.steps || 1
         const initHourUTC = new Date(this._originBase()).getUTCHours()
-        const isExtendedRun = HRRR_EXTENDED_INIT_HOURS.includes(initHourUTC)
-        return (isExtendedRun ? HRRR_FXX_MAX_EXTENDED : HRRR_FXX_MAX) + 1
+        const extendedHours = Array.isArray(fc.extendedRunHoursUTC)
+            ? fc.extendedRunHoursUTC
+            : EXTENDED_RUN_HOURS_UTC_DEFAULT
+        const isExtendedRun = extendedHours.includes(initHourUTC)
+        return (
+            (isExtendedRun
+                ? fc.fxxMaxExtended ?? FXX_MAX_EXTENDED_DEFAULT
+                : fc.fxxMax ?? FXX_MAX_DEFAULT) + 1
+        )
     },
 
     // Step chip label. Config stepLabel wins, else derived from stepSize/unit.
@@ -145,9 +211,10 @@ const timeMethods = {
     },
 
     // Compact run identity for the "not yet generated" warning. Daily is
-    // UTC-dated to match the run fetched; WFPI shows its full date span.
-    _runLabel: function (fc) {
-        const base = this._forecastBase(fc || {})
+    // UTC-dated to match the run fetched; showWindow cards show their span.
+    // atMs overrides the anchor (uninitialized cards name the selected hour).
+    _runLabel: function (fc, atMs) {
+        const base = atMs != null ? atMs : this._forecastBase(fc || {})
         const unit = fc?.stepUnit || 'hour'
         if (unit === 'month') {
             return new Date(base).toLocaleDateString('en-US', {
@@ -175,8 +242,8 @@ const timeMethods = {
         })
     },
 
-    // INITIALIZED row. Monthly and WFPI show their whole valid span; daily is
-    // UTC-dated; hourly shows the local instant.
+    // INITIALIZED row. Monthly and showWindow cards show their whole valid
+    // span; daily is UTC-dated; hourly shows the local instant.
     _formatInit: function (ms, unit, fc) {
         const d = new Date(ms)
         if (unit === 'month') {
@@ -210,7 +277,8 @@ const timeMethods = {
     },
 
     // Two-line tick label, shared by build and refresh so they always agree.
-    // Hourly "9 AM"/"h1", daily "May 13"/"+N", monthly and WFPI full windows.
+    // Hourly "9 AM"/"h1", daily "May 13"/"+N", monthly and showWindow cards
+    // full windows.
     _tickLabels: function (fc, i, originBase) {
         const unit = fc.stepUnit || 'hour'
 

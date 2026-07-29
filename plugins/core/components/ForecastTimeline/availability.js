@@ -3,7 +3,8 @@
  *
  * A run is either out or it is not; one probe per model run answers for every
  * step. Per kind: COG fxx asks titiler /cog/info at fxx 0, velocity HEADs the
- * gribjson, WFPI issues a 1x1 GetMap of day 1, STAC asks the items endpoint.
+ * gribjson, WMS __FSTEP__ template layers issue a 1x1 GetMap of step 1, and
+ * STAC asks the items endpoint.
  * Probes hit the same services the map renders through, never the Leaflet
  * tiles (the tile pipeline hides failures behind transparent PNGs).
  *
@@ -20,6 +21,7 @@ import L_ from '@basics/Layers_/Layers_'
 import {
     PROBE_LOADING_DELAY_MS,
     PROBE_MISS_TTL_MS,
+    hasInitHour,
     isFxxLayer,
     isFxxVelocity,
     isStacForecast,
@@ -55,6 +57,13 @@ const availabilityMethods = {
     _probeAllAnchors: function () {
         if (!this._edgeCache) this._edgeCache = {}
         this._detectForecastLayers().forEach(({ name, config: fc }) => {
+            // Not the model's init hour: no run exists to probe. Render the
+            // "Model not initialized" card and skip the network entirely.
+            if (this._initHourMismatch(fc)) {
+                this._cancelLoading(name)
+                this._setCardState(name, 'uninitialized')
+                return
+            }
             if (isStacForecast(L_.layers.data[name]))
                 this._resolveStacPresence(name, fc)
             const base = this._forecastBase(fc)
@@ -144,8 +153,15 @@ const availabilityMethods = {
             return this._probeWmsTime(name, fc).then((v) => v === 'available')
         }
         const ld = L_.layers.data[name]
-        if (isStacForecast(ld))
-            return this._probeStacStepPresent(name, this._forecastBase(fc))
+        if (isStacForecast(ld)) {
+            // An init-hour run has no item at the init instant itself; its
+            // first valid hour answers for the run.
+            const base = this._forecastBase(fc)
+            return this._probeStacStepPresent(
+                name,
+                hasInitHour(fc) ? stepTime(fc, 0, base) : base
+            )
+        }
         if (!isFxxLayer(ld)) return Promise.resolve(true)
         return this._probeFxx(name, fc, 0)
     },
@@ -154,6 +170,14 @@ const availabilityMethods = {
     _applyRunPresent: function (name, present) {
         const cs = this.state.cards[name]
         if (!cs) return
+        // A probe launched at the init hour can resolve after the timeline
+        // left it; the pinned base can't change, so stillCurrent won't catch
+        // it. The mismatch state wins over a stale verdict.
+        const fcNow = L_.layers.data[name]?.time?.forecast
+        if (fcNow && this._initHourMismatch(fcNow)) {
+            this._setCardState(name, 'uninitialized')
+            return
+        }
         // A STAC card stepped off its base period is governed by that step's
         // own probe; don't overwrite its state from the anchor verdict.
         if (isStacForecast(L_.layers.data[name]) && (cs.stepIndex ?? 0) !== 0)
@@ -324,11 +348,11 @@ const availabilityMethods = {
     },
 
     // The period a tick's QUERY targets: its own month for monthly cards,
-    // the issue period (one step earlier) for day/hour cards.
+    // its own VALID hour for init-hour cards (their items are stamped at
+    // valid hours), the issue period (one step earlier) for the rest.
     _stacQueryPeriodStart: function (fc, idx, base) {
-        return (fc.stepUnit || 'hour') === 'month'
-            ? stepTime(fc, idx, base)
-            : stepTime(fc, idx - 1, base)
+        if ((fc.stepUnit || 'hour') === 'month') return stepTime(fc, idx, base)
+        return stepTime(fc, hasInitHour(fc) ? idx : idx - 1, base)
     },
 
     // True once this base's presence sweep resolved (always true for non-STAC).
@@ -394,10 +418,11 @@ const availabilityMethods = {
         return setFxx(resolveUrlTokens(ld?.url || '', timeStr), n)
     },
 
-    // WFPI run probe. ALWAYS asks forecast day 1: WFPI publishes atomically so
-    // day 1 answers for every step, and a later day is dishonest anyway
-    // (GeoServer serves the same valid date from an OLDER run's projection,
-    // returning an image for a run that doesn't exist). BBOX and 1x1 size are
+    // Run probe for WMS __FSTEP__ template layers. ALWAYS asks forecast step
+    // 1: these products publish a whole run atomically, so step 1 answers
+    // for every step, and a later step is dishonest anyway (the WMS serves
+    // the same valid date from an OLDER run's projection, returning an image
+    // for a run that doesn't exist). BBOX and 1x1 size are
     // appended because without a real render GeoServer never raises the
     // out-of-extent exception.
     _wmsProbeUrl: function (name, fc) {

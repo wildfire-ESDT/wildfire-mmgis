@@ -14,6 +14,7 @@ import L_ from '@basics/Layers_/Layers_'
 
 import {
     STEP_UNITS,
+    hasInitHour,
     isCogFxx,
     isFxxVelocity,
     isStacForecast,
@@ -57,6 +58,9 @@ const stepMethods = {
 
     // Apply step idx of a card to its layer, dispatched by layer kind.
     _applyCardStep: function (name, fc, idx) {
+        // Not the model's init hour: the card is 'uninitialized' and the main
+        // timeline owns the layer; applying a step would fight it.
+        if (this._initHourMismatch(fc)) return
         // Clamp so a stale index never requests an unavailable hour.
         idx = Math.max(0, Math.min(idx, this._effectiveSteps(fc, name) - 1))
         const originMs = this._forecastBase(fc)
@@ -78,7 +82,7 @@ const stepMethods = {
         else this._applyTimeShiftStep(name, fc, idx, stepMs)
     },
 
-    // ── COG fxx (HRRR rasters) ─────────────────────────────
+    // ── COG fxx rasters (hourly forecast COGs, e.g. HRRR) ──
     _applyCogFxxStep: function (name, fc, idx) {
         const ld = L_.layers.data[name]
         // Keep ld.url in sync so a later rebuild starts from the right fxx.
@@ -110,7 +114,7 @@ const stepMethods = {
         }
     },
 
-    // ── Velocity fxx (HRRR gribjson winds) ─────────────────
+    // ── Velocity fxx (gribjson winds, e.g. HRRR) ───────────
     // setData refreshes the streamlines in place. A reloadLayer toggle would
     // blink the layer off, which also removes the card mid-step.
     _applyVelocityFxxStep: function (name, fc, idx) {
@@ -183,6 +187,12 @@ const stepMethods = {
             queryEndIso = isFutureMonth
                 ? new Date(stepMs).toISOString().split('.')[0] + 'Z'
                 : TimeControl.currentTime || ld.time.end
+        } else if (hasInitHour(fc)) {
+            // Init-hour collections stamp an item at each VALID hour: the
+            // tick queries the hour it is labeled with. One step back would
+            // serve the PREVIOUS run's tail (its last valid hour sits exactly
+            // on this run's init instant).
+            queryEndIso = new Date(stepMs).toISOString()
         } else {
             // The tick is labeled with the VALID day but queries the ISSUE
             // day (one step earlier), because a forecast for day T is issued
@@ -197,6 +207,9 @@ const stepMethods = {
             this._probeStacStepPresent(name, Date.parse(queryEndIso)).then(
                 (present) => {
                     if (this.state.cards[name]?.stepIndex !== idx) return
+                    // Stale resolve: the timeline left the init hour while
+                    // this probe was in flight; the gate's state stands.
+                    if (this._initHourMismatch(fc)) return
                     this._setCardState(
                         name,
                         present ? 'available' : 'unavailable'
@@ -231,7 +244,7 @@ const stepMethods = {
         ld.time.end = prevEnd
     },
 
-    // ── urlTemplate (WFPI WMS __FSTEP__) ───────────────────
+    // ── urlTemplate (WMS __FSTEP__) ────────────────────────
     _applyUrlTemplate: function (name, stepNumber) {
         const ld = L_.layers.data[name]
         if (!ld) return
@@ -261,7 +274,7 @@ const stepMethods = {
 
             // Core notifies subscribers BEFORE updating layer times on a
             // timeline change, so sync time off TimeControl.currentTime first
-            // or WFPI trails a full run across the 00:00Z boundary.
+            // or the card trails a full run across the run boundary.
             if (
                 typeof TimeControl?.setLayerWmsParams === 'function' &&
                 TimeControl.currentTime
@@ -290,6 +303,13 @@ const stepMethods = {
         if (isNaN(t0)) return
         const unit = ld.time?.forecast?.stepUnit || 'hour'
         const iso = (ms) => new Date(ms).toISOString().split('.')[0] + 'Z'
+        // Not the model's init hour: items exist at every valid hour, so the
+        // timeline would render one. A zero-length window draws nothing.
+        if (this._initHourMismatch(ld.time?.forecast)) {
+            l.options.starttime = iso(t0)
+            l.options.endtime = iso(t0)
+            return
+        }
         if (unit === 'month') {
             const d = new Date(t0)
             const atBoundary =
@@ -317,7 +337,8 @@ const stepMethods = {
                 this.state.cards[n].stepIndex = 0
             })
             // Probe first so state is correct before rendering. Rebuild only
-            // when a card's tick count changed (HRRR F18 to F48 boundary).
+            // when a card's tick count changed (fxx run-length boundary,
+            // e.g. HRRR F18/F48).
             this._probeAllAnchors()
             if (this._stepCountsStale()) {
                 this._rebuildCards()

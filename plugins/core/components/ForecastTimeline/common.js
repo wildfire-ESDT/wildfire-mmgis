@@ -14,10 +14,12 @@ export const STEP_UNITS = {
 // LocalTimezone plugin) so hours stay DST-correct on their own.
 export const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
 
-// HRRR ranges. Every run reaches F18; 00/06/12/18 UTC runs reach F48.
-export const HRRR_FXX_MAX = 18
-export const HRRR_FXX_MAX_EXTENDED = 48
-export const HRRR_EXTENDED_INIT_HOURS = [0, 6, 12, 18]
+// fxx run-length defaults, following HRRR's schedule (every run reaches
+// +18h, 00/06/12/18 UTC runs reach +48h). Another model overrides them in
+// time.forecast via fxxMax, fxxMaxExtended and extendedRunHoursUTC.
+export const FXX_MAX_DEFAULT = 18
+export const FXX_MAX_EXTENDED_DEFAULT = 48
+export const EXTENDED_RUN_HOURS_UTC_DEFAULT = [0, 6, 12, 18]
 
 // Delay between playback frames.
 export const PLAY_INTERVAL_MS = 700
@@ -54,16 +56,20 @@ export function isStacForecast(ld) {
     )
 }
 
-// One predicate for WFPI's special label treatment so call sites can't drift.
-export function isWfpi(fc) {
-    return /wfpi/i.test(fc?.label || '')
+// True when an hourly card declares the one hour a day its model initializes
+// (runHourLocal wall-clock hour or runHourUTC). Such cards are gated to that
+// hour, and their STAC items are stamped at VALID hours, not issue hours.
+export function hasInitHour(fc) {
+    return (
+        (fc?.stepUnit || 'hour') === 'hour' &&
+        (Number.isFinite(fc?.runHourLocal) || Number.isFinite(fc?.runHourUTC))
+    )
 }
 
 // True when a daily card should show per-step valid windows ("5 PM – 5 PM")
-// instead of a plain UTC date. WFPI always qualifies; any other daily layer
-// can opt in via showWindow: true in its time.forecast config.
+// instead of a plain UTC date. Opt in via showWindow: true in time.forecast.
 export function showWindow(fc) {
-    return isWfpi(fc) || fc?.showWindow === true
+    return fc?.showWindow === true
 }
 
 // ── Small shared utilities ─────────────────────────────────

@@ -8,10 +8,14 @@
  *   steps       required   step count (fxx layers ignore it, see time.js)
  *   stepUnit    required   'hour' | 'day' | 'month'
  *   stepOffset  required   0 = first step is the init time, 1 = init + 1 unit
- *   runHourUTC  optional   daily only, UTC hour the model runs (default 0)
+ *   runHourUTC  optional   UTC run hour. Daily: anchor (default 0). Hourly:
+ *                          declares the model's one init hour a day
+ *   runHourLocal / runTimezone  optional  zone-resolved run hour, DST-proof
+ *   showWindow  optional   daily cards label per-step valid windows
  *   urlTemplate optional   URL carries __FSTEP__, replaced with the 1-based step
  *   description optional   info-icon text (no description, no icon)
  *   stepLabel / stepSize    optional step-chip label overrides
+ *   fxxMax / fxxMaxExtended / extendedRunHoursUTC  optional fxx run schedule
  *
  * This file is the plugin entry point: lifecycle (init/cleanup),
  * subscriptions, and the console/debug surface (window.ForecastTimeline,
