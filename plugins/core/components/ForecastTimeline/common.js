@@ -56,13 +56,13 @@ export function isStacForecast(ld) {
     )
 }
 
-// True when an hourly card declares the one hour a day its model initializes
-// (runHourLocal wall-clock hour or runHourUTC). Such cards are gated to that
-// hour, and their STAC items are stamped at VALID hours, not issue hours.
+// True when an hourly card declares the one UTC hour a day its model
+// initializes (runHourUTC). Such cards are gated to that hour, and their
+// STAC items are stamped at VALID hours, not issue hours.
 export function hasInitHour(fc) {
     return (
         (fc?.stepUnit || 'hour') === 'hour' &&
-        (Number.isFinite(fc?.runHourLocal) || Number.isFinite(fc?.runHourUTC))
+        Number.isFinite(fc?.runHourUTC)
     )
 }
 

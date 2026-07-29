@@ -46,8 +46,6 @@ A layer opts in with a `time.forecast` block.
 | `stepUnit` | string | yes | `hour`, `day` or `month` |
 | `stepOffset` | number | yes | `0` first step is the init time, `1` first step is init plus one unit |
 | `runHourUTC` | number | no | Daily: UTC hour the model runs, default `0`. Hourly: declares the one UTC hour the model initializes; every other selected hour shows the standard "run not yet generated" card for that hour and leaves the layer alone. Omit for the default, every hour is a run |
-| `runHourLocal` | number | no | Hourly. Same gate as `runHourUTC` but a wall-clock hour in `runTimezone`, resolved per day so DST never shifts it (e.g. `10` with `America/Los_Angeles`). Wins over `runHourUTC` if both are set |
-| `runTimezone` | string | no | IANA zone for `runHourLocal`, default the viewer's browser zone |
 | `showWindow` | bool | no | Daily cards label per-step valid windows ("5 PM – 5 PM") instead of plain UTC dates |
 | `urlTemplate` | bool | no | URL carries `__FSTEP__`, replaced with the 1 based step |
 | `description` | string | no | Info icon text. No description, no icon |

@@ -448,7 +448,7 @@ const cardMethods = {
     //   'failed'      run probed present but data failed (brief service
     //                 desync), dark card, "Forecast not available"
     //   'uninitialized' the selected hour is not the model's declared init
-    //                 hour (runHourLocal/runHourUTC on an hourly card).
+    //                 hour (runHourUTC on an hourly card).
     //                 Renders exactly like 'unavailable' but names the
     //                 selected hour; no probes, not navigable
     _setCardState: function (name, state) {

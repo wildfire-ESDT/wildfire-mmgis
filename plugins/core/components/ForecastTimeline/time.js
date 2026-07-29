@@ -41,35 +41,6 @@ export function stepTime(fc, i, baseMs) {
         : baseMs + (i + offset) * (STEP_UNITS[fc.stepUnit] || STEP_UNITS.hour)
 }
 
-// What tz's wall clock reads at instant ms, re-encoded as a UTC timestamp so
-// two wall-clock readings can be subtracted.
-function wallClockUTC(ms, tz) {
-    const p = {}
-    new Intl.DateTimeFormat('en-US', {
-        timeZone: tz,
-        year: 'numeric', month: 'numeric', day: 'numeric',
-        hour: 'numeric', minute: 'numeric', second: 'numeric',
-        hourCycle: 'h23',
-    })
-        .formatToParts(new Date(ms))
-        .forEach((x) => { if (x.type !== 'literal') p[x.type] = Number(x.value) })
-    return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)
-}
-
-// The UTC instant when tz's wall clock reads hour:00 on the tz-calendar day
-// containing ms. Guess assuming tz == UTC, then correct by the zone's real
-// offset; the second pass settles dates that straddle a DST transition.
-function zonedRunInstant(ms, tz, hour) {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date(ms))
-    const [y, m, d] = parts.split('-').map(Number)
-    const target = Date.UTC(y, m - 1, d, hour)
-    let t = target
-    for (let i = 0; i < 2; i++) t += target - wallClockUTC(t, tz)
-    return t
-}
-
 // [start, end) of the unit-aligned period (UTC month/day/hour) containing ms.
 export function periodBounds(unit, ms) {
     if (unit === 'month') {
@@ -153,18 +124,10 @@ const timeMethods = {
         return runToday <= base ? runToday : runToday - STEP_UNITS.day
     },
 
-    // The instant of an hourly model's configured init hour on the selected
-    // day. runHourLocal is a wall-clock hour in runTimezone (default: the
-    // viewer's zone), resolved per day so DST never shifts it; runHourUTC is
-    // a plain UTC hour.
+    // The instant of an hourly model's configured init hour (runHourUTC) on
+    // the selected day.
     _initHourInstant: function (fc) {
-        const base = this._originBase()
-        if (Number.isFinite(fc?.runHourLocal)) {
-            return zonedRunInstant(
-                base, fc.runTimezone || LOCAL_TZ, fc.runHourLocal
-            )
-        }
-        const d = new Date(base)
+        const d = new Date(this._originBase())
         return Date.UTC(
             d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(),
             Number.isFinite(fc?.runHourUTC) ? fc.runHourUTC : 0
