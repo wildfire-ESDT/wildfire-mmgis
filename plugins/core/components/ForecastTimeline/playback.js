@@ -80,6 +80,8 @@ const playbackMethods = {
         const tasks = []
         for (let i = 0; i < steps; i++) {
             const idx = i
+            // Don't warm an hour that isn't published; it would only 404.
+            if (this._missingStep(name, fc, idx)) continue
             if (isVelocity) {
                 if (frames[idx]) continue
                 const url = this._stepUrl(name, fc, idx)
@@ -198,21 +200,26 @@ const playbackMethods = {
         }).then(() => {
             if (token.cancelled || this._playTimers[name] !== token) return
             const steps = this._effectiveSteps(fc, name)
-            if (steps <= 1) {
+            // Loop only the steps that have data, so an animation over a
+            // half-published run doesn't stall on blank frames.
+            const playable = Array.from({ length: steps }, (_, i) => i).filter(
+                (i) => !this._missingStep(name, fc, i)
+            )
+            if (playable.length <= 1) {
                 this._stopPlay(name)
                 return
             }
             this._setPlayUI(name, 'playing', 1)
-            // Start from step 0 so playback reads as a full run.
-            let idx = 0
-            this._setCardStep(name, fc, idx)
+            // Start from the first playable step so playback reads as a run.
+            let at = 0
+            this._setCardStep(name, fc, playable[at])
             token.timer = setInterval(() => {
                 if (this.state.cards[name]?.cardState !== 'available') {
                     this._stopPlay(name)
                     return
                 }
-                idx = (idx + 1) % steps
-                this._setCardStep(name, fc, idx)
+                at = (at + 1) % playable.length
+                this._setCardStep(name, fc, playable[at])
             }, PLAY_INTERVAL_MS)
         })
     },

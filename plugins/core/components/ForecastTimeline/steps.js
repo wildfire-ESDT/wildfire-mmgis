@@ -63,6 +63,11 @@ const stepMethods = {
         if (this._initHourMismatch(fc)) return
         // Clamp so a stale index never requests an unavailable hour.
         idx = Math.max(0, Math.min(idx, this._effectiveSteps(fc, name) - 1))
+        // An hour with no data behind it must never reach the layer. The tick
+        // click already refuses, but a step also arrives from playback, a run
+        // recovery re-apply and the main timeline, and a hole can open under a
+        // step that was fine when it was picked.
+        if (this._missingStep(name, fc, idx)) return
         const originMs = this._forecastBase(fc)
         const stepMs = stepTime(fc, idx, originMs)
 

@@ -265,6 +265,8 @@ const patchMethods = {
                         // misses so the availability check runs again.
                         invalidateCacheLayer(self._edgeCache, name)
                         invalidateCacheLayer(self._stacStepMiss, name)
+                        invalidateCacheLayer(self._idxSweep, name)
+                        self._forgetIdxMisses()
                     }
                     self._rebuildCards()
                     // Pin BEFORE the toggle adds the pre-built layer so the

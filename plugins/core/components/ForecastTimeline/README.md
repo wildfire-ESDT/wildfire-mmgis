@@ -14,6 +14,7 @@ Cards also check whether their model run actually exists. A run that is not publ
 | `common.js` | Constants, layer kind predicates, shared utils |
 | `time.js` | Run anchoring, step math, all labels |
 | `availability.js` | Probes, probe caches, card state verdicts |
+| `hrrrIndex.js` | Prototype. Per forecast hour availability for HRRR, read from NOAA's GRIB index files |
 | `steps.js` | Applies a step to the live layer, per kind |
 | `cards.js` | Card DOM, handlers, tooltip, TimeUI height layout |
 | `patches.js` | Patch registry, wraps four core methods |
@@ -61,19 +62,10 @@ The kind is detected from the layer itself, nothing extra to configure.
 
 | Kind | Detected by | Step | Probe |
 |---|---|---|---|
-| COG fxx rasters (e.g. HRRR) | `tile`, URL starts `COG:`, has `?fxx=` | rewrite `fxx`, refresh tiles | titiler `/cog/info` |
-| Velocity fxx winds (e.g. HRRR) | `velocity`, has `?fxx=` | fetch gribjson, `setData` | HEAD the gribjson |
+| COG fxx rasters (e.g. HRRR) | `tile`, URL starts `COG:`, has `?fxx=` | rewrite `fxx`, refresh tiles | HRRR: GRIB index per hour, else titiler `/cog/info` |
+| Velocity fxx winds (e.g. HRRR) | `velocity`, has `?fxx=` | fetch gribjson, `setData` | HRRR: GRIB index per hour, else HEAD the gribjson |
 | WMS template | `urlTemplate` plus `__FSTEP__` | substitute step, redraw | 1x1 GetMap of step 1 |
 | STAC collection | `sourceType` is `stac-collection` | shift query end time | items endpoint |
 | Anything else | fallback | time window reload | assumed present |
-
-## Debugging
-
-```js
-window.FTL_DEBUG = true                    // trace the availability chain
-window.ForecastTimeline.state.cards        // stepIndex, collapsed, cardState
-window.ForecastTimeline._edgeCache         // run presence cache
-window.ForecastTimeline._stacPresence      // STAC per step presence
-```
 
 Nothing in the plugin reads `window.ForecastTimeline`. It exists for observation and tests.

@@ -542,10 +542,10 @@
     position: absolute;
     top: 2px;
     right: 2px;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     box-sizing: border-box;
-    border: 2px solid rgba(255, 210, 74, 0.3);
+    border: 1.5px solid rgba(255, 210, 74, 0.3);
     border-top-color: #ffd24a;
     border-radius: 50%;
     animation: ftl-spin 0.8s linear infinite;
@@ -555,6 +555,70 @@
     to {
         transform: rotate(360deg);
     }
+}
+
+/* Retry on a dark forecast hour. The hour is not published yet, so the tick
+   itself does nothing; this asks NOAA about that one hour again. Present on
+   every tick but only shown on a dark fxx one, so painting stays class-only. */
+.ftl-tick-retry {
+    display: none;
+}
+/* A retryable hour keeps full opacity so its button stays findable; the label
+   alone is dimmed. Dimming the whole tick (as future-item does) would drag the
+   button down with it, since opacity applies to the entire subtree. Selectors
+   mirror the future-item block above so this wins on specificity, not just
+   source order. */
+.ftl-card .mmgisTimeUIExpandedItem.ftl-tick-missing,
+#ftl-strip .mmgisTimeUIExpandedItem.ftl-tick-missing,
+.ftl-tick.ftl-tick-missing {
+    opacity: 1 !important;
+}
+.ftl-tick.ftl-tick-missing .ftl-tick-clock,
+.ftl-tick.ftl-tick-missing .ftl-tick-rel {
+    opacity: 0.35;
+}
+.ftl-tick.ftl-tick-missing .ftl-tick-retry {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 11px;
+    height: 11px;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    /* The tick sets pointer-events:none; the button opts back in. */
+    pointer-events: auto !important;
+}
+.ftl-tick.ftl-tick-missing .ftl-tick-retry i {
+    font-size: 10px;
+    line-height: 1;
+}
+/* Keep the first label line clear of the button instead of running under it. */
+.ftl-tick.ftl-tick-missing .ftl-tick-clock {
+    padding-right: 11px;
+}
+.ftl-tick.ftl-tick-missing .ftl-tick-retry:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+}
+/* While the check is in flight the button IS the busy indicator, in the same
+   yellow every other loading state uses. The corner ring would double up with
+   it, so it stands down. */
+.ftl-tick.ftl-tick-missing.ftl-tick-loading .ftl-tick-retry {
+    display: flex;
+    color: #ffd24a;
+}
+.ftl-tick.ftl-tick-missing.ftl-tick-loading .ftl-tick-retry i {
+    animation: ftl-spin 0.8s linear infinite;
+}
+.ftl-tick.ftl-tick-missing.ftl-tick-loading::after {
+    display: none;
 }
 
 /* Init-row "Loading…" (card-level availability check) — yellow so it pops */

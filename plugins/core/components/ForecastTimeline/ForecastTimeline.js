@@ -26,6 +26,7 @@ import L_ from '@basics/Layers_/Layers_'
 
 import timeMixin from './time'
 import availabilityMixin from './availability'
+import hrrrIndexMixin from './hrrrIndex'
 import stepsMixin from './steps'
 import cardsMixin from './cards'
 import patchesMixin from './patches'
@@ -104,6 +105,13 @@ const ForecastTimeline = {
 
         this.state.cards = {}
         this._edgeCache = {}
+        this._idxCache = {}
+        this._idxMissAt = {}
+        this._idxPending = {}
+        this._idxSweep = {}
+        this._gribCache = {}
+        this._gribMissAt = {}
+        this._gribPending = {}
 
         const timeUI = document.getElementById('timeUI')
         if (timeUI) {
@@ -165,6 +173,7 @@ Object.assign(
     ForecastTimeline,
     timeMixin,
     availabilityMixin,
+    hrrrIndexMixin,
     stepsMixin,
     cardsMixin,
     patchesMixin,

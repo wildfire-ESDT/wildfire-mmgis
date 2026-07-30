@@ -1,10 +1,11 @@
 /**
  * Availability. One probe engine, one cache, one verdict flow.
  *
- * A run is either out or it is not; one probe per model run answers for every
- * step. Per kind: COG fxx asks titiler /cog/info at fxx 0, velocity HEADs the
- * gribjson, WMS __FSTEP__ template layers issue a 1x1 GetMap of step 1, and
- * STAC asks the items endpoint.
+ * Per kind: HRRR fxx cards read every hour of the run from NOAA's GRIB index
+ * (hrrrIndex.js), WMS __FSTEP__ template layers issue a 1x1 GetMap of step 1,
+ * and STAC asks the items endpoint. When the index has no verdict the older
+ * single-hour probes stand in: COG fxx asks titiler /cog/info at fxx 0 and
+ * velocity HEADs the gribjson.
  * Probes hit the same services the map renders through, never the Leaflet
  * tiles (the tile pipeline hides failures behind transparent PNGs).
  *
@@ -66,6 +67,10 @@ const availabilityMethods = {
             }
             if (isStacForecast(L_.layers.data[name]))
                 this._resolveStacPresence(name, fc)
+            // HRRR fxx cards resolve their whole tick strip from NOAA's GRIB
+            // index. Kicked here as well as from the run verdict below, so a
+            // card whose run is already cached still gets its per-hour answers.
+            this._resolveFxxPresence(name, fc)
             const base = this._forecastBase(fc)
             const key = `${name}:${base}`
             const cached = this._edgeCache[key]
@@ -163,7 +168,13 @@ const availabilityMethods = {
             )
         }
         if (!isFxxLayer(ld)) return Promise.resolve(true)
-        return this._probeFxx(name, fc, 0)
+        // The index knows every hour of the run, so it answers rather than a
+        // single witness hour. Null means it doesn't apply here (not HRRR,
+        // unknown product, switched off, or the bucket was unreachable) and the
+        // fxx 0 probe stands in.
+        return this._idxRunPresent(name, fc).then((present) =>
+            present === null ? this._probeFxx(name, fc, 0) : present
+        )
     },
 
     // Turn a run verdict into card state.

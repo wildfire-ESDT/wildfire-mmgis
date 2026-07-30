@@ -72,6 +72,7 @@ const cardMethods = {
         this._adjustTimeUIHeight()
 
         pruneCacheInactive(this._edgeCache, activeNames)
+        pruneCacheInactive(this._idxSweep, activeNames)
         this._probeAllAnchors()
     },
 
@@ -115,9 +116,11 @@ const cardMethods = {
             ? `<button class="ftl-card-play" data-layer="${escHtml(name)}" type="button" title="Play forecast animation" aria-label="Play forecast animation"><i class="mdi mdi-play"></i></button>`
             : ''
 
+        // The retry button rides on every tick and only shows on a dark one
+        // (see .ftl-tick-missing in the CSS), so painting never has to build DOM.
         const ticks = Array.from({ length: steps }, (_, i) => {
             const { clock, rel } = this._tickLabels(fc, i, originBase)
-            return `<div class="ftl-tick mmgisTimeUIExpandedItem ftl-tick-twoline" data-layer="${escHtml(name)}" data-step="${i}"><span class="ftl-tick-clock">${clock}</span><span class="ftl-tick-rel">${rel}</span></div>`
+            return `<div class="ftl-tick mmgisTimeUIExpandedItem ftl-tick-twoline" data-layer="${escHtml(name)}" data-step="${i}"><span class="ftl-tick-clock">${clock}</span><span class="ftl-tick-rel">${rel}</span><button class="ftl-tick-retry" data-layer="${escHtml(name)}" data-step="${i}" type="button" tabindex="-1" title="Check for this hour again" aria-label="Check for this hour again"><i class="mdi mdi-refresh"></i></button></div>`
         }).join('')
 
         // Daily/monthly cards use fixed-width steps (see CSS) so a lone tick
@@ -196,24 +199,34 @@ const cardMethods = {
         container.querySelectorAll(`.ftl-tick[data-layer="${escSel(name)}"]`).forEach((el) => {
             el.addEventListener('click', () => {
                 const idx = parseInt(el.dataset.step)
+                // A dark hour has nothing to load; its retry button owns it.
+                if (this._missingStep(name, fc, idx)) return
                 this._setCardStep(name, fc, idx)
+            })
+        })
+        // Retry one dark hour. Steps onto it when it turns out to be there now.
+        container.querySelectorAll(`.ftl-tick-retry[data-layer="${escSel(name)}"]`).forEach((el) => {
+            el.addEventListener('click', (e) => {
+                // Don't let the tick behind it also handle the press.
+                e.stopPropagation()
+                const idx = parseInt(el.dataset.step)
+                this._retryFxxStep(name, fc, idx).then((present) => {
+                    if (present) this._setCardStep(name, fc, idx)
+                })
             })
         })
         container.querySelector(`.ftl-card-collapse-btn[data-layer="${escSel(name)}"]`)
             ?.addEventListener('click', () => {
                 this._toggleCardCollapsed(name)
             })
-        // Prev/next skip STAC steps whose period has no data; for other
-        // layers every step is eligible so this walks exactly one step.
+        // Prev/next skip steps with no data behind them, an empty STAC period
+        // or an unpublished HRRR forecast hour. Where every step is eligible
+        // this walks exactly one step.
         const stepBy = (dir) => {
             const cur = this.state.cards[name]?.stepIndex ?? 0
             const max = this._effectiveSteps(fc, name) - 1
             let idx = cur + dir
-            while (
-                idx >= 0 &&
-                idx <= max &&
-                this._stacMissingStep(name, fc, idx)
-            )
+            while (idx >= 0 && idx <= max && this._missingStep(name, fc, idx))
                 idx += dir
             if (idx < 0 || idx > max) return
             this._setCardStep(name, fc, idx)
@@ -342,7 +355,7 @@ const cardMethods = {
     // Tick classes + step-button disabling derived from card state. Used by
     // _renderCardStep AND _setCardState so they can never drift. STAC cards
     // stay navigable while unavailable; loading pulses (skeleton) while dark
-    // is reserved for unavailable/failed; a missing STAC step is never active.
+    // is reserved for unavailable/failed; a step with no data is never active.
     _paintCardTicks: function (card, name, fc) {
         const state = this.state.cards[name]?.cardState ?? 'available'
         const disabled = state !== 'available'
@@ -359,7 +372,7 @@ const cardMethods = {
         // The gate skips the presence sweep, so an uninitialized card would
         // otherwise wear the skeleton pulse forever.
         const presenceReady =
-            state === 'uninitialized' || this._stacPresenceReady(name, fc)
+            state === 'uninitialized' || this._presenceReady(name, fc)
 
         // Card-level state classes assert on EVERY paint (state changes and
         // refreshes alike) so no repaint can leave a stale combination, e.g.
@@ -375,7 +388,12 @@ const cardMethods = {
         card.classList.toggle('ftl-card-navigable', navigable)
 
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
-            const missing = this._stacMissingStep(name, fc, i)
+            const missing = this._missingStep(name, fc, i)
+            // Only an fxx hour can be retried; a STAC period has no button.
+            el.classList.toggle(
+                'ftl-tick-missing',
+                missing && this._fxxMissingStep(name, fc, i)
+            )
             el.classList.toggle('ftl-tick-skeleton', loading || !presenceReady)
             el.classList.toggle(
                 'ftl-future-item',

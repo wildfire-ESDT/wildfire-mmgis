@@ -29,6 +29,14 @@
             "type": "checkbox",
             "width": 6,
             "defaultChecked": false
+          },
+          {
+            "field": "variables.perHourAvailability",
+            "name": "Per-Hour Availability (Experimental)",
+            "description": "Checks each HRRR forecast hour against NOAA's GRIB index instead of judging the whole run from forecast hour 0. A run publishes its hours one at a time, so this marks the card available as soon as any hour is out, darkens the hours that are not, and gives each dark hour a retry button. Costs one small request per forecast hour per run, shared across every HRRR card.",
+            "type": "checkbox",
+            "width": 6,
+            "defaultChecked": false
           }
         ]
       }
