@@ -240,7 +240,7 @@ const timeMethods = {
     },
 
     // Two-line tick label, shared by build and refresh so they always agree.
-    // Hourly "9 AM"/"h1", daily "May 13"/"+N", monthly and showWindow cards
+    // Hourly "7/29 - 9 AM"/"h1", daily "May 13"/"+N", monthly and showWindow cards
     // full windows.
     _tickLabels: function (fc, i, originBase) {
         const unit = fc.stepUnit || 'hour'
@@ -265,8 +265,9 @@ const timeMethods = {
             }
         }
 
+        const stepDate = new Date(stepMs)
         return {
-            clock: new Date(stepMs).toLocaleString('en-US', TIME_HOUR),
+            clock: `${stepDate.toLocaleDateString('en-US', DATE_NUMERIC)} - ${stepDate.toLocaleTimeString('en-US', TIME_HOUR)}`,
             rel: `h${i + (fc.stepOffset || 0)}`,
         }
     },
