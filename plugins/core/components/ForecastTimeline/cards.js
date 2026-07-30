@@ -61,11 +61,14 @@ const cardMethods = {
             layers.forEach(({ name, config: fc }) => {
                 this._attachCardHandlers(name, fc, strip)
                 this._renderCardStep(name, fc, strip)
-                this._attachLoadIndicator(name)
                 const cs = this.state.cards[name]?.cardState
                 if (cs && cs !== 'available') {
                     this._setCardState(name, cs)
                 }
+                // After the state pass, not before: _setCardState clears tick
+                // spinners for a card that isn't available yet, which would
+                // wipe the one attaching starts for a layer already loading.
+                this._attachLoadIndicator(name)
             })
             this._attachTabHandlers(strip)
         }
@@ -559,6 +562,16 @@ const cardMethods = {
                 const originBase = this._forecastBase(fc || {})
                 initEl.textContent = this._formatInit(originBase, unit, fc || {})
             }
+            // Tiles can still be in flight from while the card was checking;
+            // the disabled branch above cleared their spinner and nothing else
+            // puts it back, so the first step would load silently.
+            if (L_.layers.layer[name]?._loading) {
+                this._setTickLoading(
+                    name,
+                    this.state.cards[name]?.stepIndex ?? 0,
+                    true
+                )
+            }
         }
     },
 
@@ -609,6 +622,10 @@ const cardMethods = {
         leafletLayer.on('load', onLoad)
         leafletLayer.on('tileerror', onLoad)
         this._loadHooks[name] = { layer: leafletLayer, onLoading, onLoad }
+        // A fresh toggle draws the card before the layer is built, so by the
+        // time we hook up the 'loading' event has already fired and the first
+        // step would load with no spinner. Pick the state up from the layer.
+        if (leafletLayer._loading) onLoading()
     },
 
     _detachLoadIndicator: function (name) {

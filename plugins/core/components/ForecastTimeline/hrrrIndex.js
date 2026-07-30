@@ -100,14 +100,14 @@ const hrrrIndexMethods = {
     // Set once when a whole sweep failed to reach the bucket at all.
     _idxBroken: false,
 
-    // Opt in per mission through the component's config page, the same way
-    // experimentalPlayback works. window.FTL_HRRR_IDX = false is a runtime
-    // override for debugging without touching the mission config.
+    // On unless a mission turns it off on the component's config page, so a
+    // config saved before this existed still gets it. window.FTL_HRRR_IDX =
+    // false is a runtime override for debugging without touching the config.
     _idxEnabled: function () {
         if (this._idxBroken) return false
         if (typeof window !== 'undefined' && window.FTL_HRRR_IDX === false)
             return false
-        return this.vars?.perHourAvailability === true
+        return this.vars?.perHourAvailability !== false
     },
 
     // The fields a card needs, or null when the index doesn't apply to it (not
