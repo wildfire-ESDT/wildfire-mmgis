@@ -45,7 +45,6 @@ const PRODUCT_FIELDS = {
     temp_2m: [':TMP:2 m above ground:'],
     pbl_height: [':HPBL:surface:'],
     smoke_massden: [':MASSDEN:8 m above ground:'],
-    precip_rate: [':PRATE:surface:'],
     rh_2m: [':RH:2 m above ground:'],
     wind_gust: [':GUST:surface:'],
     dewpoint_2m: [':DPT:2 m above ground:'],
