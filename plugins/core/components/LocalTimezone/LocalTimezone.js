@@ -110,7 +110,13 @@ const LocalTimezone = {
             return new Date(new Date(timestamp).getTime())
         }
 
-        TimeUI._calculateRangePositions = function (containerType) {
+        // In Point mode the sliding range bar is meaningless and distracting —
+        // suppress it so only the .selected button underline shows position.
+        TimeUI._calculateRangePositions = function (_containerType) {
+            return { startPercent: 0, endPercent: 0, startPeriod: null, endPeriod: null }
+        }
+
+        TimeUI._calculateRangePositions_DISABLED = function (containerType) {
             // Use display-tz fields for range positions
             const _sDisp = TimeUI._utcToDisplay(TimeUI._startTimestamp)
             const _eDisp = TimeUI._utcToDisplay(TimeUI._endTimestamp)

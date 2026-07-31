@@ -391,17 +391,41 @@
     pointer-events: none;
 }
 
+/* STAC forecast cards keep their controls LIVE while
+   unavailable: the init-row warning names the missing period, but prev/next
+   and the ticks stay clickable so steps that DO exist remain reachable.
+   The JS adds .ftl-card-navigable alongside .ftl-card-unavailable. */
+.ftl-card-unavailable.ftl-card-navigable .ftl-card-prev,
+.ftl-card-unavailable.ftl-card-navigable .ftl-card-next {
+    background: rgba(0, 0, 0, 0.25);
+    color: rgba(255, 255, 255, 0.75);
+    cursor: pointer;
+    pointer-events: auto;
+}
+.ftl-card-unavailable.ftl-card-navigable .ftl-ticks-wrap {
+    pointer-events: auto;
+}
+
 /* ── Forecast card ticks ──
    Every step — hourly, daily, whatever — is the SAME fixed width so all cards
    line up. Tracks with more steps than fit (24h, 48h) overflow and scroll
    horizontally (.ftl-ticks-wrap) rather than squishing steps to fit. */
 .ftl-card .mmgisTimeUIExpandedItem {
-    /* Sized so the densest label (WFPI's "12/30–12/31" / "5PM–5PM") sits with
-       a little air on each side, not flush against the tick edges. */
+    /* Sized so the densest label (a "12/30–12/31" / "5PM–5PM" window) sits
+       with a little air on each side, not flush against the tick edges. */
     padding: 6px 8px;
     font-size: 11px;
     flex: 0 0 78px;
     min-width: 78px;
+    box-sizing: border-box;
+}
+
+/* ── Main timeline expanded rows: hide sliding range bar, underline selected ── */
+.mmgisTimeUIExpandedRowRange {
+    display: none !important;
+}
+.mmgisTimeUIExpandedItem.selected {
+    border-bottom: 2px solid var(--color-h);
     box-sizing: border-box;
 }
 
@@ -429,8 +453,7 @@
      - .ftl-tick.active / .active          (opacity:1 !important) */
 .ftl-card .mmgisTimeUIExpandedItem.ftl-future-item,
 #ftl-strip .mmgisTimeUIExpandedItem.ftl-future-item,
-.ftl-tick.ftl-future-item,
-.ftl-tick-large.ftl-future-item {
+.ftl-tick.ftl-future-item {
     opacity: 0.3 !important;
     pointer-events: none !important;
     cursor: default !important;
@@ -519,10 +542,10 @@
     position: absolute;
     top: 2px;
     right: 2px;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     box-sizing: border-box;
-    border: 2px solid rgba(255, 210, 74, 0.3);
+    border: 1.5px solid rgba(255, 210, 74, 0.3);
     border-top-color: #ffd24a;
     border-radius: 50%;
     animation: ftl-spin 0.8s linear infinite;
@@ -532,6 +555,70 @@
     to {
         transform: rotate(360deg);
     }
+}
+
+/* Retry on a dark forecast hour. The hour is not published yet, so the tick
+   itself does nothing; this asks NOAA about that one hour again. Present on
+   every tick but only shown on a dark fxx one, so painting stays class-only. */
+.ftl-tick-retry {
+    display: none;
+}
+/* A retryable hour keeps full opacity so its button stays findable; the label
+   alone is dimmed. Dimming the whole tick (as future-item does) would drag the
+   button down with it, since opacity applies to the entire subtree. Selectors
+   mirror the future-item block above so this wins on specificity, not just
+   source order. */
+.ftl-card .mmgisTimeUIExpandedItem.ftl-tick-missing,
+#ftl-strip .mmgisTimeUIExpandedItem.ftl-tick-missing,
+.ftl-tick.ftl-tick-missing {
+    opacity: 1 !important;
+}
+.ftl-tick.ftl-tick-missing .ftl-tick-clock,
+.ftl-tick.ftl-tick-missing .ftl-tick-rel {
+    opacity: 0.35;
+}
+.ftl-tick.ftl-tick-missing .ftl-tick-retry {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 11px;
+    height: 11px;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    /* The tick sets pointer-events:none; the button opts back in. */
+    pointer-events: auto !important;
+}
+.ftl-tick.ftl-tick-missing .ftl-tick-retry i {
+    font-size: 10px;
+    line-height: 1;
+}
+/* Keep the first label line clear of the button instead of running under it. */
+.ftl-tick.ftl-tick-missing .ftl-tick-clock {
+    padding-right: 11px;
+}
+.ftl-tick.ftl-tick-missing .ftl-tick-retry:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+}
+/* While the check is in flight the button IS the busy indicator, in the same
+   yellow every other loading state uses. The corner ring would double up with
+   it, so it stands down. */
+.ftl-tick.ftl-tick-missing.ftl-tick-loading .ftl-tick-retry {
+    display: flex;
+    color: #ffd24a;
+}
+.ftl-tick.ftl-tick-missing.ftl-tick-loading .ftl-tick-retry i {
+    animation: ftl-spin 0.8s linear infinite;
+}
+.ftl-tick.ftl-tick-missing.ftl-tick-loading::after {
+    display: none;
 }
 
 /* Init-row "Loading…" (card-level availability check) — yellow so it pops */
@@ -608,128 +695,9 @@
     box-shadow: inset 0 -2px 0 0 var(--color-h);
 }
 
-/* Ticks in detached mode — full standalone styling (no mmgisTimeUIExpandedItem base) */
-.ftl-tick-large {
-    flex: 0 0 58px;
-    min-width: 58px;
-    box-sizing: border-box;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 4px;
-    font-size: 12px;
-    color: var(--color-a6);
-    cursor: pointer;
-    white-space: nowrap;
-    border-left: 1px solid var(--color-a2);
-    transition: background 0.15s, color 0.15s;
-    user-select: none;
-    text-align: center;
-}
-.ftl-tick-large:first-child {
-    border-left: none;
-}
-.ftl-tick-large:hover {
-    background: rgba(61, 139, 255, 0.14);
-    color: var(--color-f);
-}
-.ftl-tick-large.active {
-    background: var(--color-o) !important;
-    color: white !important;
-    font-weight: bold;
-    opacity: 1 !important;
-    box-shadow: inset 0 -2px 0 0 var(--color-h);
-}
-
 /* Visibility utility */
 .ftl-hidden {
     display: none !important;
-}
-
-.ftl-picker-label {
-    font-size: 10px;
-    text-transform: uppercase;
-    color: var(--color-a6);
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-}
-
-.ftl-picker-input {
-    background: var(--color-a-5);
-    border: 1px solid var(--color-a1-5);
-    border-radius: 4px;
-    color: var(--color-f);
-    font-size: 12px;
-    font-family: 'roboto', sans-serif;
-    padding: 2px 6px;
-    height: 26px;
-    outline: none;
-}
-.ftl-picker-input:focus {
-    border-color: var(--color-h);
-}
-.ftl-picker-input[type="date"] {
-    width: 130px;
-    cursor: pointer; /* click anywhere opens the native picker */
-}
-.ftl-picker-short {
-    width: 48px;
-    text-align: center;
-    cursor: ns-resize; /* scroll to change value */
-}
-
-.ftl-go-btn {
-    background: var(--color-a1);
-    border: 1px solid var(--color-a2);
-    border-radius: 4px;
-    color: var(--color-f);
-    font-size: 11px;
-    font-family: 'roboto', sans-serif;
-    padding: 2px 10px;
-    height: 26px;
-    cursor: pointer;
-    transition: background 0.15s;
-    white-space: nowrap;
-}
-.ftl-go-btn:hover {
-    background: var(--color-h);
-    color: var(--color-a);
-}
-
-.ftl-close-btn {
-    flex-shrink: 0;
-}
-
-/* Detached card rows */
-.ftl-card-large {
-    height: 54px;
-    min-height: 54px;
-    background: rgba(255, 160, 0, 0.06);
-    border-bottom: 1px solid rgba(255, 180, 0, 0.15);
-}
-.ftl-card-large .ftl-card-header {
-    /* Hug the content (layer name + full "INITIALIZED: … PDT" line) so there's
-       no dead space before the ticks, but keep a floor so short labels still
-       align and a cap so a long name can't run away. The old fixed 220px was
-       too narrow and overflowed the init into the ticks. Detached ticks scroll
-       (overflow-x:auto) so a wider header is free. */
-    width: fit-content;
-    min-width: 240px;
-    max-width: 380px;
-    background: rgba(255, 160, 0, 0.12);
-}
-.ftl-card-large .ftl-card-label {
-    font-size: 12px;
-}
-.ftl-card-large .ftl-card-origin {
-    font-size: 10px;
-}
-.ftl-card-large .ftl-ticks-wrap {
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-a3) transparent;
 }
 
 /* ── Bottom-element offset ──
