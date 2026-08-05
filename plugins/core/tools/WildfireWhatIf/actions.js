@@ -125,6 +125,7 @@ function fetchWindHour(veloUrl, { run, fxx, bbox }) {
         })
         .then((records) => ({
             points: gribjsonToPoints(records),
+            rawRecords: records,
             hrrr_ref: `hrrr.t${cc}z.wrfsfcf${ff}.grib2`,
             date_utc: run.date_utc,
             cycle_utc: run.cycle_utc,
@@ -315,7 +316,7 @@ export function fetchWinds() {
             }
             const patch = {
                 fetchingWinds: false,
-                wind: { base, target: { ...base }, hrrr_ref: data.hrrr_ref, points: data.points },
+                wind: { base, target: { ...base }, hrrr_ref: data.hrrr_ref, points: data.points, rawRecords: data.rawRecords },
             }
             if (data.cycle_utc != null) {
                 patch.hrrrRun = {
@@ -642,6 +643,25 @@ export function renameRun(id, name) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario_id: id, name: name || '' }),
+    }).catch(() => {})
+}
+
+// Delete a run from local state and from the DB-backed history.
+export function deleteRun(id) {
+    const s = S.getState()
+    if (!s.jobs[id]) return
+    const jobs = { ...s.jobs }
+    delete jobs[id]
+    const jobIds = s.jobIds.filter((jid) => jid !== id)
+    const patch = { jobs, jobIds }
+    if (s.activeJobId === id) {
+        patch.activeJobId = null
+        patch.showActiveJson = false
+        map.removeMockSpread()
+    }
+    S.setState(patch)
+    mmgisFetch(`api/whatif-runs/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
     }).catch(() => {})
 }
 

@@ -96,6 +96,54 @@ export function removeWindVectors() {
     remove('wind')
 }
 
+// ─── Wind vectors ─────────────────────────────────────────────────────────────
+// The HRRR field is rotated/scaled so its mean matches the edited target —
+// preserving terrain-induced spatial variation in both speed and direction.
+
+export function showWindVectors(points, base, target) {
+    const leafletMap = getMap()
+    if (!leafletMap) return
+    const L = window.L
+    remove('wind')
+
+    const baseMathAng = (Math.PI / 180) * (270 - base.direction_deg)
+    const targetMathAng = (Math.PI / 180) * (270 - target.direction_deg)
+    const deltaAng = targetMathAng - baseMathAng
+    const speedScale = target.speed_ms / (base.speed_ms || 1)
+
+    const markers = points.map((pt) => {
+        const localSpeed = Math.sqrt(pt.u * pt.u + pt.v * pt.v)
+        const localAng = Math.atan2(pt.v, pt.u)
+        const speed = localSpeed * speedScale
+        const ang = localAng + deltaAng
+        const u = speed * Math.cos(ang)
+        const v = speed * Math.sin(ang)
+
+        const color = speedColor(speed)
+        const len = Math.max(10, Math.min(32, 8 + speed * 1.6))
+        const half = len / 2
+        const box = len + 12
+        const angDeg = (Math.atan2(-v, u) * 180) / Math.PI
+        const arrow = `M ${-half} 0 H ${half} M ${half} 0 L ${half - 6} -3.6 M ${half} 0 L ${half - 6} 3.6`
+        const svg =
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${box}" height="${box}" viewBox="${-box / 2} ${-box / 2} ${box} ${box}" style="overflow:visible">` +
+            `<g transform="rotate(${angDeg})" stroke-linecap="round" stroke-linejoin="round" fill="none">` +
+            `<path d="${arrow}" stroke="rgba(10,14,20,0.85)" stroke-width="4"/>` +
+            `<path d="${arrow}" stroke="${color}" stroke-width="1.8"/>` +
+            `</g></svg>`
+        return L.marker([pt.lat, pt.lon], {
+            icon: L.divIcon({
+                html: svg,
+                className: 'ww-wind-arrow-icon',
+                iconSize: [box, box],
+                iconAnchor: [box / 2, box / 2],
+            }),
+            interactive: false,
+        })
+    })
+    refs.wind = L.layerGroup(markers).addTo(leafletMap)
+}
+
 export function showMockSpread(spreadRing, perimRing) {
     const leafletMap = getMap()
     if (!leafletMap) return
@@ -135,55 +183,6 @@ export function clearScenarioLayers() {
     remove('bbox')
     remove('wind')
     remove('mockSpread')
-}
-
-// ─── Wind vectors ─────────────────────────────────────────────────────────────
-// The HRRR field is rotated/scaled so its mean matches the edited target —
-// preserving terrain-induced spatial variation in both speed and direction.
-
-export function showWindVectors(points, base, target) {
-    const leafletMap = getMap()
-    if (!leafletMap) return
-    const L = window.L
-    remove('wind')
-
-    const baseMathAng = (Math.PI / 180) * (270 - base.direction_deg)
-    const targetMathAng = (Math.PI / 180) * (270 - target.direction_deg)
-    const deltaAng = targetMathAng - baseMathAng
-    const speedScale = target.speed_ms / (base.speed_ms || 1)
-
-    const markers = points.map((pt) => {
-        const localSpeed = Math.sqrt(pt.u * pt.u + pt.v * pt.v)
-        const localAng = Math.atan2(pt.v, pt.u)
-        const speed = localSpeed * speedScale
-        const ang = localAng + deltaAng
-        const u = speed * Math.cos(ang)
-        const v = speed * Math.sin(ang)
-
-        const color = speedColor(speed)
-        const len = Math.max(10, Math.min(32, 8 + speed * 1.6))
-        const half = len / 2
-        const box = len + 12
-        const angDeg = (Math.atan2(-v, u) * 180) / Math.PI
-        const arrow = `M ${-half} 0 H ${half} M ${half} 0 L ${half - 6} -3.6 M ${half} 0 L ${half - 6} 3.6`
-        const svg =
-            `<svg xmlns="http://www.w3.org/2000/svg" width="${box}" height="${box}" viewBox="${-box / 2} ${-box / 2} ${box} ${box}" style="overflow:visible">` +
-            `<g transform="rotate(${angDeg})" stroke-linecap="round" stroke-linejoin="round" fill="none">` +
-            // dark halo for contrast on any basemap
-            `<path d="${arrow}" stroke="rgba(10,14,20,0.85)" stroke-width="4"/>` +
-            `<path d="${arrow}" stroke="${color}" stroke-width="1.8"/>` +
-            `</g></svg>`
-        return L.marker([pt.lat, pt.lon], {
-            icon: L.divIcon({
-                html: svg,
-                className: 'ww-wind-arrow-icon',
-                iconSize: [box, box],
-                iconAnchor: [box / 2, box / 2],
-            }),
-            interactive: false,
-        })
-    })
-    refs.wind = L.layerGroup(markers).addTo(leafletMap)
 }
 
 // ─── Interactive perimeter drawing ────────────────────────────────────────────

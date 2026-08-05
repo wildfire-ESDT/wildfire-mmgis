@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import useWhatIfStore, { PAGE_SIZE } from '../store'
-import { selectRun, renameRun, downloadSpreadGeoJSON, downloadSpreadPNG } from '../actions'
+import { selectRun, renameRun, deleteRun, downloadSpreadGeoJSON, downloadSpreadPNG } from '../actions'
 import { dirLabel } from '../utils'
 import { Button } from '@design/components'
 
@@ -181,6 +181,16 @@ export default function RunsList() {
                                 </span>
                                 <span className="ww-job-time">
                                     {new Date(job.startedAt).toLocaleString()}
+                                </span>
+                                <span
+                                    className="ww-job-delete"
+                                    title="Delete run"
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (window.confirm(`Delete "${job.name || id}"?`)) deleteRun(id)
+                                    }}
+                                >
+                                    ✕
                                 </span>
                             </div>
                             {isActive && (

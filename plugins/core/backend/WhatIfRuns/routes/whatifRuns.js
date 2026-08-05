@@ -91,4 +91,41 @@ router.post("/", function (req, res) {
     });
 });
 
+/**
+ * Deletes a single run by scenario_id.
+ */
+router.delete("/:scenario_id", function (req, res) {
+  const scenario_id = req.params.scenario_id;
+  if (!scenario_id) {
+    return res.status(400).send({
+      status: "failure",
+      message: "scenario_id is required.",
+      body: {},
+    });
+  }
+  WhatIfRun.destroy({ where: { scenario_id } })
+    .then((count) => {
+      if (count === 0) {
+        return res.status(404).send({
+          status: "failure",
+          message: "Run not found.",
+          body: {},
+        });
+      }
+      res.send({
+        status: "success",
+        message: "Successfully deleted run.",
+        body: { scenario_id },
+      });
+    })
+    .catch((err) => {
+      logger("error", "Failed to delete run.", "WhatIfRuns", null, err);
+      res.status(500).send({
+        status: "failure",
+        message: "Failed to delete run.",
+        body: {},
+      });
+    });
+});
+
 module.exports = router;

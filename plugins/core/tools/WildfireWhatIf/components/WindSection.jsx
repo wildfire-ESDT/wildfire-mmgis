@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import useWhatIfStore from '../store'
 import { fetchWinds, setWind, resetWind } from '../actions'
 import { dirLabel, msToMph } from '../utils'
@@ -35,6 +35,7 @@ export default function WindSection() {
     const hrrrRun = useWhatIfStore((s) => s.hrrrRun)
     const windStale = useWhatIfStore((s) => s.windStale)
     const wind = useWhatIfStore((s) => s.wind)
+    const [editOpen, setEditOpen] = useState(false)
 
     const target = wind && wind.target
     const edited =
@@ -65,9 +66,13 @@ export default function WindSection() {
             )}
             {wind && !fetchingWinds && (
                 <div className="ww-hour-tools">
-                    <Button size="sm" onClick={() => fetchWinds()}>
+                    <button
+                        type="button"
+                        className="ww-refetch-btn"
+                        onClick={() => fetchWinds()}
+                    >
                         Refetch Latest Wind
-                    </Button>
+                    </button>
                 </div>
             )}
 
@@ -105,57 +110,69 @@ export default function WindSection() {
                                 ? `edited (observed: ${wind.base.speed_ms} m/s @ ${wind.base.direction_deg}°)`
                                 : 'HRRR observed'}
                         </span>
+                        <button
+                            type="button"
+                            className="ww-edit-winds-toggle"
+                            title="Adjust wind speed (m/s) and direction (rotate from which compass bearing the wind originates)"
+                            onClick={() => setEditOpen((o) => !o)}
+                        >
+                            {editOpen ? 'Hide' : 'Modify winds'}
+                        </button>
                     </div>
 
-                    <div className="ww-slider-row">
-                        <span className="ww-slider-label">Speed</span>
-                        <Slider
-                            min={0}
-                            max={30}
-                            step={0.1}
-                            value={Number(target.speed_ms)}
-                            onValueChange={(v) =>
-                                setWind('speed_ms', Array.isArray(v) ? v[0] : v)
-                            }
-                        />
-                        <span className="ww-slider-val">
-                            {Number(target.speed_ms).toFixed(1)} m/s ·{' '}
-                            {msToMph(target.speed_ms)} mph
-                        </span>
-                    </div>
-                    <div className="ww-slider-row">
-                        <span className="ww-slider-label">From</span>
-                        <Slider
-                            min={0}
-                            max={359}
-                            step={1}
-                            value={Number(target.direction_deg)}
-                            onValueChange={(v) =>
-                                setWind(
-                                    'direction_deg',
-                                    Array.isArray(v) ? v[0] : v
-                                )
-                            }
-                        />
-                        <span className="ww-slider-val">
-                            {Math.round(target.direction_deg)}°{' '}
-                            {dirLabel(target.direction_deg)}
-                        </span>
-                    </div>
+                    {editOpen && (
+                        <>
+                            <div className="ww-slider-row">
+                                <span className="ww-slider-label">Speed</span>
+                                <Slider
+                                    min={0}
+                                    max={30}
+                                    step={0.1}
+                                    value={Number(target.speed_ms)}
+                                    onValueChange={(v) =>
+                                        setWind('speed_ms', Array.isArray(v) ? v[0] : v)
+                                    }
+                                />
+                                <span className="ww-slider-val">
+                                    {Number(target.speed_ms).toFixed(1)} m/s ·{' '}
+                                    {msToMph(target.speed_ms)} mph
+                                </span>
+                            </div>
+                            <div className="ww-slider-row">
+                                <span className="ww-slider-label">From</span>
+                                <Slider
+                                    min={0}
+                                    max={359}
+                                    step={1}
+                                    value={Number(target.direction_deg)}
+                                    onValueChange={(v) =>
+                                        setWind(
+                                            'direction_deg',
+                                            Array.isArray(v) ? v[0] : v
+                                        )
+                                    }
+                                />
+                                <span className="ww-slider-val">
+                                    {Math.round(target.direction_deg)}°{' '}
+                                    {dirLabel(target.direction_deg)}
+                                </span>
+                            </div>
 
-                    {edited && (
-                        <div className="ww-hour-tools">
-                            <Button size="sm" onClick={() => resetWind()}>
-                                Reset to Observed
-                            </Button>
-                        </div>
+                            {edited && (
+                                <div className="ww-hour-tools">
+                                    <Button size="sm" onClick={() => resetWind()}>
+                                        Reset to Observed
+                                    </Button>
+                                </div>
+                            )}
+
+                            <div className="ww-wind-legend">
+                                <span>0</span>
+                                <div className="ww-wind-legend-bar" />
+                                <span>15+ m/s</span>
+                            </div>
+                        </>
                     )}
-
-                    <div className="ww-wind-legend">
-                        <span>0</span>
-                        <div className="ww-wind-legend-bar" />
-                        <span>15+ m/s</span>
-                    </div>
                 </>
             )}
         </>

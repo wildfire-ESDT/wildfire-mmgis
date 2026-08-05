@@ -12,7 +12,7 @@ const useWhatIfStore = create((set) => ({
     perimeterSource: null, // 'drawn' | 'uploaded' | 'selected' (map click) | 'run'
     bboxBounds: null, // [[latMin,lonMin],[latMax,lonMax]] — perimeter extent + buffer
     // Wind — null until fetched; {speed_ms, direction_deg} base + editable target
-    wind: null, // {base:{speed_ms,direction_deg}, target:{speed_ms,direction_deg}, hrrr_ref, points}
+    wind: null, // {base:{speed_ms,direction_deg}, target:{speed_ms,direction_deg}, hrrr_ref, points, rawRecords}
     hrrrRun: null, // {date_utc, cycle_utc, source} — latest cycle Veloserver had
     windStale: false, // perimeter moved after wind was fetched
     fetchingWinds: false,
