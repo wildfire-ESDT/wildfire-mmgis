@@ -29,7 +29,7 @@ const { sequelize } = require("../API/connection");
 
 const setups = require("../API/setups");
 
-const { updateTools, updateComponents } = require("../API/updateTools");
+const { updateTools, updateComponents, updateInteractions } = require("../API/updateTools");
 
 const { websocket } = require("../API/websocket");
 
@@ -745,6 +745,9 @@ setups.getBackendSetups(function (setups) {
 
     console.log(chalk.cyan("\nPlugging in Components..."));
     updateComponents();
+
+    console.log(chalk.cyan("\nPlugging in Interactions..."));
+    updateInteractions();
   }
 
   //////Setups Init//////
@@ -882,7 +885,6 @@ function setupDevServer() {
   const HOST = "localhost";
   const config = configFactory("development");
   const protocol = process.env.HTTPS === "true" ? "https" : "http";
-  const isInteractive = process.stdout.isTTY;
   const { URL } = require("url");
   const lanUrl = new URL(`${protocol}://${HOST}:${port}${paths.publicUrlOrPath.slice(0, -1)}`);
   const urls = {
@@ -955,10 +957,6 @@ function setupDevServer() {
     if (err) {
       return console.log(err);
     }
-    if (isInteractive) {
-      console.clear();
-    }
-
     // We used to support resolving modules according to `NODE_PATH`.
     // This now has been deprecated in favor of jsconfig/tsconfig.json
     // This lets you use absolute paths in imports inside large monorepos:

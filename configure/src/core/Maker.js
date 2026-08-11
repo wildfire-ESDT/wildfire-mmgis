@@ -48,6 +48,7 @@ import Map from "../components/Map/Map";
 import VideoPreview from "../components/VideoPreview/VideoPreview";
 import ColorButton from "../components/ColorButton/ColorButton";
 import ThemePreview from "../components/ThemePreview/ThemePreview";
+import InteractionEditor from "../components/Tabs/Layers/Interactions/InteractionEditor";
 import MDEditor from "@uiw/react-md-editor";
 import CodeMirror from "@uiw/react-codemirror";
 import { json } from "@codemirror/lang-json";
@@ -1605,6 +1606,13 @@ const getComponent = (
           {section}
         </div>
       );
+    case "interactions":
+      return (
+        <InteractionEditor
+          layer={layer}
+          updateConfiguration={updateConfiguration}
+        />
+      );
     case "map":
       return (
         <div className={c.map} style={{ height: com.height || "200px" }}>
@@ -1623,7 +1631,11 @@ const getComponent = (
       let tools = configuration?.tools || null;
       tools = tools
         .filter((tool) => {
-          return tool?.separatedTool !== true && tool?.on !== false;
+          return (
+            tool?.separatedTool !== true &&
+            tool?.separatedTool !== "custom" &&
+            tool?.on !== false
+          );
         })
         .map((tool) => tool.name);
 
@@ -1846,7 +1858,7 @@ export default function Maker(props) {
   if (toolName) tool = getToolFromConfiguration(toolName, configuration);
 
   let component = null;
-  if (componentName) component = getComponentFromConfiguration(componentName, configuration);
+  if (componentName) component = getComponentFromConfiguration(componentName, configuration) || {};
 
   const updateConfiguration = (
     keyPath,
@@ -1866,9 +1878,9 @@ export default function Maker(props) {
         keyPath.split("."),
         value
       );
-    } else if (component != null) {
+    } else if (componentName != null) {
       updateComponentInConfiguration(
-        component.name,
+        componentName,
         nextConfiguration,
         keyPath.split("."),
         value
