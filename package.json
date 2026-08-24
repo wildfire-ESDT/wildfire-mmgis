@@ -1,6 +1,6 @@
 {
   "name": "mmgis",
-  "version": "5.3.5-20260813",
+  "version": "5.3.12-20260824",
   "description": "A web-based mapping and localization solution for science operation on planetary missions.",
   "homepage": "build",
   "repository": {
@@ -136,6 +136,9 @@
     "http-proxy-middleware": "3.0.5",
     "isomorphic-ws": "5.0.0",
     "jquery": "^3.5.1",
+    "leaflet": "^1.9.4",
+    "leaflet-geometryutil": "^0.9.1",
+    "leaflet-polylinedecorator": "^1.6.0",
     "lithosphere": "^1.6.0",
     "mark.js": "^8.11.1",
     "memorystore": "^1.6.2",
@@ -259,7 +262,7 @@
     "ajv@^6": "^6.14.0",
     "ajv@^8": "^8.18.0",
     "dottie": "^2.0.7",
-    "svgo": "^3.3.3",
+    "svgo": "3.3.4",
     "underscore": "^1.13.8",
     "diff": "^4.0.4",
     "yaml": "^2.8.3",
