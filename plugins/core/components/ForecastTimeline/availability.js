@@ -159,12 +159,14 @@ const availabilityMethods = {
         }
         const ld = L_.layers.data[name]
         if (isStacForecast(ld)) {
-            // An init-hour run has no item at the init instant itself; its
-            // first valid hour answers for the run.
+            // Probe the same window the step-0 tick queries so the run
+            // verdict matches what the map actually fetches. For init-hour
+            // cards step 0 is the first valid hour; for all others
+            // _stacQueryPeriodStart applies the issue-day offset.
             const base = this._forecastBase(fc)
             return this._probeStacStepPresent(
                 name,
-                hasInitHour(fc) ? stepTime(fc, 0, base) : base
+                this._stacQueryPeriodStart(fc, 0, base)
             )
         }
         if (!isFxxLayer(ld)) return Promise.resolve(true)
