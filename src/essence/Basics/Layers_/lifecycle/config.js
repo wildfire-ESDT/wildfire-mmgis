@@ -228,6 +228,9 @@ export async function parseConfig(L_, configData, urlOnLayers) {
             L_.layers.dataFlat.push(d[i])
 
             //Create parsed toggled array based on config layer visibility
+            // If delayedLoad is true and visibility is true, mark as lazy load
+            const shouldDelayLoad = d[i].visibility === true && d[i].delayedLoad === true
+
             L_.layers.on[d[i].name] =
                 d[i].visibility == undefined ? true : d[i].visibility
 
@@ -235,6 +238,14 @@ export async function parseConfig(L_, configData, urlOnLayers) {
             // Toggling header visibility toggles between all-off and previous-on states
             if (LayerTypeRegistry.isStructural(d[i].type))
                 L_.layers.on[d[i].name] = true
+
+            // Track layers that should be lazy loaded after initial load
+            if (shouldDelayLoad && !LayerTypeRegistry.isStructural(d[i].type)) {
+                if (!L_._lazyLoadLayers) L_._lazyLoadLayers = []
+                L_._lazyLoadLayers.push(d[i].name)
+                // Set visibility to false initially so it doesn't block the loading screen
+                L_.layers.on[d[i].name] = false
+            }
 
             //Create parsed opacity array
             let io = d[i].initialOpacity

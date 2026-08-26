@@ -51,6 +51,8 @@ const L_ = {
     _layersParent: {}, // 5 uses
     //
     _localTimeFilterCache: {},
+    // Layers marked for delayed loading (don't block initial load screen)
+    _lazyLoadLayers: [],
     //FUTURES
     FUTURES: {
         site: null,

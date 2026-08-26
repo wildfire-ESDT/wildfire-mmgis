@@ -49,6 +49,7 @@ export function clear(L_) {
     L_._layersLoaded = []
     L_._layersParent = {}
     L_._localTimeFilterCache = {}
+    L_._lazyLoadLayers = []
     L_.FUTURES = {
         site: null,
         mapView: null,
@@ -105,6 +106,21 @@ export function fullyLoaded(L_) {
             $('.LoadingPage').remove()
         }
     )
+
+    // After the loading page is removed, trigger lazy-loaded layers
+    // These layers were marked with delayedLoad: true and visibility: true
+    // They will show loading spinners next to them in the layers panel
+    if (L_._lazyLoadLayers && L_._lazyLoadLayers.length > 0) {
+        setTimeout(() => {
+            L_._lazyLoadLayers.forEach((layerName) => {
+                const layerObj = L_.layers.data[layerName]
+                if (layerObj) {
+                    // Toggle the layer on (it was set to false initially to not block loading)
+                    L_.toggleLayer(layerObj)
+                }
+            })
+        }, 100) // Small delay to ensure UI is ready
+    }
 }
 
 export function setSite(L_, newSite, newView, dontSetGlobe) {
