@@ -100,6 +100,14 @@
                 "type": "checkbox",
                 "width": 2,
                 "defaultChecked": false
+              },
+              {
+                "field": "delayedLoad",
+                "name": "Delayed Initial Load",
+                "description": "Layer not required to fully load before map loads.",
+                "type": "checkbox",
+                "width": 2,
+                "defaultChecked": false
               }
             ]
           },
