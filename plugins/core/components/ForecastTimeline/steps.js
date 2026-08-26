@@ -291,27 +291,19 @@ const stepMethods = {
         }
     },
 
-    // ── STAC datetime pinning ──────────────────────────────
-    // Pin STAC forecast tile requests to an instant (start == end, widened by
-    // one second; a true zero-length interval answers 204). Without this the
-    // open [epoch, end] query matched every item up to the end and composited
-    // a nondeterministic multi-item mosaic. Monthly pins to the requested end
-    // (boundary ends get the boundary's first hour); day/hour floor to the
-    // period start because their items are stamped at a single point.
-    _pinStacInstant: function (ld) {
-        if (!isStacForecast(ld) || ld.type !== 'tile') return
-        const l = L_.layers.layer[ld.name]
-        const t0 = Date.parse(l?.options?.endtime)
-        if (isNaN(t0)) return
-        const unit = ld.time?.forecast?.stepUnit || 'hour'
+    // Given a queried end, returns [start, end] pinned to that instant
+    // (start == end, widened by a second) instead of the wide [epoch, end].
+    // Returns null if ld isn't a pinnable STAC forecast tile.
+    _stacPin: function (ld, endIso) {
+        if (!isStacForecast(ld) || ld.type !== 'tile') return null
+        const t0 = Date.parse(endIso)
+        if (isNaN(t0)) return null
+        const fc = ld.time?.forecast
         const iso = (ms) => new Date(ms).toISOString().split('.')[0] + 'Z'
         // Not the model's init hour: items exist at every valid hour, so the
         // timeline would render one. A zero-length window draws nothing.
-        if (this._initHourMismatch(ld.time?.forecast)) {
-            l.options.starttime = iso(t0)
-            l.options.endtime = iso(t0)
-            return
-        }
+        if (this._initHourMismatch(fc)) return [iso(t0), iso(t0)]
+        const unit = fc?.stepUnit || 'hour'
         if (unit === 'month') {
             const d = new Date(t0)
             const atBoundary =
@@ -319,13 +311,41 @@ const stepMethods = {
                 d.getUTCHours() === 0 &&
                 d.getUTCMinutes() === 0 &&
                 d.getUTCSeconds() === 0
-            l.options.starttime = iso(t0)
-            l.options.endtime = iso(t0 + (atBoundary ? 3600000 : 1000))
-        } else {
-            const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
-            const t = Math.floor(t0 / unitMs) * unitMs
-            l.options.starttime = iso(t)
-            l.options.endtime = iso(t + 1000)
+            return [iso(t0), iso(t0 + (atBoundary ? 3600000 : 1000))]
+        }
+        const unitMs = STEP_UNITS[unit] || STEP_UNITS.hour
+        const t = Math.floor(t0 / unitMs) * unitMs
+        // Widened by one second: a true zero-length interval answers 204
+        // instead of matching the item stamped at that instant.
+        return [iso(t), iso(t + 1000)]
+    },
+
+    // Narrow a live layer's Leaflet options. Fine for a param-only change,
+    // but can't fix an instance a rebuild already baked the epoch start
+    // into; see _pinStacTimeBeforeRebuild for that.
+    _pinStacInstant: function (ld) {
+        const l = L_.layers.layer[ld?.name]
+        const pin = this._stacPin(ld, l?.options?.endtime)
+        if (!pin || !l) return
+        l.options.starttime = pin[0]
+        l.options.endtime = pin[1]
+    },
+
+    // Narrow ld.time itself before the tile type's own timeChange rebuilds
+    // or refreshes the layer, since it reads layerObj.time.start/end straight
+    // into the new options (Tile/map.js). Pinning after the fact races the
+    // moment those options get baked in. Returns a restore(), or null if
+    // there's nothing to pin.
+    _pinStacTimeBeforeRebuild: function (ld) {
+        const pin = this._stacPin(ld, ld?.time?.end)
+        if (!pin) return null
+        const prevStart = ld.time.start
+        const prevEnd = ld.time.end
+        ld.time.start = pin[0]
+        ld.time.end = pin[1]
+        return () => {
+            ld.time.start = prevStart
+            ld.time.end = prevEnd
         }
     },
 

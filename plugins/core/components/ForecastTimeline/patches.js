@@ -1,16 +1,21 @@
 /**
- * Core patches. The plugin never edits core source; it wraps four core
- * methods at runtime through the registry below, and cleanup restores them.
+ * Core patches. The plugin never edits core source; it wraps core methods
+ * at runtime through the registry below, and cleanup restores them.
  *
- *   TimeUI._populateExpandedRows   grey and block future items in the rows
- *   TimeUI._loopTime               stop play/next passing the current hour
- *   TimeControl.setLayerWmsParams  re-apply STAC instant pinning (steps.js)
- *   L_.toggleLayer                 show the card the instant a toggle starts
+ *   TimeUI._populateExpandedRows        grey and block future items in the rows
+ *   TimeUI._loopTime                    stop play/next passing the current hour
+ *   TimeControl.applyTimeParams         re-apply STAC instant pinning (steps.js)
+ *   LayerTypeRegistry.get('tile').map
+ *     .timeChange                       pin ld.time before the tile type's own
+ *                                        (TimeControl.applyTimeParams-bypassing)
+ *                                        main-timeline refresh
+ *   L_.toggleLayer                      show the card the instant a toggle starts
  */
 
 import TimeControl from '@basics/TimeControl_/TimeControl'
 import TimeUI from '@basics/TimeControl_/TimeUI'
 import L_ from '@basics/Layers_/Layers_'
+import LayerTypeRegistry from '@basics/Layers_/registry/LayerTypeRegistry'
 
 import { invalidateCacheLayer } from './common'
 
@@ -221,7 +226,7 @@ const patchMethods = {
         const self = this
         const installed = this._installPatch(
             TimeControl,
-            'setLayerWmsParams',
+            'applyTimeParams',
             (orig) =>
                 function (layer) {
                     orig(layer)
@@ -234,6 +239,33 @@ const patchMethods = {
                 this._pinStacInstant(L_.layers.data[name])
             }
         }
+    },
+
+    // The tile type takes its time window as live request params, so a
+    // main-timeline change never touches TimeControl.applyTimeParams:
+    // reloadLayer dispatches straight to the type's own map.timeChange
+    // (Tile/map.js), which calls the raw applyTimeParams it imported
+    // directly and refreshes the layer itself. That raw call reads the
+    // open epoch start with no pin, so _patchSetLayerWmsParams above never
+    // sees this path. LayerTypeRegistry.get('tile') returns one cached
+    // module object, and wrapping its .map.timeChange here is what
+    // LayerInterface.run actually looks up on every dispatch.
+    _patchTileTimeChange: function () {
+        const self = this
+        const tileMap = LayerTypeRegistry.get('tile')?.map
+        this._installPatch(tileMap, 'timeChange', (orig) =>
+            function (layerObj, ctx) {
+                // timeChange's own body reads layerObj.time and issues the
+                // refresh itself before returning; pinning AFTER orig() is
+                // too late, the un-pinned tiles are already requested.
+                const restore = self._pinStacTimeBeforeRebuild(layerObj)
+                try {
+                    return orig(layerObj, ctx)
+                } finally {
+                    if (restore) restore()
+                }
+            }
+        )
     },
 
     // ── Optimistic card on toggle ──────────────────────────
