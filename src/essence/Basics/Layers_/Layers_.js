@@ -53,6 +53,7 @@ const L_ = {
     _localTimeFilterCache: {},
     // Layers marked for delayed loading (don't block initial load screen)
     _lazyLoadLayers: [],
+    _pendingTimeFilters: {},
     //FUTURES
     FUTURES: {
         site: null,

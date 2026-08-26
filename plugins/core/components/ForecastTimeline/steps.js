@@ -231,7 +231,7 @@ const stepMethods = {
         ld.time.end = queryEndIso
 
         if (ld.type === 'tile') {
-            TimeControl.setLayerWmsParams(ld)
+            TimeControl.applyTimeParams(ld)
             const leafletLayer = L_.layers.layer[name]
             // During a main-timeline change core reloads this layer itself
             // with the identical current-month request; skip the duplicate.
@@ -280,13 +280,10 @@ const stepMethods = {
             // Core notifies subscribers BEFORE updating layer times on a
             // timeline change, so sync time off TimeControl.currentTime first
             // or the card trails a full run across the run boundary.
-            if (
-                typeof TimeControl?.setLayerWmsParams === 'function' &&
-                TimeControl.currentTime
-            ) {
+            if (TimeControl.currentTime) {
                 ld.time.end = TimeControl.currentTime
                 if (TimeControl.startTime) ld.time.start = TimeControl.startTime
-                TimeControl.setLayerWmsParams(ld)
+                TimeControl.applyTimeParams(ld)
             }
             if (L_.layers.on[name]) leafletLayer.redraw()
         } else if (TimeControl?.reloadLayer && L_.layers.on[name]) {
