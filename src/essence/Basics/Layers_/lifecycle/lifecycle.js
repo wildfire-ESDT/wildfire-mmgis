@@ -122,7 +122,7 @@ export function fullyLoaded(L_) {
                     L_.toggleLayer(layerObj)
                 }
             })
-        }, 100) // Small delay to ensure UI is ready
+        }, 1500) // Wait for loading page animation (1400ms) to complete, plus a small buffer
     }
 }
 
