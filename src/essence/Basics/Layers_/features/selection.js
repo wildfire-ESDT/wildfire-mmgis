@@ -15,6 +15,16 @@ export function setActiveFeature(L_, layer) {
         }
     else L_.activeFeature = null
 
+    // Deselecting (clicking empty map space, or another layer's feature
+    // elsewhere): a VectorGrid feature's highlight isn't reachable through
+    // `resetLayerFills`/`highlight` below (both operate on Leaflet
+    // FeatureGroup sub-layers a VectorGrid doesn't have), so nothing else
+    // here would ever clear it — a click on a fire perimeter would stay red
+    // forever otherwise. `selectVectorGridFeature` clears the previously
+    // tracked one itself when selecting a *new* VectorGrid feature, so this
+    // only needs to run for the "select nothing" case.
+    if (layer == null) clearVectorGridHighlight(L_)
+
     L_.setLastActiveFeature(layer)
     L_.resetLayerFills()
     L_.highlight(layer)
@@ -69,20 +79,21 @@ export function highlight(L_, layer, forceColor) {
                 color
             )
         } else {
-            const savedOptions = JSON.parse(JSON.stringify(layer.options))
+            // Leaflet's Canvas renderer (unlike SVG) redraws lazily off
+            // `layer.options` on the next animation frame rather than
+            // painting synchronously, so `.options` must actually hold the
+            // highlight color for it to show up — reverting it right after
+            // `setStyle` (as SVG could get away with, since its DOM update is
+            // synchronous) would silently no-op the highlight under Canvas.
             layer.setStyle({
                 color: color,
                 stroke: color,
                 weight: 4,
             })
-            layer.options = savedOptions
 
             // For some odd reason sometimes the first style does not work
             // This makes sure it does
             setTimeout(() => {
-                const savedOptions2 = JSON.parse(
-                    JSON.stringify(layer.options)
-                )
                 if (
                     layer.options.color != color &&
                     layer.options.stroke != color
@@ -92,7 +103,6 @@ export function highlight(L_, layer, forceColor) {
                         stroke: color,
                         weight: 4,
                     })
-                    layer.options = savedOptions2
                 }
             }, 100)
         }
@@ -208,6 +218,16 @@ export function selectFeature(L_, layerName, feature, relation, field) {
         relation = 0
     }
 
+    // A VectorGrid-backed layer (vectortile — tileset or sliced GeoJSON) has
+    // no Leaflet FeatureGroup `_layers` dict of per-feature sub-layers to
+    // search below; it restyles a feature by id instead (setFeatureStyle).
+    // Detected by duck-typing rather than layer type, since both a tileset
+    // and a sliced grid share this shape.
+    if (layer && typeof layer.setFeatureStyle === 'function') {
+        selectVectorGridFeature(L_, layerName, layer, f)
+        return
+    }
+
     if (layer) {
         const layers = layer._layers
         const layerKeys = Object.keys(layers)
@@ -279,24 +299,26 @@ export function selectFeature(L_, layerName, feature, relation, field) {
             if (lfeatureWithout_.properties?.style != null)
                 delete lfeatureWithout_.properties.style
 
-            // Round both geometries to GEOJSON_PRECISION before comparing
-            // This accounts for precision differences between Cesium (which receives
-            // precision-reduced GeoJSON) and Leaflet (which has full precision)
-            const roundedClickedGeometry = roundGeometry(f.geometry)
-            const roundedLayerGeometry = roundGeometry(
-                layerFeature.geometry
-            )
-
-            const geometryMatch = F_.isEqual(
-                roundedLayerGeometry,
-                roundedClickedGeometry,
-                true
-            )
+            // Check the cheap thing (properties) before the expensive thing
+            // (geometry, which is O(vertices) per comparison) so layers with
+            // many/complex shapes don't pay for a full geometry compare on
+            // every feature that isn't even a properties match.
             const propertiesMatch = F_.isEqual(
                 lfeatureWithout_.properties,
                 featureWithout_.properties,
                 true
             )
+
+            // Round both geometries to GEOJSON_PRECISION before comparing
+            // This accounts for precision differences between Cesium (which receives
+            // precision-reduced GeoJSON) and Leaflet (which has full precision)
+            const geometryMatch =
+                propertiesMatch &&
+                F_.isEqual(
+                    roundGeometry(layerFeature.geometry),
+                    roundGeometry(f.geometry),
+                    true
+                )
 
             if (geometryMatch && propertiesMatch) {
                 if (layers[layerKeys[i + (relation || 0)]] != null) {
@@ -332,6 +354,105 @@ export function selectFeature(L_, layerName, feature, relation, field) {
                 return
             }
         }
+    }
+}
+
+/**
+ * Select a feature on a VectorGrid-backed layer (see `selectFeature`'s
+ * dispatch above): restyle it red on whichever renderer this call came from
+ * (map or globe), and sync the highlight to the other one — the same
+ * two-way behavior `selectFeature`'s Leaflet-FeatureGroup path gives every
+ * other layer type, just reached without a `_layers` dict to search.
+ *
+ * The map and globe resolve "which feature" independently (2D via
+ * `L.VectorGrid`'s own getFeatureId/style.vtId convention, the globe via
+ * GeoJSONSlicer.featureAt for a sliced layer) — this only needs an id both
+ * sides already agree on to restyle the map's copy.
+ */
+// The one VectorGrid feature currently highlighted, if any — there is no
+// per-layer place that already owns "the previous selection" the way a
+// Leaflet FeatureGroup's own restyled sub-layer would, so this is it.
+let _highlightedVectorGrid = null
+
+function clearVectorGridHighlight(L_) {
+    if (_highlightedVectorGrid == null) return
+    const { layer, id } = _highlightedVectorGrid
+    if (typeof layer.resetFeatureStyle === 'function')
+        layer.resetFeatureStyle(id)
+    layer.highlight = null
+    _highlightedVectorGrid = null
+    if (L_.Globe_ && L_.Globe_.clearHighlight) L_.Globe_.clearHighlight()
+}
+
+function selectVectorGridFeature(L_, layerName, layer, f) {
+    const vtId = layer.vtId
+    let id = vtId != null ? f.properties?.[vtId] : null
+
+    // A sliced layer's `f` here is normally the untiled source feature —
+    // what `featureAt` (map click) and a globe click both hand back — which
+    // never carries the id tag only geojson-vt's tile-clipped copies get.
+    // The id is just this feature's position in the same features array
+    // those copies were tagged from (identity first, since a same-view
+    // selection hands back the very object the slicer holds; property match
+    // as a fallback for a feature that crossed from the other view).
+    if (id == null && layer._slicer) {
+        const features = layer._slicer.features
+        let index = features.indexOf(f)
+        if (index === -1)
+            // sameFeature only agrees on an explicit id (feature_id/_.idx)
+            // neither side has here — full property equality is the actual
+            // fallback, for a feature crossing from the other view's own,
+            // separately-fetched slicer instance.
+            index = features.findIndex((candidate) =>
+                F_.isEqual(candidate.properties, f.properties, true)
+            )
+        if (index !== -1) id = index
+    }
+
+    if (id == null) id = f.properties?.__mmgisSourceIndex
+    if (id == null) return
+
+    // A new selection replaces the old one — MMGIS only ever highlights one
+    // feature at a time — so whatever was highlighted before (on this layer
+    // or, since a tool can hop between VectorGrid layers, another one) is
+    // reverted first, same as `resetLayerFills` does for a Leaflet
+    // FeatureGroup layer before `highlight` restyles the new pick.
+    if (
+        _highlightedVectorGrid != null &&
+        (_highlightedVectorGrid.layer !== layer || _highlightedVectorGrid.id !== id)
+    ) {
+        clearVectorGridHighlight(L_)
+    }
+    _highlightedVectorGrid = { layer, id }
+
+    // setFeatureStyle *replaces* a feature's style rather than overlaying it
+    // (createTile falls back to L.Path.prototype.options for anything not
+    // named in the override, not to the feature's own configured style), so
+    // an override naming only the stroke would still lose this layer's own
+    // fill for as long as the feature stays highlighted — keep it explicit
+    // instead of solid-red-filling the whole shape, which is what a highlight
+    // reading `fill: true, fillColor: 'red', fillOpacity: 1` (all of it) does.
+    const baseStyle = L_.layers.data[layerName]?.style || {}
+    // An explicit `undefined` in this object is not "use the default" (same
+    // footgun as GeoJSONSlicer's extent bug) — Leaflet's own L.extend copies
+    // it over the default it was about to fall back to. Only named keys with
+    // a real value should end up in the override.
+    const highlightStyle = {
+        weight: 3,
+        color: 'red',
+        opacity: 1,
+        fill: baseStyle.fill !== false,
+    }
+    if (baseStyle.fillColor != null) highlightStyle.fillColor = baseStyle.fillColor
+    if (baseStyle.fillOpacity != null)
+        highlightStyle.fillOpacity = baseStyle.fillOpacity
+    if (baseStyle.radius != null) highlightStyle.radius = baseStyle.radius
+
+    layer.highlight = id
+    layer.setFeatureStyle(id, highlightStyle)
+
+    if (L_.Globe_ && L_.Globe_.highlight) {
+        L_.Globe_.highlight(layerName, f)
     }
 }
 

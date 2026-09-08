@@ -1187,6 +1187,14 @@ class GlobeRenderer {
                 // A highlight outline would otherwise outlive the feature it
                 // traces (dynamic-extent reload, layer off).
                 this._clearHighlightIn(layerInfo.dataSource)
+                // The same for a sliced layer's highlight, which lives in the
+                // imagery being torn down rather than in a data source.
+                if (
+                    layerInfo.kind === 'sliced' &&
+                    this._highlightedSlicedLayer === layerInfo.slicedLayer
+                ) {
+                    this._highlightedSlicedLayer = null
+                }
                 // Clean up feature mapping
                 if (layerInfo.featureMap) {
                     delete layerInfo.featureMap
@@ -1723,6 +1731,13 @@ class GlobeRenderer {
             }
 
             const entity = this._pickEntityAt(click.position)
+            if (!entity) {
+                // Nothing to pick doesn't mean nothing was clicked: a sliced
+                // layer draws as imagery, so it has no entity for Cesium to
+                // hit. Ask those layers to hit-test the click themselves.
+                this._clickSlicedLayers(click.position)
+                return
+            }
             if (entity) {
 
                 // Find which layer this entity belongs to
@@ -1825,6 +1840,59 @@ class GlobeRenderer {
                 }
             }
         }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
+    }
+
+    /**
+     * The lng/lat a screen position points at on the globe, or null when the
+     * click missed it (sky, off-limb).
+     */
+    _lngLatAt(windowPosition) {
+        const scene = this.renderer.scene
+        // Prefer the terrain-aware pick so a click on a mountainside means the
+        // point the user actually sees; fall back to the ellipsoid where depth
+        // isn't available.
+        const cartesian =
+            scene.pickPosition?.(windowPosition) ||
+            this.renderer.camera.pickEllipsoid(
+                windowPosition,
+                scene.globe.ellipsoid
+            )
+        if (!Cesium.defined(cartesian)) return null
+
+        const cartographic = Cesium.Cartographic.fromCartesian(cartesian)
+        if (!cartographic) return null
+        return [
+            Cesium.Math.toDegrees(cartographic.longitude),
+            Cesium.Math.toDegrees(cartographic.latitude),
+        ]
+    }
+
+    /**
+     * Offer a click to every layer that draws as imagery and hit-tests itself
+     * (`kind: 'sliced'`), topmost first. The first layer with a feature there
+     * takes the click, matching how an entity pick resolves to one feature.
+     */
+    _clickSlicedLayers(windowPosition) {
+        const names = Object.keys(this._layers).filter((name) => {
+            const layerInfo = this._layers[name]
+            return (
+                layerInfo?.kind === 'sliced' &&
+                layerInfo.visible &&
+                typeof layerInfo.pick === 'function'
+            )
+        })
+        if (names.length === 0) return
+
+        const lngLat = this._lngLatAt(windowPosition)
+        if (lngLat == null) return
+
+        for (const name of names) {
+            const layerInfo = this._layers[name]
+            const feature = layerInfo.pick(lngLat[0], lngLat[1])
+            if (feature == null) continue
+            layerInfo.onClick?.(feature, lngLat, { name })
+            return
+        }
     }
 
     /**
@@ -2316,6 +2384,10 @@ class GlobeRenderer {
     _highlightFeatureCesium(layerName, feature) {
         // Find the layer
         const layerInfo = this._layers[layerName]
+        if (layerInfo?.kind === 'sliced') {
+            this._highlightSlicedFeature(layerInfo, feature)
+            return
+        }
         if (!layerInfo || layerInfo.kind !== 'entities') {
             return
         }
@@ -2380,6 +2452,34 @@ class GlobeRenderer {
                 this._highlightEntity(entity)
             }
         }
+    }
+
+    /**
+     * Highlight a feature on a sliced (imagery-drawn) layer.
+     *
+     * There is no entity to restyle, so the layer redraws that one feature in
+     * selection colours. Finding which feature it is is identity-first: a
+     * selection made on the globe hands back the very object the slicer holds,
+     * and only a selection that came from the 2D map (a different object with
+     * the same content) needs the property comparison.
+     */
+    _highlightSlicedFeature(layerInfo, feature) {
+        const slicedLayer = layerInfo.slicedLayer
+        const features = slicedLayer?.slicer?.features
+        if (features == null || feature == null) return
+
+        let index = features.indexOf(feature)
+        if (index === -1)
+            index = features.findIndex((candidate) =>
+                this._compareFeatureProps(
+                    candidate.properties,
+                    feature.properties
+                )
+            )
+        if (index === -1) return
+
+        slicedLayer.setHighlightedFeature(index)
+        this._highlightedSlicedLayer = slicedLayer
     }
 
     /**
@@ -2785,6 +2885,16 @@ class GlobeRenderer {
      * Clear highlight for Cesium
      */
     _clearHighlightCesium() {
+        // A sliced layer's highlight is tracked in `_highlightedSlicedLayer`,
+        // never in `_highlightedEntity` (only the entity-based highlight path
+        // sets that) — this has to run before the entity check below, or a
+        // sliced-only selection would return out before ever reaching it.
+        if (this._highlightedSlicedLayer) {
+            this._highlightedSlicedLayer.setHighlightedFeature(null)
+            this._highlightedSlicedLayer = null
+            this._requestRender()
+        }
+
         if (!this._highlightedEntity) {
             return
         }

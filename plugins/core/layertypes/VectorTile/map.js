@@ -20,8 +20,31 @@ import {
 } from '@basics/InteractionRunner/InteractionRunner'
 import CursorInfo from '@basics/UserInterface_/components/CursorInfo/CursorInfo'
 import './lib/SimplifiedVectorGrid'
+import './lib/LeafletSlicedVectorGrid'
+import { isSliced } from './globe/layerConfig'
+import { resolveFeatureStyle } from './lib/slicedStyle'
+import { SOURCE_INDEX_KEY } from './lib/GeoJSONSlicer'
 
-function make(layerObj, ctx = {}) {
+// The single sublayer name our sliced grid gives generated tiles.
+const SLICED_VT_LAYER = 'sliced'
+
+/** The GeoJSON document behind a sliced layer, or null if it can't be had. */
+async function fetchGeoJSON(url, layerName) {
+    try {
+        const response = await fetch(url)
+        if (!response.ok)
+            throw new Error(`HTTP ${response.status} fetching ${url}`)
+        return await response.json()
+    } catch (err) {
+        console.error(
+            `Failed to fetch GeoJSON for sliced layer "${layerName}":`,
+            err
+        )
+        return null
+    }
+}
+
+async function make(layerObj, ctx = {}) {
     const mctx = MapRenderer.context(ctx.mapContext)
     const L = mctx.raw
     const Map_ = L_.Map_
@@ -36,6 +59,12 @@ function make(layerObj, ctx = {}) {
                 urlSplit[1]
             }` + '&type=mvt&x={x}&y={y}&z={z}'
     }
+
+    // A sliced layer's source is one GeoJSON document rather than a tileset,
+    // so the tiles come from our own GeoJSONSlicer (LeafletSlicedVectorGrid)
+    // instead of per-tile requests. Everything downstream — styling, click,
+    // hover — is the same VectorGrid, so only the factory differs.
+    const sliced = isSliced(layerObj)
 
     var clearHighlight = function () {
         for (let l of Object.keys(L_.layers.data)) {
@@ -102,6 +131,49 @@ function make(layerObj, ctx = {}) {
         )
     }
 
+    // A sliced layer has exactly one sublayer, generated here rather than
+    // authored in the tileset, so it is styled from the layer's own style
+    // fields (resolved per feature, as the globe does) instead of from a
+    // vtLayer map the user would have no way to name.
+    const slicedStyles = {
+        // L.VectorGrid calls this per feature, inline in its own render loop
+        // with no try/catch around it — an exception here doesn't just style
+        // that feature wrong, it aborts the rest of that tile's feature loop
+        // silently (no click/hover for anything the tile hadn't gotten to
+        // yet). Catching defensively here keeps one bad feature from taking
+        // the whole tile's interactivity down with it.
+        [SLICED_VT_LAYER]: (properties) => {
+            try {
+                const style = resolveFeatureStyle(
+                    layerObj.style || {},
+                    properties
+                )
+                return {
+                    color: style.color,
+                    weight: style.weight,
+                    opacity: style.opacity,
+                    fill: true,
+                    fillColor: style.fillColor,
+                    fillOpacity: style.fillOpacity,
+                    radius: style.radius,
+                    // L.SVG._initPath only adds the 'leaflet-interactive'
+                    // CSS class (which is what makes a path's fill, not just
+                    // its stroke, register pointer events) when the path's
+                    // OWN options say so — this is the feature-level style
+                    // object, so it has to be set here, same as any other
+                    // interactive Leaflet path.
+                    interactive: true,
+                }
+            } catch (err) {
+                console.error(
+                    `Sliced style resolution failed for layer "${layerObj.name}":`,
+                    err
+                )
+                return L.Path.prototype.options
+            }
+        },
+    }
+
     // Hide sublayers not explicitly listed in vtLayer styles.
     // Without this, L.vectorGrid renders all sublayers with default blue styling.
     const vtLayerStyles = layerObj.style.vtLayer || {}
@@ -123,21 +195,47 @@ function make(layerObj, ctx = {}) {
 
     var vectorTileOptions = {
         layerName: layerObj.name,
+        // Deliberately L.svg.tile even for sliced layers, not L.canvas.tile:
+        // this vendored bundle's L.Canvas.Tile overrides onAdd to a no-op,
+        // which skips the base Renderer's _initEvents() — its _onClick/
+        // _onMouseMove exist but are never wired to any DOM event, so canvas
+        // tiles in this bundle are silently non-interactive. (Tried it while
+        // chasing a since-fixed crash that turned out to be unrelated to the
+        // renderer — see GeoJSONSlicer's extent-merge fix.)
         rendererFactory: L.svg.tile,
-        vectorTileLayerStyles: resolvedVtLayerStyles,
+        vectorTileLayerStyles: sliced ? slicedStyles : resolvedVtLayerStyles,
         interactive: true,
         minZoom: layerObj.minZoom,
         maxZoom: layerObj.maxZoom,
         maxNativeZoom: layerObj.maxNativeZoom,
+        // Called unconditionally per feature in the vendor library's render
+        // loop with no surrounding try/catch — an exception here silently
+        // drops that feature's interactivity and, per that loop's structure,
+        // every feature after it in the same tile. Caught defensively so a
+        // parse failure on one feature can't take the whole tile down.
         getFeatureId: (function (vtId) {
             return function (f) {
-                if (
-                    f.properties.properties &&
-                    typeof f.properties.properties === 'string'
-                ) {
-                    f.properties = JSON.parse(f.properties.properties)
+                try {
+                    if (
+                        f.properties.properties &&
+                        typeof f.properties.properties === 'string'
+                    ) {
+                        f.properties = JSON.parse(f.properties.properties)
+                    }
+                    // A sliced layer's features come from a GeoJSON document
+                    // that needn't carry a unique property, so fall back to
+                    // the id GeoJSONSlicer stamps on every feature (see
+                    // SOURCE_INDEX_KEY) — without one, selection highlighting
+                    // (setFeatureStyle) has nothing to key on.
+                    const id = f.properties[vtId]
+                    return id != null ? id : f.properties[SOURCE_INDEX_KEY]
+                } catch (err) {
+                    console.error(
+                        `getFeatureId failed for layer "${layerObj.name}":`,
+                        err
+                    )
+                    return undefined
                 }
-                return f.properties[vtId]
             }
         })(layerObj.style.vtId),
     }
@@ -149,20 +247,47 @@ function make(layerObj, ctx = {}) {
         vectorTileOptions.simplifyTolerance = layerObj.simplifyTolerance ?? 4
     }
 
-    const vectorGridFactory =
-        vectorTileOptions.simplifyTolerance > 0
-            ? L.simplifiedVectorGrid.protobuf
-            : L.vectorGrid.protobuf
+    // Slice mode fetches the document up front and tiles it with our own
+    // GeoJSONSlicer (see LeafletSlicedVectorGrid — same slicer the globe
+    // uses, run on the main thread); tileset mode requests tiles as the map
+    // needs them.
+    let grid
+    if (sliced) {
+        const geojson = await fetchGeoJSON(layerUrl, layerObj.name)
+        if (geojson == null) {
+            L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+            L_.Map_.allLayersLoaded()
+            return
+        }
+        grid = L.vectorGrid.geojsonSliced(geojson, {
+            ...vectorTileOptions,
+            vectorTileLayerName: SLICED_VT_LAYER,
+            // geojson-vt stops simplifying here; past it the same geometry is
+            // reused, so this is the layer's full-detail zoom.
+            maxZoom: layerObj.maxNativeZoom ?? layerObj.maxZoom ?? 14,
+            tolerance: layerObj.sliceTolerance ?? 3,
+        })
+    } else {
+        const vectorGridFactory =
+            vectorTileOptions.simplifyTolerance > 0
+                ? L.simplifiedVectorGrid.protobuf
+                : L.vectorGrid.protobuf
+        grid = vectorGridFactory(layerUrl, vectorTileOptions)
+    }
 
-    L_.layers.layer[layerObj.name] = vectorGridFactory(
-        layerUrl,
-        vectorTileOptions
-    )
+    L_.layers.layer[layerObj.name] = grid
         .on('click', function (e, b, x) {
             let layerName = e.target.options.layerName
             let vtId = L_.layers.layer[layerName].vtId
+            // getFeatureId is what setFeatureStyle actually keys highlighting
+            // off of — reading properties[vtId] directly here skips its
+            // fallback (the id geojson-vt generates when a sliced layer's
+            // data carries no configured vtId), so nothing would highlight.
+            const getFeatureId = L_.layers.layer[layerName].options.getFeatureId
             clearHighlight()
-            L_.layers.layer[layerName].highlight = e.layer.properties[vtId]
+            L_.layers.layer[layerName].highlight = getFeatureId
+                ? getFeatureId(e.layer)
+                : e.layer.properties[vtId]
 
             L_.layers.layer[layerName].setFeatureStyle(
                 L_.layers.layer[layerName].highlight,
@@ -200,9 +325,13 @@ function make(layerObj, ctx = {}) {
                             .y <= p.y &&
                         e.layer._renderer._features[i].feature._pxBounds.max
                             .y >= p.y &&
-                        e.layer._renderer._features[i].feature.properties[
-                            vtId
-                        ] != e.layer.properties[vtId]
+                        (getFeatureId
+                            ? getFeatureId(
+                                  e.layer._renderer._features[i].feature
+                              ) != getFeatureId(e.layer)
+                            : e.layer._renderer._features[i].feature
+                                  .properties[vtId] !=
+                              e.layer.properties[vtId])
                     ) {
                         L_.layers.layer[layerName].activeFeatures.push({
                             type: 'Feature',
@@ -238,6 +367,67 @@ function make(layerObj, ctx = {}) {
 
     L_.layers.layer[layerObj.name].vtId = layerObj.style.vtId
     L_.layers.layer[layerObj.name].vtKey = layerObj.style.vtKey
+
+    // The click/hover chain above is DOM-delegated through Leaflet's own
+    // per-tile interactivity, which a protobuf/tileset grid's <svg> (appended
+    // straight to its pane) satisfies but a sliced grid's <svg> (nested one
+    // level deeper, inside GridLayer's own tile-container wrapper) does not
+    // reliably receive. Sliced layers are click/hover-tested directly here
+    // instead, against a definitely-reliable map-level event, and go through
+    // the same L_.selectFeature every other layer type uses — which is what
+    // gives a click the same effect on the globe as on the map, and vice
+    // versa (see selection.js's VectorGrid branch).
+    if (sliced) {
+        const map = Map_.map
+        // Wrapped defensively: these are plain `map.on(...)` listeners, not
+        // scoped to this grid by Leaflet, so a stale one left behind by an
+        // earlier reload of this same layer (if its 'remove' was ever missed)
+        // must not be able to throw and block whichever listener Leaflet
+        // registered after it — including a newer, correct one.
+        const onSlicedClick = (e) => {
+            try {
+                const feature = grid.featureAt(e.latlng, map.getZoom())
+                if (!feature) return
+                L_.selectFeature(layerObj.name, feature)
+                // L_.selectFeature only restyles + syncs the globe; showing
+                // the feature's own properties (incident name, acres, date,
+                // …) in the description panel — and notifying tools such as
+                // WildfireWhatIf, which reads `.feature.geometry` off this
+                // exact notification to draw its own bbox around whatever
+                // was clicked — is a separate, explicit step for every layer
+                // type.
+                //
+                // `feature` is passed through whole and unmodified (not a
+                // renamed/stripped copy): setActiveFeature makes its own
+                // (redundant but harmless when the properties match) globe
+                // highlight call with whatever object it's given, and the
+                // globe matches a 2D-originated selection back to its own
+                // copy by exact property equality — a feature carrying an
+                // extra or renamed key never matches, silently failing that
+                // second call.
+                L_.setActiveFeature({
+                    feature,
+                    properties: feature.properties,
+                    options: { layerName: layerObj.name },
+                })
+            } catch (err) {
+                console.error(
+                    `Sliced click handling failed for layer "${layerObj.name}":`,
+                    err
+                )
+            }
+        }
+        // Bound to the grid's own add/remove (fired by Leaflet whenever this
+        // layer is added to or taken off the map) rather than registered
+        // once here, so toggling the layer off doesn't leave a listener
+        // hit-testing a layer that's no longer showing.
+        grid.on('add', () => {
+            map.on('click', onSlicedClick)
+        })
+        grid.on('remove', () => {
+            map.off('click', onSlicedClick)
+        })
+    }
 
     L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
 

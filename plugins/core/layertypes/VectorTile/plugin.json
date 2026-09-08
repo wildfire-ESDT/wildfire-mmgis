@@ -9,7 +9,7 @@
   "overridable": false,
   "color": "#0792c5",
   "defaultIcon": "GridView",
-  "description": "Mapbox Vector Tile (MVT/PBF) layer rendered with L.vectorGrid on the map, with optional 3D building extrusion on the globe.",
+  "description": "Mapbox Vector Tile (MVT/PBF) layer rendered with L.vectorGrid on the map, with optional 3D building extrusion on the globe. A plain GeoJSON url is instead sliced into tiles in the browser (no pre-tiling, no database) and drawn as draped imagery on the globe.",
   "capabilities": {
     "renderers": {
       "map": { "engines": ["leaflet"] },
@@ -18,8 +18,18 @@
     "map": { "stacking": "raster" },
     "time": false
   },
-  "fileTypes": ["mvt", "pbf"],
+  "fileTypes": ["mvt", "pbf", "geojson", "json"],
   "supportedData": [
+    {
+      "label": "Large GeoJSON, sliced in the browser",
+      "category": "vector-tile",
+      "standards": ["GeoJSON", "RFC 7946"],
+      "formats": ["geojson", "json"],
+      "extensions": [".geojson", ".json"],
+      "urlSchemes": ["path/to/file.geojson", "https://service/features"],
+      "description": "A whole GeoJSON document tiled at runtime with geojson-vt — no tippecanoe step and no geodataset ingest. Each zoom level is simplified independently, so zoomed-out views draw coarse cheap geometry and full detail appears only where you zoom in, keeping globe panning smooth on layers that are too large to draw as vector features. Drawn as draped raster imagery on the globe; clicking still identifies features.",
+      "procurement": "Any service or file returning GeoJSON."
+    },
     {
       "label": "Mapbox Vector Tiles (MVT / PBF)",
       "category": "vector-tile",
@@ -88,7 +98,7 @@
               {
                 "field": "url",
                 "name": "URL",
-                "description": "A file path that points to a geojson. If the path is relative, it will be relative to the mission's directory. The URL must contain a proper placeholder ending such as: {z}/{x}/{y}.png. Alternatively vectors can be served with Geodatasets. Simply go to 'Manage Geodatasets' at the bottom left, upload a geojson and link to it in this URL field with 'geodatasets:{geodataset*name}'",
+                "description": "Either an existing tileset — a URL with a placeholder ending such as {z}/{x}/{y}.pbf, or 'geodatasets:{geodataset_name}' after uploading via 'Manage Geodatasets' — or a plain GeoJSON file/service URL, which is sliced into tiles in the browser at runtime (see the Slicing tab). Relative paths are relative to the mission's directory.",
                 "type": "text",
                 "width": 12,
                 "required": true
@@ -146,6 +156,37 @@
                 "min": 0,
                 "max": 1,
                 "width": 2
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Slicing",
+        "rows": [
+          {
+            "name": "GeoJSON Slicing",
+            "components": [
+              {
+                "field": "sliceEnabled",
+                "name": "Slice GeoJSON Into Tiles",
+                "description": "Tile a plain GeoJSON document in the browser instead of requesting an existing tileset — no tippecanoe step and no geodataset ingest. Each zoom level is simplified independently, so zoomed-out views stay cheap and full detail loads only where you zoom in. This is the fix for a large vector layer that makes panning the globe laggy. Leave unset to decide from the URL: a URL with no {z}/{x}/{y} placeholders and no 'geodatasets:' scheme is sliced.",
+                "type": "checkbox",
+                "width": 12,
+                "defaultChecked": false
+              }
+            ]
+          },
+          {
+            "components": [
+              {
+                "field": "sliceTolerance",
+                "name": "Simplification Tolerance",
+                "description": "How aggressively geometry is simplified at each zoom level, in tile units (default 3). Higher means fewer vertices and faster drawing, at the cost of visible corner-rounding when zoomed out; 0 disables simplification and gives up most of the performance benefit.",
+                "type": "number",
+                "min": 0,
+                "step": 1,
+                "width": 3
               }
             ]
           }
