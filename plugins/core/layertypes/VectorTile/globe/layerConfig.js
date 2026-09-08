@@ -42,6 +42,9 @@ export function toGlobeConfig(layerObj) {
         sliced: isSliced(s),
         sliceTolerance: s.sliceTolerance,
         style: s.style || {},
+        // Only consumed by the sliced hover label (sliceMetadata.pickIncidentName)
+        // — the same field a sliced layer's 2D hover/click already reads.
+        useKeyAsName: s.variables?.useKeyAsName,
         vtLayer:
             s.extrudeVtLayer ||
             (s.style?.vtLayer ? Object.keys(s.style.vtLayer)[0] : 'building'),

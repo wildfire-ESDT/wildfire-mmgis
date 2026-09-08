@@ -24,6 +24,7 @@ import './lib/LeafletSlicedVectorGrid'
 import { isSliced } from './globe/layerConfig'
 import { resolveFeatureStyle } from './lib/slicedStyle'
 import { SOURCE_INDEX_KEY } from './lib/GeoJSONSlicer'
+import { pickIncidentNameKey, frontFacingLabel } from './lib/sliceMetadata'
 
 // The single sublayer name our sliced grid gives generated tiles.
 const SLICED_VT_LAYER = 'sliced'
@@ -404,15 +405,61 @@ async function make(layerObj, ctx = {}) {
                 // globe matches a 2D-originated selection back to its own
                 // copy by exact property equality — a feature carrying an
                 // extra or renamed key never matches, silently failing that
-                // second call.
+                // second call. useKeyAsName points the description panel's
+                // header at whichever real property holds the incident
+                // name, so it's still labeled sensibly without touching the
+                // feature that has to keep matching.
                 L_.setActiveFeature({
                     feature,
                     properties: feature.properties,
+                    useKeyAsName:
+                        pickIncidentNameKey(layerObj, feature.properties) ??
+                        undefined,
                     options: { layerName: layerObj.name },
                 })
             } catch (err) {
                 console.error(
                     `Sliced click handling failed for layer "${layerObj.name}":`,
+                    err
+                )
+            }
+        }
+        const onSlicedHover = (e) => {
+            try {
+                const feature = grid.featureAt(e.latlng, map.getZoom())
+                // No real DOM element under the cursor to carry its own
+                // `cursor: pointer` (we bypass Leaflet's per-tile DOM
+                // interactivity entirely for a sliced layer — see the click
+                // handler above), so the map container's cursor is set by
+                // hand to give the same hand-cursor affordance as any other
+                // clickable layer.
+                map.getContainer().style.cursor = feature ? 'pointer' : ''
+
+                if (!feature) {
+                    CursorInfo.hide()
+                    return
+                }
+
+                const vtKey = layerObj.style.vtKey
+                if (vtKey != null) {
+                    CursorInfo.update(
+                        `${vtKey}: ${feature.properties[vtKey]}`,
+                        null,
+                        false
+                    )
+                    return
+                }
+
+                // No vtKey configured (it's a vector-tile-specific field the
+                // user has no reason to set on a sliced layer) — show the
+                // same "Fire Incident: <name> / Acres: <n>" label the click
+                // header and the globe's hover both use.
+                const label = frontFacingLabel(layerObj, feature.properties)
+                if (label != null) CursorInfo.update(label, null, false)
+                else CursorInfo.hide()
+            } catch (err) {
+                console.error(
+                    `Sliced hover handling failed for layer "${layerObj.name}":`,
                     err
                 )
             }
@@ -423,9 +470,11 @@ async function make(layerObj, ctx = {}) {
         // hit-testing a layer that's no longer showing.
         grid.on('add', () => {
             map.on('click', onSlicedClick)
+            map.on('mousemove', onSlicedHover)
         })
         grid.on('remove', () => {
             map.off('click', onSlicedClick)
+            map.off('mousemove', onSlicedHover)
         })
     }
 

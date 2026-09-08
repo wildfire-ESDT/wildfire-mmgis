@@ -11,6 +11,7 @@ import {
 } from '../Layers_/render/gradientUtils'
 import { getCoordProperties } from '../Layers_/render/ExtendedGeoJSON'
 import F_ from '../Formulae_/Formulae_'
+import CursorInfo from '../UserInterface_/components/CursorInfo/CursorInfo'
 import {
     featureIdentities,
     sameFeature,
@@ -241,6 +242,9 @@ class GlobeRenderer {
 
         // Set up gradient-point hover tooltip
         this._setupGradientHoverHandler()
+
+        // Hover tooltip for layers that hit-test themselves (sliced GeoJSON)
+        this._setupGlobalHoverHandler()
     }
 
     /**
@@ -1893,6 +1897,61 @@ class GlobeRenderer {
             layerInfo.onClick?.(feature, lngLat, { name })
             return
         }
+    }
+
+    /**
+     * Set up the mouse-move hover handler for layers that draw as imagery
+     * and hit-test themselves (`kind: 'sliced'`) — the globe equivalent of
+     * the 2D map's hover tooltip, which has no counterpart here otherwise
+     * (no layer type has ever had one on the globe before this).
+     */
+    _setupGlobalHoverHandler() {
+        if (this.rendererType !== 'cesium') return
+
+        this._cesiumHoverHandler = new Cesium.ScreenSpaceEventHandler(
+            this.renderer.scene.canvas
+        )
+        this._cesiumHoverHandler.setInputAction((movement) => {
+            this._hoverSlicedLayers(movement.endPosition)
+        }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
+    }
+
+    /**
+     * Offer the current mouse position to every sliced layer, topmost first
+     * — mirrors `_clickSlicedLayers`, but shows a tooltip via each layer's
+     * own `onHover` instead of selecting a feature.
+     */
+    _hoverSlicedLayers(windowPosition) {
+        const canvas = this.renderer.scene.canvas
+        const names = Object.keys(this._layers).filter((name) => {
+            const layerInfo = this._layers[name]
+            return (
+                layerInfo?.kind === 'sliced' &&
+                layerInfo.visible &&
+                typeof layerInfo.pick === 'function'
+            )
+        })
+        if (names.length === 0) return
+
+        const lngLat = this._lngLatAt(windowPosition)
+        if (lngLat == null) {
+            canvas.style.cursor = ''
+            CursorInfo.hide()
+            return
+        }
+
+        for (const name of names) {
+            const layerInfo = this._layers[name]
+            const feature = layerInfo.pick(lngLat[0], lngLat[1])
+            if (feature == null) continue
+            canvas.style.cursor = 'pointer'
+            const label = layerInfo.onHover?.(feature)
+            if (label != null) CursorInfo.update(label, null, false)
+            else CursorInfo.hide()
+            return
+        }
+        canvas.style.cursor = ''
+        CursorInfo.hide()
     }
 
     /**

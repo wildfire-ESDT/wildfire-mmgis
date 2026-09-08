@@ -16,6 +16,7 @@ import CesiumMVTLayer from '@basics/Globe_/CesiumMVTLayer'
 import CesiumSlicedVectorLayer from '../lib/CesiumSlicedVectorLayer'
 import L_ from '@basics/Layers_/Layers_'
 import { makeWith, onToggle } from './layerConfig'
+import { frontFacingLabel } from '../lib/sliceMetadata'
 
 function make(layerObj, gctx) {
     return makeWith(layerObj, gctx, render)
@@ -79,6 +80,14 @@ function renderSliced(layerConfig, gctx) {
         visible: true,
         pick: (lng, lat) => slicedLayer.featureAt(lng, lat),
         onClick: (feature) => L_.selectFeature(name, feature),
+        // Same "Fire Incident: <name> / Acres: <n>" label the 2D map's
+        // hover shows, driven by GlobeRenderer's hover hit-test (mirrors
+        // pick/onClick above, which is that same hit-test for a click).
+        onHover: (feature) =>
+            frontFacingLabel(
+                { variables: { useKeyAsName: layerConfig.useKeyAsName } },
+                feature.properties
+            ),
     }
 }
 
