@@ -175,6 +175,7 @@ let Map_ = {
                 zoomDelta: 0.05,
                 zoomSnap: 0,
                 fadeAnimation: shouldFade,
+                preferCanvas: true, // Use Canvas renderer for better performance with many/complex features
                 //wheelPxPerZoomLevel: 500,
                 worldCopyJump: L_.configData.msv.worldCopyJump || false,
                 maxBounds,
@@ -188,6 +189,7 @@ let Map_ = {
                 editable: true,
                 keyboard: false,
                 fadeAnimation: shouldFade,
+                preferCanvas: true, // Use Canvas renderer for better performance with many/complex features
                 //crs: crs,
                 //zoomDelta: 0.05,
                 //zoomSnap: 0,

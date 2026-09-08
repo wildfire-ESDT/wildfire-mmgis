@@ -122,7 +122,7 @@ export function fullyLoaded(L_) {
                     L_.toggleLayer(layerObj)
                 }
             })
-        }, 1500) // Small delay to ensure UI is ready
+        }, 100) // Small delay to ensure UI is ready
     }
 }
 

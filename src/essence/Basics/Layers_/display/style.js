@@ -233,7 +233,6 @@ export function resetLayerFills(L_, onlyThisLayerName) {
                 L_.layers.data[key].style != undefined
             ) {
                 L_.layers.layer[key].eachLayer((layer) => {
-                    const savedOptions = layer.options
                     const savedUseKeyAsName = layer.useKeyAsName
 
                     let fillColor = L_.layers.data[key].style.fillColor
@@ -277,7 +276,6 @@ export function resetLayerFills(L_, onlyThisLayerName) {
                     } catch (err) {
                         if (layer._icon) layer._icon.style.filter = ''
                     }
-                    layer.options = savedOptions
                     layer.useKeyAsName = savedUseKeyAsName
                 })
             } else if (s[0] === 'DrawTool') {

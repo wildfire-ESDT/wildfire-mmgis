@@ -92,26 +92,33 @@ export function gatherFeatures(ctx) {
                     (lName.indexOf('DrawTool_') === 0 &&
                         L_.layers.layer[lName]?.[0]?._map != null)
                 ) {
-                    features = features.concat(
-                        L.leafletPip
-                            .pointInLayer(
-                                [e.latlng.lng, e.latlng.lat],
-                                L_.layers.layer[lName]
-                            )
-                            .concat(
-                                F_.pointsInPoint(
+                    if (lName === layerName) {
+                        // The click event already told us which feature/layer
+                        // was hit here — skip re-deriving it via point-in-polygon
+                        // math (expensive for layers with many/complex shapes).
+                        features = features.concat([layer])
+                    } else {
+                        features = features.concat(
+                            L.leafletPip
+                                .pointInLayer(
                                     [e.latlng.lng, e.latlng.lat],
-                                    L_.layers.layer[lName],
-                                    [
-                                        nwLatLong.lng,
-                                        seLatLong.lng,
-                                        nwLatLong.lat,
-                                        seLatLong.lat,
-                                    ]
+                                    L_.layers.layer[lName]
                                 )
-                            )
-                            .reverse()
-                    )
+                                .concat(
+                                    F_.pointsInPoint(
+                                        [e.latlng.lng, e.latlng.lat],
+                                        L_.layers.layer[lName],
+                                        [
+                                            nwLatLong.lng,
+                                            seLatLong.lng,
+                                            nwLatLong.lat,
+                                            seLatLong.lat,
+                                        ]
+                                    )
+                                )
+                                .reverse()
+                        )
+                    }
                 }
             })
 
