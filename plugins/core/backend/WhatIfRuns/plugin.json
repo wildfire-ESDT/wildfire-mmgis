@@ -1,0 +1,20 @@
+{
+  "uuid": "c1e8b4a2-6f3d-4b7e-9a51-2d8c4e7f9b03",
+  "id": "core-whatif-runs",
+  "name": "WhatIfRuns",
+  "display_name": "Wildfire What-If Run History",
+  "aliases": [
+    "whatif-runs"
+  ],
+  "version": "core",
+  "type": "backend",
+  "tier": "core",
+  "overridable": true,
+  "routes": {
+    "prefix": "/api/whatif-runs",
+    "auth": "user"
+  },
+  "author": "NASA-AMMOS/MMGIS",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/NASA-AMMOS/MMGIS"
+}
