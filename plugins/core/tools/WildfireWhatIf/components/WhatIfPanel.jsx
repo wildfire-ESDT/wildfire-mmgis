@@ -5,6 +5,8 @@ import ToolController_ from '@basics/ToolController_/ToolController_'
 import { Button, IconButton } from '@design/components'
 import PerimeterSection from './PerimeterSection'
 import WindSection from './WindSection'
+import FuelSection from './FuelSection'
+import DozerLinesSection from './DozerLinesSection'
 import SchemaForm from './SchemaForm'
 import RunsList from './RunsList'
 import LoginGate from './LoginGate'
@@ -49,6 +51,8 @@ export default function WhatIfPanel() {
 
             <PerimeterSection />
             <WindSection />
+            {/* <FuelSection /> */}
+            <DozerLinesSection />
             <SchemaForm sections={['Simulation Type', 'Scenario Name']} />
             <Button
                 variant="primary"

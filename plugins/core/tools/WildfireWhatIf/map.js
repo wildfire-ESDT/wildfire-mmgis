@@ -2,17 +2,19 @@
 // handles, the auto-derived HRRR bbox, wind-vector arrows, and the interactive
 // perimeter-drawing session.
 
+import { lineString, simplify } from '@turf/turf'
 import { getMap, closeRing, speedColor } from './utils'
 
 export const COLOR_PERIM = '#ff6b35'
 export const COLOR_BBOX = '#08aeea' // --color-mmgis
 export const COLOR_SPREAD = '#d32f2f' // mock spread prediction — deep red, standard wildfire-risk color
+export const COLOR_DOZER = '#8d6e63' // dozer line — cleared-earth brown
 
 const MAX_EDIT_VERTICES = 60 // don't spawn drag handles on huge uploaded perimeters
 
 // ─── Scenario layers ──────────────────────────────────────────────────────────
 
-const refs = { perimeter: null, vertices: null, bbox: null, wind: null, mockSpread: null }
+const refs = { perimeter: null, vertices: null, bbox: null, wind: null, mockSpread: null, dozerLines: null }
 
 function remove(key) {
     const leafletMap = getMap()
@@ -177,12 +179,41 @@ export function removeMockSpread() {
     remove('mockSpread')
 }
 
+// ─── Dozer lines ──────────────────────────────────────────────────────────────
+// Simple line barriers: "fuel was cleared along this line, don't spread over
+// it." Rendered as a distinct dashed brown line, one polyline per dozer line.
+
+export function showDozerLines(lines) {
+    const leafletMap = getMap()
+    if (!leafletMap) return
+    remove('dozerLines')
+    if (!lines || lines.length === 0) return
+    const L = window.L
+    const polylines = lines.map((line) =>
+        L.polyline(
+            line.coords.map(([lon, lat]) => [lat, lon]),
+            {
+                color: COLOR_DOZER,
+                weight: 4,
+                dashArray: '2,6',
+                lineCap: 'round',
+            }
+        )
+    )
+    refs.dozerLines = L.layerGroup(polylines).addTo(leafletMap)
+}
+
+export function removeDozerLines() {
+    remove('dozerLines')
+}
+
 export function clearScenarioLayers() {
     remove('perimeter')
     remove('vertices')
     remove('bbox')
     remove('wind')
     remove('mockSpread')
+    remove('dozerLines')
 }
 
 // ─── Interactive perimeter drawing ────────────────────────────────────────────
@@ -305,6 +336,117 @@ export function startDrawSession(leafletMap, { onDone }) {
     leafletMap.on('click', onClick)
     leafletMap.on('mousemove', onMove)
     leafletMap.on('dblclick', onDblClick)
+    document.addEventListener('keydown', onKey)
+
+    return { finish, cancel }
+}
+
+// ─── Freehand dozer-line brush ────────────────────────────────────────────────
+// Click-drag to paint a line (like a pen), matching how you'd trace a ridge
+// or cut line on the ground — not click-per-vertex like the perimeter tool.
+// Mousedown starts a stroke, mousemove while held samples points (throttled
+// by a minimum pixel distance so we don't collect thousands of near-duplicate
+// points), mouseup ends the stroke and simplifies it. Esc cancels a stroke in
+// progress (or the whole session if nothing's been drawn yet).
+const BRUSH_MIN_PX = 4 // minimum on-screen distance between sampled points
+const BRUSH_SIMPLIFY_TOLERANCE = 0.0003 // ~30m in degrees — smooths sampling jitter
+
+export function startLineDrawSession(leafletMap, { onDone }) {
+    const L = window.L
+    const container = leafletMap.getContainer()
+    const hadDragging = leafletMap.dragging.enabled()
+    container.style.cursor = 'crosshair'
+
+    let pts = [] // committed latlngs for the current stroke
+    let drawing = false
+    let done = false
+    const stroke = L.polyline([], {
+        color: COLOR_DOZER,
+        weight: 4,
+        dashArray: '2,6',
+        lineCap: 'round',
+        lineJoin: 'round',
+    }).addTo(leafletMap)
+
+    function teardown() {
+        leafletMap.dragging[hadDragging ? 'enable' : 'disable']()
+        L.DomEvent.off(container, 'mousedown', onDown)
+        leafletMap.off('mousemove', onMove)
+        leafletMap.off('mouseup', onUp)
+        try {
+            leafletMap.removeLayer(stroke)
+        } catch (e) {}
+        container.style.cursor = ''
+        document.removeEventListener('keydown', onKey)
+    }
+
+    function end(coords) {
+        if (done) return
+        done = true
+        teardown()
+        onDone(coords)
+    }
+
+    function simplifyStroke() {
+        if (pts.length < 3) return pts.map((ll) => [ll.lng, ll.lat])
+        const raw = pts.map((ll) => [ll.lng, ll.lat])
+        try {
+            const simplified = simplify(lineString(raw), {
+                tolerance: BRUSH_SIMPLIFY_TOLERANCE,
+                highQuality: false,
+            })
+            return simplified.geometry.coordinates
+        } catch (e) {
+            return raw
+        }
+    }
+
+    function finish() {
+        if (pts.length < 2) {
+            end(null)
+            return
+        }
+        end(simplifyStroke())
+    }
+
+    function cancel() {
+        end(null)
+    }
+
+    function onDown(e) {
+        L.DomEvent.stop(e)
+        drawing = true
+        pts = []
+        leafletMap.dragging.disable()
+        const ll = leafletMap.mouseEventToLatLng(e)
+        pts.push(ll)
+        stroke.setLatLngs(pts)
+    }
+
+    function onMove(e) {
+        if (!drawing) return
+        const ll = e.latlng
+        const last = pts[pts.length - 1]
+        const lastPx = leafletMap.latLngToContainerPoint(last)
+        const curPx = leafletMap.latLngToContainerPoint(ll)
+        if (curPx.distanceTo(lastPx) < BRUSH_MIN_PX) return
+        pts.push(ll)
+        stroke.setLatLngs(pts)
+    }
+
+    function onUp() {
+        if (!drawing) return
+        drawing = false
+        finish()
+    }
+
+    function onKey(e) {
+        if (e.key === 'Escape') cancel()
+    }
+
+    L.DomEvent.on(container, 'mousedown', onDown)
+    leafletMap.on('mousemove', onMove)
+    leafletMap.on('mouseup', onUp)
     document.addEventListener('keydown', onKey)
 
     return { finish, cancel }

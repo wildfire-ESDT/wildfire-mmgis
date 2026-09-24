@@ -17,6 +17,11 @@ const useWhatIfStore = create((set) => ({
     windStale: false, // perimeter moved after wind was fetched
     fetchingWinds: false,
     hrrrError: null,
+    // Fuel
+    fuel: 'null',
+    // Dozer lines — simple "fuel cleared, don't spread over this" barriers
+    dozerLines: [], // [{id, coords: [lon,lat][]}]
+    drawingDozerLine: false,
     // Simulation
     simType: 'fire_spread',
     runName: '',

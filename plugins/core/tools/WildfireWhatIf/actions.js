@@ -2,7 +2,7 @@
 // these; they orchestrate the store (state), map (Leaflet), Veloserver (HRRR
 // winds), and the MMGIS server (run history).
 
-import { area, length, polygon, lineString } from '@turf/turf'
+import { area, length, polygon, lineString, lineIntersect } from '@turf/turf'
 import useWhatIfStore, { BBOX_BUFFER_KM } from './store'
 import * as map from './map'
 import {
@@ -24,6 +24,7 @@ const LATEST_MAX_HOURS_BACK = 4
 const AUTO_FETCH_DEBOUNCE_MS = 400
 
 let drawSession = null
+let dozerDrawSession = null
 let autoFetchTimer = null
 
 // ─── Backend / MMGIS-server requests ──────────────────────────────────────────
@@ -201,10 +202,13 @@ export function setPerimeter(ring, opts) {
 export function restoreScenario() {
     const ring = S.getState().perimeterRing
     if (ring) setPerimeter(ring, { fromRun: true })
+    const dozerLines = S.getState().dozerLines
+    if (dozerLines.length) map.showDozerLines(dozerLines)
 }
 
 export function clearPerimeter() {
     cancelMapDraw()
+    cancelDozerLineDraw()
     cancelWindFetch()
     map.clearScenarioLayers()
     S.setState({
@@ -216,6 +220,7 @@ export function clearPerimeter() {
         hrrrError: null,
         windStale: false,
         fetchingWinds: false,
+        dozerLines: [],
     })
 }
 
@@ -263,6 +268,49 @@ export function startMapDraw() {
 
 export function cancelMapDraw() {
     if (drawSession) drawSession.cancel()
+}
+
+// ─── Dozer lines ──────────────────────────────────────────────────────────────
+// Simple stopgap fuel barriers: "fuel was cleared along this line, the mock
+// spread should not cross it." No raster/backend involved — just a drawn
+// line stored and sent through the payload alongside the perimeter/wind.
+
+export function startDozerLineDraw() {
+    const leafletMap = getMap()
+    if (!leafletMap) {
+        window.alert('Map not ready yet.')
+        return
+    }
+    cancelDozerLineDraw()
+    S.setState({ drawingDozerLine: true })
+    dozerDrawSession = map.startLineDrawSession(leafletMap, {
+        onDone: (coords) => {
+            dozerDrawSession = null
+            S.setState({ drawingDozerLine: false })
+            if (coords) {
+                const line = { id: generateId(), coords }
+                const lines = [...S.getState().dozerLines, line]
+                S.setState({ dozerLines: lines })
+                map.showDozerLines(lines)
+            }
+        },
+    })
+}
+
+export function cancelDozerLineDraw() {
+    if (dozerDrawSession) dozerDrawSession.cancel()
+}
+
+export function removeDozerLine(id) {
+    const lines = S.getState().dozerLines.filter((l) => l.id !== id)
+    S.setState({ dozerLines: lines })
+    map.showDozerLines(lines)
+}
+
+export function clearDozerLines() {
+    cancelDozerLineDraw()
+    S.setState({ dozerLines: [] })
+    map.removeDozerLines()
 }
 
 // ─── HRRR fxx=0 wind fetch ────────────────────────────────────────────────────
@@ -367,14 +415,41 @@ export function renderWindVectors() {
 
 // ─── Mock spread polygon ──────────────────────────────────────────────────────
 
+// If the segment from `from` (original perimeter vertex, unburned side) to
+// `to` (its displaced/spread position) crosses any dozer line, pull the
+// vertex back to the nearest crossing — fire doesn't spread past a line
+// where fuel's been cleared. Ties (multiple lines) resolve to whichever
+// crossing is closest to `from`.
+function clipToDozerLines(from, to, dozerLines) {
+    if (!dozerLines || dozerLines.length === 0) return to
+    const seg = lineString([from, to])
+    let closest = null
+    let closestDist = Infinity
+    dozerLines.forEach((coords) => {
+        if (!coords || coords.length < 2) return
+        const inter = lineIntersect(seg, lineString(coords))
+        inter.features.forEach((f) => {
+            const pt = f.geometry.coordinates
+            const d = Math.hypot(pt[0] - from[0], pt[1] - from[1])
+            if (d < closestDist) {
+                closestDist = d
+                closest = pt
+            }
+        })
+    })
+    return closest || to
+}
+
 // Builds a crescent-shaped spread polygon that never overlaps the original
 // perimeter. Only vertices on the downwind side are displaced; upwind vertices
 // stay at their original position. The resulting polygon shares an edge with
 // the original perimeter on the upwind side and extends outward downwind.
+// Displacement is clipped against any drawn dozer lines (see clipToDozerLines).
 export function drawMockSpread() {
     const s = S.getState()
     const ring = s.perimeterRing
     const wind = s.wind && s.wind.target
+    const dozerLines = s.dozerLines.map((l) => l.coords)
     if (!ring || !wind) { map.removeMockSpread(); return }
 
     // Fire spreads in the direction opposite to wind origin
@@ -401,10 +476,11 @@ export function drawMockSpread() {
     const spreadRing = ring.map(([lon, lat]) => {
         const dot = (lon - cx) * spreadVecX + (lat - cy) * spreadVecY
         const weight = maxDot > 0 ? Math.max(0, dot / maxDot) : 0
-        return [
+        const displaced = [
             lon + dLon * spreadVecX * weight,
             lat + dLat * spreadVecY * weight,
         ]
+        return clipToDozerLines([lon, lat], displaced, dozerLines)
     })
 
     map.showMockSpread(spreadRing, ring)
@@ -494,6 +570,8 @@ export function submit() {
             synthetic: true,
         },
         sim_type: s.simType,
+        fuel: s.fuel,
+        dozer_lines: s.dozerLines.map((l) => l.coords),
     }
     S.setState({ submitting: true })
     let result
