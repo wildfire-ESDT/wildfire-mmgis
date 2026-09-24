@@ -1,9 +1,17 @@
 // All Leaflet/map concerns for the Wildfire What-If tool: perimeter + vertex
 // handles, the auto-derived HRRR bbox, wind-vector arrows, and the interactive
-// perimeter-drawing session.
+// perimeter-drawing session. Every scenario layer is mirrored onto the globe
+// (globe.js) as it's drawn here.
 
 import { lineString, simplify } from '@turf/turf'
 import { getMap, closeRing, speedColor } from './utils'
+import {
+    setGlobePart,
+    lineFeature,
+    boxFeature,
+    spreadFeature,
+    windFeatures,
+} from './globe'
 
 export const COLOR_PERIM = '#ff6b35'
 export const COLOR_BBOX = '#08aeea' // --color-mmgis
@@ -15,8 +23,11 @@ const MAX_EDIT_VERTICES = 60 // don't spawn drag handles on huge uploaded perime
 // ─── Scenario layers ──────────────────────────────────────────────────────────
 
 const refs = { perimeter: null, vertices: null, bbox: null, wind: null, mockSpread: null, dozerLines: null }
+// Map layer → its part of the globe mirror (vertex handles are map-only)
+const GLOBE_PART = { perimeter: 'perimeter', bbox: 'bbox', wind: 'wind', mockSpread: 'spread', dozerLines: 'dozer' }
 
 function remove(key) {
+    if (GLOBE_PART[key]) setGlobePart(GLOBE_PART[key], [])
     const leafletMap = getMap()
     if (refs[key] && leafletMap) {
         try {
@@ -45,6 +56,7 @@ export function showPerimeter(closedRing, { onChange } = {}) {
     }).addTo(leafletMap)
     if (onChange && latlngs.length <= MAX_EDIT_VERTICES)
         addVertexHandles(latlngs, onChange)
+    setGlobePart('perimeter', [lineFeature(closedRing, COLOR_PERIM, 2)])
 }
 
 function addVertexHandles(latlngs, onChange) {
@@ -86,12 +98,12 @@ export function showBbox(bounds) {
     remove('bbox')
     refs.bbox = window.L.rectangle(bounds, {
         color: COLOR_BBOX,
-        weight: 1.5,
-        dashArray: '6,4',
+        weight: 2,
         fillColor: COLOR_BBOX,
         fillOpacity: 0.03,
         interactive: false,
     }).addTo(leafletMap)
+    setGlobePart('bbox', [boxFeature(bounds, COLOR_BBOX)])
 }
 
 export function removeWindVectors() {
@@ -112,6 +124,7 @@ export function showWindVectors(points, base, target) {
     const targetMathAng = (Math.PI / 180) * (270 - target.direction_deg)
     const deltaAng = targetMathAng - baseMathAng
     const speedScale = target.speed_ms / (base.speed_ms || 1)
+    const globeArrows = []
 
     const markers = points.map((pt) => {
         const localSpeed = Math.sqrt(pt.u * pt.u + pt.v * pt.v)
@@ -122,6 +135,7 @@ export function showWindVectors(points, base, target) {
         const v = speed * Math.sin(ang)
 
         const color = speedColor(speed)
+        globeArrows.push({ lon: pt.lon, lat: pt.lat, u, v, speed, color })
         const len = Math.max(10, Math.min(32, 8 + speed * 1.6))
         const half = len / 2
         const box = len + 12
@@ -144,6 +158,7 @@ export function showWindVectors(points, base, target) {
         })
     })
     refs.wind = L.layerGroup(markers).addTo(leafletMap)
+    setGlobePart('wind', windFeatures(globeArrows))
 }
 
 export function showMockSpread(spreadRing, perimRing) {
@@ -173,6 +188,7 @@ export function showMockSpread(spreadRing, perimRing) {
     })
 
     refs.mockSpread = L.layerGroup([fill, stroke]).addTo(leafletMap)
+    setGlobePart('spread', [spreadFeature(spreadRing, perimRing, COLOR_SPREAD)])
 }
 
 export function removeMockSpread() {
@@ -201,6 +217,10 @@ export function showDozerLines(lines) {
         )
     )
     refs.dozerLines = L.layerGroup(polylines).addTo(leafletMap)
+    setGlobePart(
+        'dozer',
+        lines.map((line) => lineFeature(line.coords, COLOR_DOZER, 4))
+    )
 }
 
 export function removeDozerLines() {
@@ -214,6 +234,13 @@ export function clearScenarioLayers() {
     remove('wind')
     remove('mockSpread')
     remove('dozerLines')
+}
+
+// Draw-mode shortcuts listen on document; keys typed into the panel's
+// inputs (scenario name, wind values) must still reach those inputs.
+function isTyping(e) {
+    const t = e.target
+    return !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
 }
 
 // ─── Interactive perimeter drawing ────────────────────────────────────────────
@@ -322,6 +349,7 @@ export function startDrawSession(leafletMap, { onDone }) {
     }
 
     function onKey(e) {
+        if (isTyping(e)) return
         if (e.key === 'Escape') cancel()
         else if (e.key === 'Enter') finish()
         else if (e.key === 'Backspace' || e.key === 'Delete') {
@@ -372,7 +400,7 @@ export function startLineDrawSession(leafletMap, { onDone }) {
         leafletMap.dragging[hadDragging ? 'enable' : 'disable']()
         L.DomEvent.off(container, 'mousedown', onDown)
         leafletMap.off('mousemove', onMove)
-        leafletMap.off('mouseup', onUp)
+        document.removeEventListener('mouseup', onUp)
         try {
             leafletMap.removeLayer(stroke)
         } catch (e) {}
@@ -414,6 +442,7 @@ export function startLineDrawSession(leafletMap, { onDone }) {
     }
 
     function onDown(e) {
+        if (e.button !== 0) return // right-click / middle-click aren't strokes
         L.DomEvent.stop(e)
         drawing = true
         pts = []
@@ -434,19 +463,36 @@ export function startLineDrawSession(leafletMap, { onDone }) {
         stroke.setLatLngs(pts)
     }
 
+    // On document, not the map: a stroke released over the tool panel or
+    // outside the window must still end.
     function onUp() {
         if (!drawing) return
         drawing = false
+        swallowNextClick()
         finish()
     }
 
+    // Releasing the stroke fires a click on whatever is under the cursor —
+    // often the fire polygon being fenced off, which would select it and
+    // replace the scenario's perimeter.
+    function swallowNextClick() {
+        const swallow = (ev) => {
+            if (!container.contains(ev.target)) return
+            ev.stopPropagation()
+            ev.preventDefault()
+        }
+        window.addEventListener('click', swallow, { capture: true, once: true })
+        setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 50)
+    }
+
     function onKey(e) {
+        if (isTyping(e)) return
         if (e.key === 'Escape') cancel()
     }
 
     L.DomEvent.on(container, 'mousedown', onDown)
     leafletMap.on('mousemove', onMove)
-    leafletMap.on('mouseup', onUp)
+    document.addEventListener('mouseup', onUp)
     document.addEventListener('keydown', onKey)
 
     return { finish, cancel }

@@ -10,6 +10,7 @@ const useWhatIfStore = create((set) => ({
     drawing: false,
     perimeterRing: null, // closed [lon,lat] ring
     perimeterSource: null, // 'drawn' | 'uploaded' | 'selected' (map click) | 'run'
+    perimeterName: null, // fire/incident name when known (map pick, upload, run)
     bboxBounds: null, // [[latMin,lonMin],[latMax,lonMax]] — perimeter extent + buffer
     // Wind — null until fetched; {speed_ms, direction_deg} base + editable target
     wind: null, // {base:{speed_ms,direction_deg}, target:{speed_ms,direction_deg}, hrrr_ref, points, rawRecords}
@@ -25,7 +26,6 @@ const useWhatIfStore = create((set) => ({
     // Simulation
     simType: 'fire_spread',
     runName: '',
-    nameError: false,
     submitting: false,
     // Runs
     jobs: {},

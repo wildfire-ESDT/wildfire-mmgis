@@ -4,7 +4,7 @@
 // but is not attached to veloserver or MMGIS requests.
 
 import useWhatIfStore from './store'
-import { loadHistory } from './actions'
+import { loadHistory, exitRunView, hideScenario, restoreScenario, clearPerimeter } from './actions'
 
 const S = useWhatIfStore
 
@@ -12,6 +12,10 @@ const STORAGE_KEY = 'ww-kc-session'
 const REFRESH_EARLY_MS = 60000
 
 let refreshTimer = null
+// Bumped on every login/logout/expiry. A token response from an older auth
+// generation (a refresh in flight during logout, a slow login answered after
+// the user gave up) is dropped instead of signing someone back in.
+let authGen = 0
 
 function tokenEndpoint() {
     const s = S.getState()
@@ -76,7 +80,10 @@ function applyTokens(data) {
         authError: null,
         authBusy: false,
     })
-    if (!wasLoggedIn) loadHistory()
+    if (!wasLoggedIn) {
+        loadHistory()
+        restoreScenario()
+    }
 }
 
 function scheduleRefresh(session) {
@@ -88,6 +95,7 @@ function scheduleRefresh(session) {
 function refresh(refreshToken) {
     if (!refreshToken) return expire()
     const s = S.getState()
+    const gen = authGen
     fetch(`${tokenEndpoint()}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -98,8 +106,12 @@ function refresh(refreshToken) {
         }),
     })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error('refresh failed'))))
-        .then(applyTokens)
-        .catch(() => expire())
+        .then((data) => {
+            if (gen === authGen) applyTokens(data)
+        })
+        .catch(() => {
+            if (gen === authGen) expire()
+        })
 }
 
 // Clears auth state plus the previous user's in-memory runs so the next
@@ -118,13 +130,19 @@ function signedOutState(authError) {
     }
 }
 
+// The draft is kept so the same user can sign back in and carry on, but it
+// comes off the map while the login gate is up.
 function expire() {
+    authGen++
     clearSession()
+    exitRunView()
+    hideScenario()
     S.setState(signedOutState('Session expired. Sign in again.'))
 }
 
 export function login(username, password) {
     const s = S.getState()
+    const gen = ++authGen
     S.setState({ authBusy: true, authError: null })
     return fetch(`${tokenEndpoint()}/token`, {
         method: 'POST',
@@ -139,6 +157,7 @@ export function login(username, password) {
     })
         .then((r) =>
             r.json().then((data) => {
+                if (gen !== authGen) return
                 if (r.ok) {
                     applyTokens(data)
                     return
@@ -161,6 +180,7 @@ export function login(username, password) {
             })
         )
         .catch((err) => {
+            if (gen !== authGen) return
             S.setState({
                 authBusy: false,
                 authError: 'Could not reach the login server. ' + err.message,
@@ -202,6 +222,10 @@ export function logout() {
             }),
         }).catch(() => {})
     }
+    authGen++
     clearSession()
+    // The next person to sign in on this browser starts from a clean map
+    exitRunView()
+    clearPerimeter()
     S.setState(signedOutState(null))
 }

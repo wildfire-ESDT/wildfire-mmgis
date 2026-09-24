@@ -4,9 +4,14 @@ import './WildfireWhatIfTool.css'
 import L_ from '@basics/Layers_/Layers_'
 import useWhatIfStore from './store'
 import { seedFromVars } from './formConfig'
-import { restoreScenario, cancelMapDraw, setBboxFromMapFeature } from './actions'
+import {
+    onToolOpen,
+    onToolClose,
+    selectFireFromMap,
+    ignoreMapFire,
+    isNewMapFire,
+} from './actions'
 import { restoreSession } from './auth'
-import { clearScenarioLayers } from './map'
 import WhatIfPanel from './components/WhatIfPanel'
 
 const DEFAULT_VELO_URL = 'https://firepanel.ai/veloserver'
@@ -33,20 +38,32 @@ const WildfireWhatIf = {
         })
         WildfireWhatIf.MMGISInterface = new interfaceWithMMGIS()
         restoreSession() // rehydrates login and loads the user's run history
-        restoreScenario() // redraw a perimeter kept in the store from a previous open
+        onToolOpen() // redraw the scenario or run kept in the store from a previous open
+        // MMGIS only notifies the open tool, so a fire selected on the map
+        // while the tool was closed (or before its first open) is picked up
+        // here and takes over from the kept scenario.
+        const af = L_.activeFeature
+        if (
+            af &&
+            af.feature &&
+            af.layerName === WildfireWhatIf._wfigsLayerName &&
+            isNewMapFire(af.feature)
+        )
+            selectFireFromMap(af.feature)
     },
 
     notify: function (type, payload) {
         if (type === 'setActiveFeature' && payload) {
-            if (payload.layerName === WildfireWhatIf._wfigsLayerName) {
-                setBboxFromMapFeature(payload.feature)
-            }
+            if (payload.layerName !== WildfireWhatIf._wfigsLayerName) return
+            // Clicks made while drawing belong to the drawing, not a fire pick
+            const s = useWhatIfStore.getState()
+            if (s.drawing || s.drawingDozerLine) ignoreMapFire(payload.feature)
+            else selectFireFromMap(payload.feature)
         }
     },
 
     destroy: function () {
-        cancelMapDraw()
-        clearScenarioLayers()
+        onToolClose()
         WildfireWhatIf._wfigsLayerName = null
         if (WildfireWhatIf.MMGISInterface)
             WildfireWhatIf.MMGISInterface.separateFromMMGIS()
@@ -60,16 +77,43 @@ const WildfireWhatIf = {
     },
 }
 
+// The shared tool panel is a full-height frame whose height MMGIS keeps
+// adjusting (bottom bar, top bar). Rather than fight that, this tool makes the
+// frame invisible and click-through and draws its own box inside it, sized to
+// its content and capped at the frame (scrolling beyond it); see #wildfireTool
+// in the CSS. The frame's own look is put back on close.
+const FRAME_STYLE = {
+    background: 'transparent',
+    borderColor: 'transparent',
+    boxShadow: 'none',
+    backdropFilter: 'none',
+    webkitBackdropFilter: 'none',
+    pointerEvents: 'none',
+}
+
+function hidePanelFrame(toolPanel) {
+    const st = toolPanel.style
+    const saved = {}
+    Object.keys(FRAME_STYLE).forEach((k) => {
+        saved[k] = st[k]
+        st[k] = FRAME_STYLE[k]
+    })
+    return () => Object.assign(st, saved)
+}
+
 function interfaceWithMMGIS() {
     const toolPanel = document.getElementById('toolPanel')
+    let restoreFrame = null
     if (toolPanel) {
         toolPanel.innerHTML = ''
-        toolPanel.style.background = 'var(--color-k)'
-        toolPanel.style.boxShadow = 'inset 2px 0px 10px 0px rgba(0,0,0,0.2)'
+        restoreFrame = hidePanelFrame(toolPanel)
         WildfireWhatIf._root = createRoot(toolPanel)
         WildfireWhatIf._root.render(<WhatIfPanel />)
     }
-    this.separateFromMMGIS = function () {}
+    this.separateFromMMGIS = function () {
+        if (restoreFrame) restoreFrame()
+        restoreFrame = null
+    }
 }
 
 export default WildfireWhatIf

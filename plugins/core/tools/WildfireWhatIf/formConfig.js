@@ -30,9 +30,7 @@ const FORM_SECTIONS = [
             {
                 key: 'runName',
                 type: 'text',
-                placeholder: 'e.g. Palisades – SE wind shift',
-                required: true,
-                errorKey: 'nameError',
+                placeholder: 'Optional (defaults to fire name and time)',
             },
         ],
     },

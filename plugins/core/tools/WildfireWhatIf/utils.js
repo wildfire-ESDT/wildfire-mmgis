@@ -1,7 +1,108 @@
 // Shared math/geometry helpers for the Wildfire What-If tool
 
+import { area, polygon, centerOfMass } from '@turf/turf'
+import { centerGlobeOn } from './globe'
+
 export function getMap() {
     return (window.mmgisAPI && window.mmgisAPI.map) || null
+}
+
+// How much of each edge of the map container is covered by other UI, in px.
+// Left/right: the tool panel column, which floats over the map's edge and
+// animates its width open, so the width it's opening to (its inline style) is
+// used. Top/bottom: whatever overlays the map there (the time bar, forecast
+// timeline, …), found by walking in from each edge until the map itself is
+// what's under that point.
+function coveredEdges(container) {
+    const r = container.getBoundingClientRect()
+    const edges = { left: 0, right: 0, top: 0, bottom: 0 }
+
+    const panelEl = document.getElementById('toolPanel')
+    if (panelEl) {
+        const p = panelEl.getBoundingClientRect()
+        const width = parseFloat(panelEl.style.width) || p.width
+        const panelRight = p.left + width
+        if (width > 0 && panelRight > r.left && p.left < r.right) {
+            if ((p.left + panelRight) / 2 < r.left + r.width / 2)
+                edges.left = panelRight - r.left
+            else edges.right = r.right - p.left
+        }
+    }
+
+    const isMap = (x, y) => {
+        const el = document.elementFromPoint(x, y)
+        return !!el && container.contains(el)
+    }
+    // Deepest covered point walking in from an edge. Overlays needn't sit
+    // flush with the map's edge (the time bar leaves a bare pixel row under
+    // it), so a short run of bare map doesn't end the walk — only a clear
+    // stretch of it does.
+    const STEP = 4
+    const CLEAR_RUN = 48
+    const maxInset = r.height * 0.6
+    const coveredDepth = (pointAt) => {
+        let depth = 0
+        let clear = 0
+        for (let d = 0; d < maxInset && clear < CLEAR_RUN; d += STEP) {
+            if (isMap(...pointAt(d))) clear += STEP
+            else {
+                depth = d + STEP
+                clear = 0
+            }
+        }
+        return depth
+    }
+    const x = r.left + edges.left + (r.width - edges.left - edges.right) / 2
+    edges.top = coveredDepth((d) => [x, r.top + d + 1])
+    edges.bottom = coveredDepth((d) => [x, r.bottom - d - 1])
+
+    edges.left = Math.min(Math.max(0, edges.left), r.width * 0.6)
+    edges.right = Math.min(Math.max(0, edges.right), r.width * 0.6)
+    return edges
+}
+
+// A fire perimeter's centroid (center of mass), as [lat, lon].
+export function ringCentroid(ring) {
+    try {
+        const [lon, lat] = centerOfMass(polygon([closeRing(ring)])).geometry
+            .coordinates
+        return [lat, lon]
+    } catch (e) {
+        return null
+    }
+}
+
+// Zoom so the whole of bounds is in the part of the map the user can actually
+// see (clear of the tool panel and the bars over the map's top and bottom),
+// and move the globe camera over the same view. With `center` ([lat, lon],
+// e.g. the fire's centroid) the view is centered on that point, zoomed out
+// just enough to still show all of bounds on every side.
+export function fitVisible(bounds, pad = 40, center = null) {
+    const leafletMap = getMap()
+    if (!leafletMap || !bounds) return
+    if (center) {
+        const [[s, w], [n, e]] = bounds
+        const dLat = Math.max(center[0] - s, n - center[0])
+        const dLon = Math.max(center[1] - w, e - center[1])
+        bounds = [
+            [center[0] - dLat, center[1] - dLon],
+            [center[0] + dLat, center[1] + dLon],
+        ]
+    }
+    leafletMap.invalidateSize({ pan: false })
+    const e = coveredEdges(leafletMap.getContainer())
+    leafletMap.fitBounds(bounds, {
+        paddingTopLeft: [e.left + pad, e.top + pad],
+        paddingBottomRight: [e.right + pad, e.bottom + pad],
+    })
+    centerGlobeOn(
+        bounds,
+        leafletMap.getBoundsZoom(
+            bounds,
+            false,
+            window.L.point(e.left + e.right + 2 * pad, e.top + e.bottom + 2 * pad)
+        )
+    )
 }
 
 export function uvToSpeedDir(u, v) {
@@ -97,4 +198,94 @@ export function closeRing(ring) {
 
 export function generateId() {
     return 'wf-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
+}
+
+// ─── Fire names ───────────────────────────────────────────────────────────────
+
+// Incident-name fields used by WFIGS / NIFC perimeter services, most specific
+// first, then generic fallbacks for uploaded GeoJSON.
+const FIRE_NAME_KEYS = [
+    'poly_IncidentName',
+    'attr_IncidentName',
+    'IncidentName',
+    'INCIDENT',
+    'incident_name',
+    'FIRE_NAME',
+    'fire_name',
+    'name',
+    'Name',
+]
+
+export function pickFireName(properties) {
+    if (!properties) return null
+    for (const k of FIRE_NAME_KEYS) {
+        const v = properties[k]
+        if (v != null && String(v).trim() !== '') return String(v).trim()
+    }
+    return null
+}
+
+// ─── Run summaries (Results card + PNG export) ───────────────────────────────
+
+const SQ_M_PER_ACRE = 4046.8564224
+
+export function ringAcres(ring) {
+    if (!Array.isArray(ring) || ring.length < 3) return null
+    try {
+        return area(polygon([closeRing(ring)])) / SQ_M_PER_ACRE
+    } catch (e) {
+        return null
+    }
+}
+
+// Starting perimeter vs. the predicted footprint (the spread ring encloses
+// the original perimeter plus the downwind growth).
+export function runStats(job) {
+    const p = (job && job.payload) || {}
+    const start = ringAcres(p.perimeter_coords && p.perimeter_coords[0])
+    const end = ringAcres(job && job.spreadRing)
+    const growth = start != null && end != null ? Math.max(0, end - start) : null
+    const growthPct = growth != null && start > 0 ? (growth / start) * 100 : null
+    return { start, end, growth, growthPct }
+}
+
+export function fmtAcres(acres) {
+    if (acres == null) return '—'
+    return (
+        acres.toLocaleString(undefined, {
+            maximumFractionDigits: acres < 10 ? 1 : 0,
+        }) + ' ac'
+    )
+}
+
+export function fmtPct(pct) {
+    if (pct == null) return ''
+    return `+${pct < 10 ? pct.toFixed(1) : Math.round(pct)}%`
+}
+
+export function fmtRunTime(ms) {
+    const d = new Date(ms)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    })
+}
+
+export function fmtWind(wm) {
+    if (!wm || wm.speed_ms == null || wm.direction_deg == null) return null
+    return `${Number(wm.speed_ms).toFixed(1)} m/s (${msToMph(
+        wm.speed_ms
+    )} mph) from ${dirLabel(wm.direction_deg)}`
+}
+
+export function fmtHrrr(hr) {
+    if (!hr || hr.date == null) return null
+    return `HRRR ${hr.date} ${String(hr.cycle).padStart(2, '0')}Z`
+}
+
+export function simTypeLabel(simType) {
+    return simType === 'smoke_dispersion' ? 'Smoke dispersion' : 'Fire spread'
 }
