@@ -32,15 +32,52 @@ export function isRenderable(layerObj) {
     return layerObj.extrudeEnabled === true || isSliced(layerObj)
 }
 
+// geojson-vt throws outright for a maxZoom outside 0–24 ("maxZoom should be
+// in the 0-24 range"), and a layer's maxZoom is routinely set past that.
+const MAX_SLICE_ZOOM = 24
+const DEFAULT_SLICE_ZOOM = 18
+const DEFAULT_SLICE_TOLERANCE = 3
+
+/**
+ * The GeoJSONSlicer options for a sliced layer. Both the 2D map and the globe
+ * ask `sliceUrl` for exactly these, which is what lets them share one fetch
+ * and one slice of the document (sliceUrl caches by URL + options).
+ *
+ * `maxZoom` is the slice's full-detail zoom: the layer's native zoom when it
+ * has one, else its max zoom, clamped to what geojson-vt accepts. Neither
+ * renderer asks the slicer for anything deeper — both overzoom its deepest
+ * tiles instead (Leaflet's maxNativeZoom, Cesium's imagery maximumLevel).
+ */
+export function sliceOptions(layerObj) {
+    const zoom = [layerObj.maxNativeZoom, layerObj.maxZoom]
+        .map((z) => parseInt(z, 10))
+        .find((z) => !isNaN(z))
+    const tolerance = parseFloat(layerObj.sliceTolerance)
+    return {
+        maxZoom: Math.max(
+            0,
+            Math.min(zoom ?? DEFAULT_SLICE_ZOOM, MAX_SLICE_ZOOM)
+        ),
+        tolerance: isNaN(tolerance)
+            ? DEFAULT_SLICE_TOLERANCE
+            : Math.max(0, tolerance),
+    }
+}
+
 export function toGlobeConfig(layerObj) {
     const s = layerObj
+    const sliced = isSliced(s)
+    const slice = sliced ? sliceOptions(s) : {}
 
     return {
         name: s.name,
         path: L_.getUrl(s.type, s.url, s),
         opacity: L_.layers.opacity[s.name],
-        sliced: isSliced(s),
-        sliceTolerance: s.sliceTolerance,
+        sliced,
+        // Resolved by sliceOptions — the same values the 2D map slices with,
+        // so the globe reuses the map's slice rather than making its own.
+        sliceMaxZoom: slice.maxZoom,
+        sliceTolerance: slice.tolerance,
         style: s.style || {},
         // Only consumed by the sliced hover label (sliceMetadata.pickIncidentName)
         // — the same field a sliced layer's 2D hover/click already reads.

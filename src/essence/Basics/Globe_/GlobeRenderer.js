@@ -1199,6 +1199,9 @@ class GlobeRenderer {
                 ) {
                     this._highlightedSlicedLayer = null
                 }
+                // Nor may its hover tooltip outlive it (it's re-shown on
+                // the next move if another sliced layer is under the cursor).
+                if (layerInfo.kind === 'sliced') this._endSlicedHover()
                 // Clean up feature mapping
                 if (layerInfo.featureMap) {
                     delete layerInfo.featureMap
@@ -1738,8 +1741,12 @@ class GlobeRenderer {
             if (!entity) {
                 // Nothing to pick doesn't mean nothing was clicked: a sliced
                 // layer draws as imagery, so it has no entity for Cesium to
-                // hit. Ask those layers to hit-test the click themselves.
-                this._clickSlicedLayers(click.position)
+                // hit. Ask those layers to hit-test the click themselves —
+                // and when none has anything there either, the click landed
+                // on empty globe, which deselects a sliced selection the way
+                // an empty click on the 2D map does (Map_'s clearOnMapClick).
+                if (!this._clickSlicedLayers(click.position))
+                    this._clickEmptySliced()
                 return
             }
             if (entity) {
@@ -1875,6 +1882,8 @@ class GlobeRenderer {
      * Offer a click to every layer that draws as imagery and hit-tests itself
      * (`kind: 'sliced'`), topmost first. The first layer with a feature there
      * takes the click, matching how an entity pick resolves to one feature.
+     *
+     * @returns {boolean} whether a sliced layer had a feature there
      */
     _clickSlicedLayers(windowPosition) {
         const names = Object.keys(this._layers).filter((name) => {
@@ -1885,17 +1894,30 @@ class GlobeRenderer {
                 typeof layerInfo.pick === 'function'
             )
         })
-        if (names.length === 0) return
+        if (names.length === 0) return false
 
         const lngLat = this._lngLatAt(windowPosition)
-        if (lngLat == null) return
+        if (lngLat == null) return false
 
         for (const name of names) {
             const layerInfo = this._layers[name]
             const feature = layerInfo.pick(lngLat[0], lngLat[1])
             if (feature == null) continue
             layerInfo.onClick?.(feature, lngLat, { name })
-            return
+            return true
+        }
+        return false
+    }
+
+    /**
+     * A click that hit nothing at all: offered to every sliced layer (shown
+     * or not — the selection may be on one that's hidden on the globe) so
+     * the one holding the current selection can deselect it.
+     */
+    _clickEmptySliced() {
+        for (const name of Object.keys(this._layers)) {
+            const layerInfo = this._layers[name]
+            if (layerInfo?.kind === 'sliced') layerInfo.onClickEmpty?.()
         }
     }
 
@@ -1908,12 +1930,36 @@ class GlobeRenderer {
     _setupGlobalHoverHandler() {
         if (this.rendererType !== 'cesium') return
 
-        this._cesiumHoverHandler = new Cesium.ScreenSpaceEventHandler(
-            this.renderer.scene.canvas
-        )
+        const canvas = this.renderer.scene.canvas
+        this._cesiumHoverHandler = new Cesium.ScreenSpaceEventHandler(canvas)
+        // Hit-testing reads depth back from the GPU (scene.pickPosition),
+        // far too costly to repeat for every mousemove event — camera drags
+        // included — so moves are coalesced to one test per animation frame,
+        // at the latest position. Cesium reuses its movement object, hence
+        // the copy.
+        this._slicedHoverPosition = null
+        this._slicedHoverFrame = null
         this._cesiumHoverHandler.setInputAction((movement) => {
-            this._hoverSlicedLayers(movement.endPosition)
+            this._slicedHoverPosition = Cesium.Cartesian2.clone(
+                movement.endPosition,
+                this._slicedHoverPosition ?? undefined
+            )
+            if (this._slicedHoverFrame != null) return
+            this._slicedHoverFrame = requestAnimationFrame(() => {
+                this._slicedHoverFrame = null
+                this._hoverSlicedLayers(this._slicedHoverPosition)
+            })
         }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
+
+        // No further mousemove arrives here once the pointer leaves the
+        // globe, so a tooltip or cursor put up here must be dropped now.
+        canvas.addEventListener('mouseleave', () => {
+            if (this._slicedHoverFrame != null) {
+                cancelAnimationFrame(this._slicedHoverFrame)
+                this._slicedHoverFrame = null
+            }
+            this._endSlicedHover()
+        })
     }
 
     /**
@@ -1922,7 +1968,6 @@ class GlobeRenderer {
      * own `onHover` instead of selecting a feature.
      */
     _hoverSlicedLayers(windowPosition) {
-        const canvas = this.renderer.scene.canvas
         const names = Object.keys(this._layers).filter((name) => {
             const layerInfo = this._layers[name]
             return (
@@ -1931,27 +1976,49 @@ class GlobeRenderer {
                 typeof layerInfo.pick === 'function'
             )
         })
-        if (names.length === 0) return
+        const lngLat =
+            names.length > 0 && windowPosition != null
+                ? this._lngLatAt(windowPosition)
+                : null
 
-        const lngLat = this._lngLatAt(windowPosition)
-        if (lngLat == null) {
-            canvas.style.cursor = ''
+        if (lngLat != null) {
+            for (const name of names) {
+                const layerInfo = this._layers[name]
+                const feature = layerInfo.pick(lngLat[0], lngLat[1])
+                if (feature == null) continue
+                this.renderer.scene.canvas.style.cursor = 'pointer'
+                this._slicedHoverCursor = true
+                const label = layerInfo.onHover?.(feature)
+                if (label != null) {
+                    CursorInfo.update(label, null, false)
+                    this._slicedHoverLabel = label
+                } else this._hideSlicedHoverLabel()
+                return
+            }
+        }
+        this._endSlicedHover()
+    }
+
+    /**
+     * Take down the hover tooltip — only if this handler put it up and it
+     * still says what we put there. CursorInfo is shared app-wide; hiding it
+     * on every move with nothing under the cursor killed tooltips other
+     * layers and tools had shown.
+     */
+    _hideSlicedHoverLabel() {
+        if (this._slicedHoverLabel == null) return
+        if (CursorInfo.cursorInfoDiv?.text() === this._slicedHoverLabel)
             CursorInfo.hide()
-            return
-        }
+        this._slicedHoverLabel = null
+    }
 
-        for (const name of names) {
-            const layerInfo = this._layers[name]
-            const feature = layerInfo.pick(lngLat[0], lngLat[1])
-            if (feature == null) continue
-            canvas.style.cursor = 'pointer'
-            const label = layerInfo.onHover?.(feature)
-            if (label != null) CursorInfo.update(label, null, false)
-            else CursorInfo.hide()
-            return
-        }
-        canvas.style.cursor = ''
-        CursorInfo.hide()
+    /** Drop the sliced hover's tooltip and pointer cursor, if it set them. */
+    _endSlicedHover() {
+        this._hideSlicedHoverLabel()
+        if (!this._slicedHoverCursor) return
+        this._slicedHoverCursor = false
+        const canvas = this.renderer.scene.canvas
+        if (canvas.style.cursor === 'pointer') canvas.style.cursor = ''
     }
 
     /**
@@ -2347,6 +2414,12 @@ class GlobeRenderer {
      * @param {object} feature - GeoJSON feature to highlight
      */
     highlightFeature(layerName, feature) {
+        // Already the highlighted feature: nothing to do. One selection
+        // reaches here more than once (L_.selectFeature, then
+        // L_.setActiveFeature), and on a sliced layer every clear/set pair
+        // swaps imagery, so repeating it only made the globe flicker.
+        if (this._isSlicedHighlight(layerName, feature)) return
+
         // Clear previous highlight
         this.clearHighlight()
 
@@ -2524,21 +2597,40 @@ class GlobeRenderer {
      */
     _highlightSlicedFeature(layerInfo, feature) {
         const slicedLayer = layerInfo.slicedLayer
-        const features = slicedLayer?.slicer?.features
-        if (features == null || feature == null) return
-
-        let index = features.indexOf(feature)
-        if (index === -1)
-            index = features.findIndex((candidate) =>
-                this._compareFeatureProps(
-                    candidate.properties,
-                    feature.properties
-                )
-            )
+        const index = this._slicedFeatureIndex(slicedLayer, feature)
         if (index === -1) return
 
         slicedLayer.setHighlightedFeature(index)
         this._highlightedSlicedLayer = slicedLayer
+    }
+
+    /** Which source feature of a sliced layer `feature` is, or -1. */
+    _slicedFeatureIndex(slicedLayer, feature) {
+        const features = slicedLayer?.slicer?.features
+        if (features == null || feature == null) return -1
+
+        const index = features.indexOf(feature)
+        if (index !== -1) return index
+        return features.findIndex((candidate) =>
+            this._compareFeatureProps(candidate.properties, feature.properties)
+        )
+    }
+
+    /** Whether `feature` is the sliced feature already drawn as selected. */
+    _isSlicedHighlight(layerName, feature) {
+        const layerInfo = this._layers[layerName]
+        if (this.rendererType !== 'cesium' || layerInfo?.kind !== 'sliced')
+            return false
+        const slicedLayer = layerInfo.slicedLayer
+        if (
+            this._highlightedSlicedLayer !== slicedLayer ||
+            slicedLayer.highlightedIndex == null
+        )
+            return false
+        return (
+            this._slicedFeatureIndex(slicedLayer, feature) ===
+            slicedLayer.highlightedIndex
+        )
     }
 
     /**

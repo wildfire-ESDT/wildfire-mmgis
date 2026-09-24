@@ -15,11 +15,28 @@
 import CesiumMVTLayer from '@basics/Globe_/CesiumMVTLayer'
 import CesiumSlicedVectorLayer from '../lib/CesiumSlicedVectorLayer'
 import L_ from '@basics/Layers_/Layers_'
-import { makeWith, onToggle } from './layerConfig'
+import { makeWith, onToggle as hideOrRemove, isSliced } from './layerConfig'
 import { frontFacingLabel } from '../lib/sliceMetadata'
+import {
+    layerInteractionsDisabled,
+    selectSlicedFeature,
+    clearSlicedSelection,
+} from '../lib/slicedSelection'
 
 function make(layerObj, gctx) {
     return makeWith(layerObj, gctx, render)
+}
+
+/**
+ * A sliced layer toggled off is removed from the globe outright, releasing
+ * its imagery, rather than kept hidden the way extruded tiles are: the
+ * expensive part — the fetched, sliced document — stays cached by sliceUrl
+ * (and in use by the 2D map), so turning it back on only re-adds imagery.
+ */
+function onToggle(layerObj, gctx) {
+    if (!gctx.visible && isSliced(layerObj))
+        return gctx.removeLayer(layerObj.name)
+    return hideOrRemove(layerObj, gctx)
 }
 
 // Add an already-built globe layer config (engine-facing entry point).
@@ -68,9 +85,19 @@ function renderSliced(layerConfig, gctx) {
         style: layerConfig.style,
         opacity: layerConfig.opacity,
         minZoom: layerConfig.minZoom,
-        maxZoom: layerConfig.maxZoom,
+        // The same slice options the 2D map uses (layerConfig.sliceOptions),
+        // so sliceUrl hands both views the one slice.
+        maxZoom: layerConfig.sliceMaxZoom,
         sliceTolerance: layerConfig.sliceTolerance,
         onReady: () => gctx.requestRender(),
+        // A failed build must not leave a dead entry behind: `make` treats
+        // any registered layer as present and only re-shows it, so the
+        // layer could never be rebuilt. Unregistered, the next toggle-on
+        // tries again.
+        onError: () => {
+            if (layers[name]?.slicedLayer === slicedLayer)
+                gctx.removeLayer(name)
+        },
     })
 
     layers[name] = {
@@ -79,7 +106,22 @@ function renderSliced(layerConfig, gctx) {
         slicedLayer,
         visible: true,
         pick: (lng, lat) => slicedLayer.featureAt(lng, lat),
-        onClick: (feature) => L_.selectFeature(name, feature),
+        // Everything a 2D click on the feature does (map.js), not just the
+        // highlight: the Description panel and tools listening for
+        // setActiveFeature must hear about a globe selection too.
+        onClick: (feature) => {
+            if (layerInteractionsDisabled()) return
+            selectSlicedFeature(name, feature)
+        },
+        // A globe click that hit nothing: deselect, as an empty 2D click
+        // does — if the selection is this layer's to clear.
+        onClickEmpty: () => {
+            if (
+                L_.activeFeature?.layerName === name ||
+                slicedLayer.highlightedIndex != null
+            )
+                clearSlicedSelection()
+        },
         // Same "Fire Incident: <name> / Acres: <n>" label the 2D map's
         // hover shows, driven by GlobeRenderer's hover hit-test (mirrors
         // pick/onClick above, which is that same hit-test for a click).

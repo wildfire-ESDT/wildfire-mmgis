@@ -26,7 +26,7 @@
  * returns the latter (geojson-vt's native tile format), so `_getVectorTilePromise`
  * converts on the way out.
  */
-import GeoJSONSlicer from './GeoJSONSlicer'
+import GeoJSONSlicer, { SOURCE_INDEX_KEY } from './GeoJSONSlicer'
 
 const L = window.L
 
@@ -48,22 +48,40 @@ function toLeafletGeometry(type, geometry) {
 }
 
 const LeafletSlicedVectorGrid = L.VectorGrid.extend({
-    initialize(geojson, options) {
+    /**
+     * @param {GeoJSONSlicer|object} source - an already-built slicer (map.js
+     *        passes the one `sliceUrl` shares with the globe), or a GeoJSON
+     *        document to slice here
+     * @param {object} options - L.VectorGrid options, plus `sliceMaxZoom` /
+     *        `tolerance` when `source` is a document. `sliceMaxZoom` is kept
+     *        apart from `maxZoom`, which is Leaflet's own cutoff for showing
+     *        the layer at all.
+     */
+    initialize(source, options) {
         L.VectorGrid.prototype.initialize.call(this, options)
         // extent is intentionally not forwarded here — nothing in this
         // layer's construction sets one, and GeoJSONSlicer's own default
         // (4096, matching this class's tile-space math) is correct.
-        this._slicer = new GeoJSONSlicer(geojson, {
-            maxZoom: options.maxZoom,
-            tolerance: options.tolerance,
-        })
+        this._slicer =
+            source instanceof GeoJSONSlicer
+                ? source
+                : new GeoJSONSlicer(source, {
+                      maxZoom: options.sliceMaxZoom,
+                      tolerance: options.tolerance,
+                  })
+        // The slicer can't serve a tile deeper than its own max zoom, so
+        // past it the grid overzooms that zoom's tiles instead of asking.
+        const maxNativeZoom = parseInt(this.options.maxNativeZoom, 10)
+        this.options.maxNativeZoom = isNaN(maxNativeZoom)
+            ? this._slicer.maxZoom
+            : Math.min(maxNativeZoom, this._slicer.maxZoom)
     },
 
     /** The source feature behind a rendered tile feature (for callers that
      * want the untiled, unsimplified original — matching what a `vector`
      * layer's click handler would have seen). */
     sourceFeatureFor(tileFeatureProperties) {
-        const index = tileFeatureProperties?.__mmgisSourceIndex
+        const index = tileFeatureProperties?.[SOURCE_INDEX_KEY]
         return index == null ? null : this._slicer.features[index] || null
     },
 
@@ -99,8 +117,8 @@ const LeafletSlicedVectorGrid = L.VectorGrid.extend({
 })
 
 L.vectorGrid = L.vectorGrid || {}
-L.vectorGrid.geojsonSliced = function (geojson, options) {
-    return new LeafletSlicedVectorGrid(geojson, options)
+L.vectorGrid.geojsonSliced = function (source, options) {
+    return new LeafletSlicedVectorGrid(source, options)
 }
 
 export default LeafletSlicedVectorGrid

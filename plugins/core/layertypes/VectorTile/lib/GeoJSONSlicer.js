@@ -38,8 +38,11 @@
  *
  * Index sharing
  * -------------
- * `sliceUrl` caches by URL, so a layer drawn on both the 2D map and the 3D
- * globe fetches and slices once rather than twice.
+ * `sliceUrl` caches by URL + options, and both the 2D map (map.js) and the
+ * globe (CesiumSlicedVectorLayer) slice through it with the same options
+ * (globe/layerConfig.sliceOptions), so a layer drawn in both views fetches,
+ * parses and slices its document once, and both views hold the same source
+ * feature objects.
  */
 import geojsonvt from 'geojson-vt'
 
@@ -70,7 +73,7 @@ const MAX_RING_POINTS = 2000
  * geojson-vt's own per-zoom simplification is what actually shapes the
  * output; this only exists to bound its input size. */
 function decimateRing(ring, max) {
-    if (ring.length <= max) return ring
+    if (!Array.isArray(ring) || ring.length <= max) return ring
     const stride = ring.length / max
     const out = []
     for (let i = 0; i < max - 1; i++) out.push(ring[Math.floor(i * stride)])
@@ -116,6 +119,37 @@ function decimateGeometry(geometry) {
             return geometry
     }
 }
+
+const COORDINATE_TYPES = [
+    'Point',
+    'MultiPoint',
+    'LineString',
+    'MultiLineString',
+    'Polygon',
+    'MultiPolygon',
+]
+
+/**
+ * Whether geojson-vt can take a geometry without throwing. It throws on an
+ * unknown type and dereferences `coordinates` unguarded, and one throw there
+ * fails the whole document — so a single malformed feature in a feed would
+ * otherwise take the entire layer down with it.
+ */
+function isUsableGeometry(geometry) {
+    if (geometry == null || typeof geometry !== 'object') return false
+    if (geometry.type === 'GeometryCollection')
+        return (
+            Array.isArray(geometry.geometries) &&
+            geometry.geometries.every((g) => g == null || isUsableGeometry(g))
+        )
+    return (
+        COORDINATE_TYPES.includes(geometry.type) &&
+        Array.isArray(geometry.coordinates)
+    )
+}
+
+// geojson-vt's accepted maxZoom range (it throws outside it).
+const MAX_ZOOM_LIMIT = 24
 
 // Slicing defaults. `maxZoom` is where the pyramid stops simplifying and
 // serves full detail; requests deeper than it reuse that tile's geometry
@@ -225,6 +259,14 @@ class GeoJSONSlicer {
             Object.entries(options).filter(([, v]) => v !== undefined)
         )
         const opts = { ...DEFAULT_OPTIONS, ...defined }
+        // Clamped rather than passed through: geojson-vt throws for anything
+        // outside 0–24, and the first pass of indexing must not run deeper
+        // than the pyramid itself goes.
+        const maxZoom = parseInt(opts.maxZoom, 10)
+        opts.maxZoom = isNaN(maxZoom)
+            ? DEFAULT_OPTIONS.maxZoom
+            : Math.max(0, Math.min(maxZoom, MAX_ZOOM_LIMIT))
+        opts.indexMaxZoom = Math.min(opts.indexMaxZoom, opts.maxZoom)
         this.extent = opts.extent
         this.maxZoom = opts.maxZoom
 
@@ -245,10 +287,14 @@ class GeoJSONSlicer {
                 ...feature,
                 // Decimated for geojson-vt's sake only — this.features (what
                 // hit-testing and highlighting resolve back to) keeps the
-                // original, undecimated geometry.
-                geometry: decimateGeometry(feature.geometry),
+                // original, undecimated geometry. A geometry geojson-vt would
+                // choke on is dropped (null: geojson-vt skips the feature)
+                // rather than failing the whole document.
+                geometry: isUsableGeometry(feature?.geometry)
+                    ? decimateGeometry(feature.geometry)
+                    : null,
                 properties: {
-                    ...(feature.properties || {}),
+                    ...(feature?.properties || {}),
                     [SOURCE_INDEX_KEY]: index,
                 },
             })),

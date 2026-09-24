@@ -66,16 +66,25 @@ class SlicedVectorImageryProvider {
      * @param {object} options.style - the layer's `style` config
      * @param {number} [options.minimumLevel=0]
      * @param {number} [options.maximumLevel=18]
+     * @param {number} [options.highlightIndex] - makes this the selection
+     *        overlay: it draws only that source feature, in selection colours
      */
     constructor(slicer, options = {}) {
         this._slicer = slicer
         this._style = options.style || {}
         this._errorEvent = new Cesium.Event()
+        // An empty tile resolves to no image, which Cesium reports as a
+        // failed tile — through this event if anything listens, else as a
+        // console.log per tile. Most tiles of a sparse layer (and nearly all
+        // of the selection overlay's) are empty by design, so it's listened
+        // to and dropped; a real rendering failure is logged in requestImage.
+        this._errorEvent.addEventListener(() => {})
         this._tilingScheme = new Cesium.WebMercatorTilingScheme()
         this._minimumLevel = options.minimumLevel ?? 0
         this._maximumLevel = options.maximumLevel ?? 18
-        // The one feature drawn in selection colours, by source index.
-        this._highlightIndex = null
+        // Set only on the selection overlay: the one feature it draws, by
+        // source index.
+        this._highlightIndex = options.highlightIndex ?? null
     }
 
     get tileWidth() {
@@ -160,6 +169,14 @@ class SlicedVectorImageryProvider {
         const tile = this._slicer.getTile(level, x, y)
         if (!tile || !tile.features || tile.features.length === 0)
             return undefined
+        // The selection overlay draws its one feature and nothing else.
+        const features =
+            this._highlightIndex == null
+                ? tile.features
+                : tile.features.filter(
+                      (f) => f.tags?.[SOURCE_INDEX_KEY] === this._highlightIndex
+                  )
+        if (features.length === 0) return undefined
 
         const canvas = document.createElement('canvas')
         canvas.width = TILE_SIZE
@@ -174,7 +191,7 @@ class SlicedVectorImageryProvider {
         ctx.lineJoin = 'round'
         ctx.lineCap = 'round'
 
-        for (const feature of tile.features) {
+        for (const feature of features) {
             // One malformed feature (e.g. a degenerate ring after
             // simplification) must not blank the rest of an otherwise-good
             // tile, and definitely must not turn into a rejected tile.
@@ -196,14 +213,16 @@ class SlicedVectorImageryProvider {
     _drawFeature(ctx, feature, scale) {
         const properties = feature.tags || {}
         const style = resolveFeatureStyle(this._style, properties)
-        const highlighted =
-            this._highlightIndex != null &&
-            properties[SOURCE_INDEX_KEY] === this._highlightIndex
+        // Everything the selection overlay draws is the selection: a red
+        // outline over the base layer, which already draws its fill.
+        const highlighted = this._highlightIndex != null
 
         const stroke = highlighted
             ? 'rgba(255, 0, 0, 1)'
             : rgba(style.color, style.opacity)
-        const fill = rgba(style.fillColor, style.fillOpacity)
+        const fill = highlighted
+            ? null
+            : rgba(style.fillColor, style.fillOpacity)
         // Widths are specified in screen pixels, but the canvas is scaled to
         // tile-coordinate space, so undo the scale to keep strokes constant.
         const weight = style.weight / scale
@@ -250,11 +269,6 @@ class SlicedVectorImageryProvider {
             ctx.stroke()
         }
     }
-
-    /** Which source feature (if any) currently draws in selection colours. */
-    setHighlightIndex(index) {
-        this._highlightIndex = index
-    }
 }
 
 /**
@@ -275,6 +289,8 @@ class CesiumSlicedVectorLayer {
      * @param {number} [config.maxZoom]
      * @param {number} [config.sliceTolerance] - geojson-vt simplification
      * @param {function} [config.onReady] - called with this once sliced
+     * @param {function} [config.onError] - called with the error if the
+     *        document couldn't be fetched or sliced
      */
     constructor(viewer, config) {
         this.viewer = viewer
@@ -289,6 +305,10 @@ class CesiumSlicedVectorLayer {
         this._destroyed = false
         this._imageryLayer = null
         this._provider = null
+        // The selection is drawn by a separate overlay imagery layer above
+        // this one (see setHighlightedFeature), by source index.
+        this._highlightIndex = null
+        this._highlightLayer = null
         this.slicer = null
 
         this._sliceOptions = {
@@ -314,6 +334,9 @@ class CesiumSlicedVectorLayer {
             if (this._destroyed) return
 
             this.slicer = slicer
+            // The slicer's own (clamped) max zoom: Cesium must not ask it for
+            // a deeper tile than it can serve — it upsamples from there.
+            this.maxZoom = slicer.maxZoom
             this._provider = new SlicedVectorImageryProvider(slicer, {
                 style: this.style,
                 minimumLevel: this.minZoom,
@@ -331,6 +354,7 @@ class CesiumSlicedVectorLayer {
                 `Failed to slice GeoJSON for layer "${this.name}":`,
                 err
             )
+            if (!this._destroyed && config.onError) config.onError(err)
         }
     }
 
@@ -354,20 +378,51 @@ class CesiumSlicedVectorLayer {
         return this.slicer.featureAt(lng, lat, zoom)
     }
 
+    /** The source index of the feature drawn as selected, or null. */
+    get highlightedIndex() {
+        return this._highlightIndex
+    }
+
     /**
      * Draw one feature in selection colours, or none when passed null.
      *
-     * Only the tiles showing that feature need redrawing, but Cesium has no
-     * per-tile invalidation for an imagery provider, so the layer is rebuilt
-     * in place. That is cheap here: rasterizing the handful of visible tiles
-     * is the same work a pan does, and it happens once per selection rather
-     * than per frame.
+     * Cesium has no per-tile invalidation for an imagery provider, so a
+     * changed selection needs a new imagery layer — and a new layer starts
+     * with no tiles loaded. Rebuilding this layer itself for that made the
+     * whole layer blink out on every selection; instead the selection is its
+     * own overlay layer that draws only the selected feature, so only that
+     * outline is ever redrawn. A request for what's already drawn is a no-op.
      */
     setHighlightedFeature(sourceIndex) {
-        if (!this._provider) return
-        if (this._provider._highlightIndex === sourceIndex) return
-        this._provider.setHighlightIndex(sourceIndex)
-        this._refreshImagery()
+        const index = sourceIndex ?? null
+        if (!this._provider || index === this._highlightIndex) return
+        this._highlightIndex = index
+        this._removeHighlightLayer()
+        if (index != null) this._addHighlightLayer()
+        this.viewer.scene.requestRender()
+    }
+
+    /** Put the selection overlay on the globe, directly above this layer. */
+    _addHighlightLayer() {
+        const layers = this.viewer.imageryLayers
+        const index = layers.indexOf(this._imageryLayer)
+        this._highlightLayer = layers.addImageryProvider(
+            new SlicedVectorImageryProvider(this.slicer, {
+                style: this.style,
+                minimumLevel: this.minZoom,
+                maximumLevel: this.maxZoom,
+                highlightIndex: this._highlightIndex,
+            }),
+            index >= 0 ? index + 1 : undefined
+        )
+        this._highlightLayer.alpha = this.opacity
+        this._highlightLayer.show = this._visible
+    }
+
+    _removeHighlightLayer() {
+        if (!this._highlightLayer) return
+        this.viewer.imageryLayers.remove(this._highlightLayer, true)
+        this._highlightLayer = null
     }
 
     /** Rebuild the imagery layer in place, preserving position and settings. */
@@ -391,12 +446,14 @@ class CesiumSlicedVectorLayer {
     setVisible(visible) {
         this._visible = visible
         if (this._imageryLayer) this._imageryLayer.show = visible
+        if (this._highlightLayer) this._highlightLayer.show = visible
         this.viewer.scene.requestRender()
     }
 
     setOpacity(opacity) {
         this.opacity = opacity
         if (this._imageryLayer) this._imageryLayer.alpha = opacity
+        if (this._highlightLayer) this._highlightLayer.alpha = opacity
         this.viewer.scene.requestRender()
     }
 
@@ -406,10 +463,15 @@ class CesiumSlicedVectorLayer {
         if (!this._provider) return
         this._provider._style = this.style
         this._refreshImagery()
+        // The overlay's outline width follows the style too.
+        this._removeHighlightLayer()
+        if (this._highlightIndex != null) this._addHighlightLayer()
     }
 
     destroy() {
         this._destroyed = true
+        this._removeHighlightLayer()
+        this._highlightIndex = null
         if (this._imageryLayer) {
             this.viewer.imageryLayers.remove(this._imageryLayer, true)
             this._imageryLayer = null
