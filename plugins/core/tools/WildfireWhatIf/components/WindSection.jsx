@@ -1,15 +1,14 @@
 import React, { useState } from 'react'
 import useWhatIfStore from '../store'
 import { fetchWinds, setWind, resetWind } from '../actions'
-import { dirLabel, msToMph } from '../utils'
-import { Button, Slider } from '@design/components'
+import { dirLabel, msToMph, fmtWind } from '../utils'
+import { Button, IconButton, Slider } from '@design/components'
+import SectionLabel from './SectionLabel'
 
-// "Winds from 2:00 PM PDT (21:00 UTC) · current hour" — browser-local first,
-// UTC second, and an explicit flag when the latest published cycle is behind
-// the wall clock.
+// "HRRR 9:00 AM PDT", plus how old it is when it isn't the current hour.
 function cycleStatus(hrrrRun) {
     const d = new Date(hrrrRun.valid_iso)
-    if (isNaN(d.getTime())) return (hrrrRun.source || 'HRRR') + ' loaded'
+    if (isNaN(d.getTime())) return 'HRRR'
     const time = d.toLocaleTimeString([], {
         hour: 'numeric',
         minute: '2-digit',
@@ -19,14 +18,32 @@ function cycleStatus(hrrrRun) {
         d.toDateString() === new Date().toDateString()
             ? ''
             : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' '
-    const utc = `${String(d.getUTCHours()).padStart(2, '0')}:00 UTC`
-    const hoursBehind =
+    const label = `HRRR ${day}${time}`
+    if (hrrrRun.source === 'restored') return label
+    const hoursOld =
         Math.floor(Date.now() / 3600e3) - Math.floor(d.getTime() / 3600e3)
-    const freshness =
-        hoursBehind <= 0
-            ? 'current hour'
-            : `latest available, ${hoursBehind} h behind current hour`
-    return `Winds from ${day}${time} (${utc}) · ${freshness}`
+    return hoursOld > 0 ? `${label} · ${hoursOld} h old` : label
+}
+
+function WindArrow({ deg }) {
+    // Points where the wind blows TO (direction_deg is where it comes FROM)
+    return (
+        <div className="ww-arrow-wrap">
+            <svg
+                viewBox="0 0 24 24"
+                width="26"
+                height="26"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                style={{ transform: `rotate(${(deg + 180) % 360}deg)` }}
+            >
+                <line x1="12" y1="20" x2="12" y2="4" />
+                <polyline points="7,9 12,4 17,9" />
+            </svg>
+        </div>
+    )
 }
 
 export default function WindSection() {
@@ -47,79 +64,61 @@ export default function WindSection() {
 
     return (
         <>
+            <SectionLabel>Wind</SectionLabel>
+
             {fetchingWinds && (
-                <div className="ww-status ww-status-bbox">
-                    <span className="ww-spinner" /> Fetching latest observed
-                    winds…
+                <div className="ww-status ww-status-info">
+                    <span className="ww-spinner" /> Loading the latest
+                    observed winds…
                 </div>
             )}
+
             {hrrrError && !fetchingWinds && (
                 <div className="ww-status ww-status-err">
-                    Wind fetch failed: {hrrrError}
-                </div>
-            )}
-            {hrrrRun && !fetchingWinds && (
-                <div className="ww-status ww-status-bbox">
-                    {cycleStatus(hrrrRun)}
-                    {windStale ? ' (perimeter changed, refetching)' : ''}
-                </div>
-            )}
-            {wind && !fetchingWinds && (
-                <div className="ww-hour-tools">
+                    Couldn't load winds: {hrrrError}{' '}
                     <button
                         type="button"
-                        className="ww-refetch-btn"
+                        className="ww-link-btn"
                         onClick={() => fetchWinds()}
                     >
-                        Refetch Latest Wind
+                        Retry
                     </button>
                 </div>
             )}
 
-            <div className="ww-section-label">Wind</div>
-
-            {!wind && !fetchingWinds && (
-                <div className="ww-hour-strip-empty">
-                    Set a fire perimeter and the latest observed winds will
-                    load automatically.
-                </div>
-            )}
-
-            {target && (
-                <>
-                    <div className="ww-wind-header">
-                        <div className="ww-arrow-wrap">
-                            <svg
-                                viewBox="0 0 24 24"
-                                width="26"
-                                height="26"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                style={{
-                                    transform: `rotate(${target.direction_deg}deg)`,
-                                }}
-                            >
-                                <line x1="12" y1="20" x2="12" y2="4" />
-                                <polyline points="7,9 12,4 17,9" />
-                            </svg>
+            {target && !fetchingWinds && (
+                <div className="ww-card">
+                    <div className="ww-wind-summary">
+                        <WindArrow deg={target.direction_deg} />
+                        <div className="ww-wind-text">
+                            <div className="ww-card-title">{fmtWind(target)}</div>
+                            <div className="ww-card-line">
+                                {edited
+                                    ? `Adjusted · observed ${fmtWind(wind.base)}`
+                                    : hrrrRun
+                                    ? cycleStatus(hrrrRun)
+                                    : 'Observed'}
+                                {windStale ? ' · updating' : ''}
+                            </div>
                         </div>
-                        <span className="ww-wind-source">
-                            {edited
-                                ? `edited (observed: ${wind.base.speed_ms} m/s @ ${wind.base.direction_deg}°)`
-                                : 'HRRR observed'}
-                        </span>
-                        <button
-                            type="button"
-                            className="ww-edit-winds-toggle"
-                            title="Adjust wind speed (m/s) and direction (rotate from which compass bearing the wind originates)"
-                            onClick={() => setEditOpen((o) => !o)}
-                        >
-                            {editOpen ? 'Hide' : 'Modify winds'}
-                        </button>
+                        <div className="ww-corner-actions">
+                            <IconButton
+                                size="sm"
+                                title="Refetch the latest winds"
+                                onClick={() => fetchWinds()}
+                            >
+                                <i className="mdi mdi-refresh mdi-16px" />
+                            </IconButton>
+                            <Button
+                                size="sm"
+                                className={editOpen ? 'ww-btn-active' : ''}
+                                title="Change the wind speed and direction"
+                                onClick={() => setEditOpen((o) => !o)}
+                            >
+                                {editOpen ? 'Done' : 'Modify'}
+                            </Button>
+                        </div>
                     </div>
-
                     {editOpen && (
                         <>
                             <div className="ww-slider-row">
@@ -157,23 +156,22 @@ export default function WindSection() {
                                     {dirLabel(target.direction_deg)}
                                 </span>
                             </div>
-
-                            {edited && (
-                                <div className="ww-hour-tools">
-                                    <Button size="sm" onClick={() => resetWind()}>
-                                        Reset to Observed
-                                    </Button>
-                                </div>
-                            )}
-
                             <div className="ww-wind-legend">
                                 <span>0</span>
                                 <div className="ww-wind-legend-bar" />
                                 <span>15+ m/s</span>
                             </div>
+                            {edited && (
+                                <div className="ww-edit-footer">
+                                    <Button size="sm" onClick={() => resetWind()}>
+                                        <i className="mdi mdi-restore mdi-14px ww-btn-icon" />
+                                        Reset to observed
+                                    </Button>
+                                </div>
+                            )}
                         </>
                     )}
-                </>
+                </div>
             )}
         </>
     )

@@ -1,51 +1,70 @@
 import React, { useRef } from 'react'
-import useWhatIfStore, { BBOX_BUFFER_KM } from '../store'
+import useWhatIfStore from '../store'
 import { startMapDraw, cancelMapDraw, clearPerimeter, uploadPerimeter } from '../actions'
+import { ringAcres, fmtAcres } from '../utils'
 import { Button, IconButton } from '@design/components'
+import SectionLabel from './SectionLabel'
 
-function BboxStatus({ bounds }) {
-    const [[latMin, lonMin], [latMax, lonMax]] = bounds
-    const midLat = (latMin + latMax) / 2
-    const heightKm = Math.round((latMax - latMin) * 111.32)
-    const widthKm = Math.round(
-        (lonMax - lonMin) * 111.32 * Math.cos((midLat * Math.PI) / 180)
-    )
-    return (
-        <div className="ww-status ww-status-bbox">
-            Wind region: {widthKm} × {heightKm} km (perimeter +{' '}
-            {BBOX_BUFFER_KM} km)
-        </div>
-    )
+const SOURCE_LABELS = {
+    selected: 'Selected on map',
+    uploaded: 'Uploaded',
+    run: 'From a previous run',
+    drawn: 'Drawn',
 }
 
-// Handles only exist on editable perimeters small enough for map.js to spawn
-// them (MAX_EDIT_VERTICES); map-selected fire perimeters are never editable.
-function perimeterStatus(source, ring) {
-    const editable = source !== 'selected' && ring.length - 1 <= 60
-    const adjust = editable ? '. Drag the map handles to adjust it' : ''
-    if (source === 'selected') return 'Fire perimeter selected from the map'
-    if (source === 'uploaded') return 'Perimeter uploaded' + adjust
-    if (source === 'run') return 'Perimeter loaded from the selected run'
-    return 'Perimeter drawn' + adjust
+function defaultTitle(source) {
+    if (source === 'uploaded') return 'Uploaded perimeter'
+    if (source === 'drawn') return 'Drawn perimeter'
+    return 'Fire perimeter'
 }
 
 export default function PerimeterSection() {
     const drawing = useWhatIfStore((s) => s.drawing)
     const perimeterRing = useWhatIfStore((s) => s.perimeterRing)
     const perimeterSource = useWhatIfStore((s) => s.perimeterSource)
-    const bboxBounds = useWhatIfStore((s) => s.bboxBounds)
+    const perimeterName = useWhatIfStore((s) => s.perimeterName)
     const fileRef = useRef(null)
 
     return (
         <>
-            <div className="ww-section-label">Fire Perimeter</div>
+            <SectionLabel>Fire perimeter</SectionLabel>
+            {perimeterRing ? (
+                <div className="ww-card">
+                    <div className="ww-card-head">
+                        <span className="ww-card-title">
+                            {perimeterName || defaultTitle(perimeterSource)}
+                        </span>
+                        <IconButton
+                            size="sm"
+                            onClick={() => clearPerimeter()}
+                            title="Clear perimeter"
+                        >
+                            <i className="mdi mdi-close mdi-16px" />
+                        </IconButton>
+                    </div>
+                    <div className="ww-card-line">
+                        {fmtAcres(ringAcres(perimeterRing))} ·{' '}
+                        {SOURCE_LABELS[perimeterSource] || 'Drawn'}
+                    </div>
+                </div>
+            ) : (
+                <div className="ww-card ww-start">
+                    <i className="mdi mdi-cursor-default-click-outline mdi-24px" />
+                    <div>
+                        <div className="ww-card-title">Select a fire on the map</div>
+                        <div className="ww-card-line">
+                            or draw or upload a perimeter
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="ww-row">
                 <Button
                     className={`ww-grow${drawing ? ' ww-btn-active' : ''}`}
                     onClick={() => (drawing ? cancelMapDraw() : startMapDraw())}
                     title="Draw the fire perimeter on the map"
                 >
-                    <i className="mdi mdi-vector-polygon mdi-14px" />
+                    <i className="mdi mdi-pencil mdi-14px ww-btn-icon" />
                     {drawing ? 'Cancel Draw' : 'Draw Perimeter'}
                 </Button>
                 <Button
@@ -53,16 +72,9 @@ export default function PerimeterSection() {
                     onClick={() => fileRef.current && fileRef.current.click()}
                     title="Upload a GeoJSON perimeter"
                 >
-                    <i className="mdi mdi-upload mdi-14px" />
-                    Upload
+                    <i className="mdi mdi-upload mdi-14px ww-btn-icon" />
+                    Upload GeoJSON
                 </Button>
-                <IconButton
-                    size="sm"
-                    onClick={() => clearPerimeter()}
-                    title="Clear perimeter"
-                >
-                    <i className="mdi mdi-close mdi-16px" />
-                </IconButton>
                 <input
                     ref={fileRef}
                     type="file"
@@ -77,21 +89,10 @@ export default function PerimeterSection() {
             </div>
             {drawing && (
                 <div className="ww-draw-hint">
-                    Click to add vertices · double-click or Enter to close ·
-                    Backspace undoes · Esc cancels
+                    Click to add points · double-click to finish · Esc to
+                    cancel
                 </div>
             )}
-            {perimeterRing ? (
-                <div className="ww-status ww-status-ok">
-                    {perimeterStatus(perimeterSource, perimeterRing)}
-                </div>
-            ) : (
-                <div className="ww-status ww-status-none">
-                    No fire perimeter yet. Draw one, upload a GeoJSON, or
-                    click a fire on the map.
-                </div>
-            )}
-            {bboxBounds && <BboxStatus bounds={bboxBounds} />}
         </>
     )
 }

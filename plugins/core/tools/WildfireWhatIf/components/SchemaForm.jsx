@@ -63,13 +63,20 @@ function FieldInput({ f }) {
 }
 
 // Renders schema sections from formConfig. `sections` filters by title so
-// callers can place each section where it belongs in the panel layout.
-export default function SchemaForm({ sections }) {
+// callers can place each section where it belongs in the panel layout;
+// `compact` renders section titles as field labels under a caller's heading.
+export default function SchemaForm({ sections, compact }) {
     return FORM_SECTIONS.filter(
         (s) => !sections || sections.includes(s.title)
     ).map((section) => (
         <React.Fragment key={section.title}>
-            <div className="ww-section-label">{section.title}</div>
+            {compact ? (
+                <div className="ww-field-label ww-field-label-compact">
+                    <label>{section.title}</label>
+                </div>
+            ) : (
+                <div className="ww-section-label">{section.title}</div>
+            )}
             <div className="ww-field-grid">
                 {section.fields.map((f) => (
                     <div

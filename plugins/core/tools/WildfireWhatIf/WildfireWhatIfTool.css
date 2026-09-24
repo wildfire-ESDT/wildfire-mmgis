@@ -1,13 +1,26 @@
 #wildfireTool {
-    color: #e8ebee;
-    height: 100%;
+    color: #f1f3f5;
+    /* Its own box, sized to content and capped at the (invisible) tool
+       panel frame, scrolling beyond it */
+    pointer-events: auto;
+    max-height: 100%;
     overflow-y: auto;
+    background: var(--color-k);
+    border: 1px solid var(--color-a1);
+    border-radius: 10px;
+    box-shadow: inset 2px 0px 10px 0px rgba(0, 0, 0, 0.2),
+        0 8px 32px var(--color-shadow);
     display: flex;
     flex-direction: column;
-    padding-bottom: 24px;
+    padding-bottom: 14px;
     box-sizing: border-box;
-    font-family: lato-light, sans-serif;
+    font-family: inherit; /* the app font (roboto), same as the Legend */
     font-size: 13px;
+}
+
+/* Scroll the box rather than squash its sections */
+#wildfireTool > * {
+    flex-shrink: 0;
 }
 
 #wildfireTool > *:not(.mmgisToolHeader):not(.ww-submit) {
@@ -102,21 +115,16 @@
     align-items: baseline;
 }
 
-#wildfireTool .ww-field-label .ww-field-type {
-    display: none;
-}
-
 #wildfireTool .ww-field-description {
     font-size: 11px;
-    color: #b4bac0;
+    color: #cfd5da;
     margin-top: 3px;
 }
 
 #wildfireTool .ww-field input[type='text'],
 #wildfireTool .ww-field input[type='date'],
 #wildfireTool .ww-field input[type='number'],
-#wildfireTool .ww-jobs-filter,
-#wildfireTool .ww-exp-name-row input[type='text'] {
+#wildfireTool .ww-jobs-filter {
     width: 100%;
     box-sizing: border-box;
     background: #26292b;
@@ -130,8 +138,7 @@
 }
 
 #wildfireTool .ww-field input:focus,
-#wildfireTool .ww-jobs-filter:focus,
-#wildfireTool .ww-exp-name-row input:focus {
+#wildfireTool .ww-jobs-filter:focus {
     outline: none;
     border-color: var(--color-mmgis, #08aeea);
 }
@@ -153,7 +160,7 @@
 
 #wildfireTool .ww-field-suffix {
     font-size: 12px;
-    color: #b0b4b8;
+    color: #cfd5da;
     flex-shrink: 0;
 }
 
@@ -181,37 +188,6 @@
     letter-spacing: 0.04em;
 }
 
-/* ── Wind fetch progress ── */
-
-#wildfireTool .ww-progress {
-    position: relative;
-    height: 20px;
-    margin-top: 5px;
-    background: #26292b;
-    border: 1px solid #686c70;
-    border-radius: 2px;
-    overflow: hidden;
-}
-
-#wildfireTool .ww-progress-bar {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    background: linear-gradient(90deg, #0277bd, var(--color-mmgis, #08aeea));
-    transition: width 0.3s ease;
-}
-
-#wildfireTool .ww-progress-label {
-    position: relative;
-    display: block;
-    text-align: center;
-    font-size: 11px;
-    line-height: 20px;
-    color: #fff;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-}
-
 /* ── Draw hint / statuses ── */
 
 #wildfireTool .ww-draw-hint {
@@ -229,22 +205,6 @@
     margin-top: 5px;
     padding: 5px 7px;
     border-radius: 2px;
-}
-
-#wildfireTool .ww-status-none {
-    color: #b8c0c8;
-    background: transparent;
-    padding: 2px 0;
-}
-
-#wildfireTool .ww-status-ok {
-    color: #81c784;
-    background: rgba(102, 187, 106, 0.12);
-}
-
-#wildfireTool .ww-status-bbox {
-    color: #4dc9f0;
-    background: rgba(8, 174, 234, 0.12);
 }
 
 #wildfireTool .ww-status-err {
@@ -270,111 +230,7 @@
     }
 }
 
-/* ── Forecast hour strip — timeline-styled cells ── */
-
-#wildfireTool .ww-hour-strip {
-    display: flex;
-    margin-bottom: 6px;
-    border: 1px solid #44484a;
-    border-radius: 2px;
-    overflow: hidden;
-    background: var(--color-a);
-}
-
-#wildfireTool .ww-hour-strip-empty {
-    font-size: 12px;
-    color: #aab4bc;
-    padding: 3px 0;
-    margin-bottom: 4px;
-}
-
-#wildfireTool .ww-hour-chip {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-    padding: 4px 0 3px 0;
-    background: transparent;
-    color: #e8ebee;
-    border: none;
-    border-right: 1px solid #34383a;
-    border-bottom: 2px solid transparent;
-    font-family: inherit;
-    cursor: pointer;
-    position: relative;
-    transition: background 0.1s;
-}
-
-#wildfireTool .ww-hour-chip:last-child {
-    border-right: none;
-}
-
-#wildfireTool .ww-hour-chip:hover:not(:disabled) {
-    background: #3a3e40;
-    color: #fff;
-}
-
-#wildfireTool .ww-hour-chip.selected {
-    background: #46617a;
-    color: #fff;
-}
-
-#wildfireTool .ww-hour-chip.edited {
-    border-bottom-color: var(--color-h, #ffdd5c);
-}
-
-#wildfireTool .ww-hour-chip-all {
-    flex: 0 0 34px;
-    justify-content: center;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    color: #d5d9dc;
-    background: #2a2d2f;
-    border-right: 1px solid #44484a;
-}
-
-#wildfireTool .ww-hour-chip-all.all-active {
-    background: rgba(255, 221, 92, 0.18);
-    color: var(--color-h, #ffdd5c);
-    border-bottom-color: var(--color-h, #ffdd5c);
-}
-
-#wildfireTool .ww-hour-chip:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-}
-
-#wildfireTool .ww-hour-chip.loading {
-    animation: wwChipPulse 1.2s ease-in-out infinite;
-}
-
-@keyframes wwChipPulse {
-    0%, 100% { opacity: 0.3; }
-    50% { opacity: 0.75; }
-}
-
-#wildfireTool .ww-hour-chip-fxx {
-    font-size: 9px;
-    opacity: 0.75;
-    line-height: 1;
-}
-
-#wildfireTool .ww-hour-chip-time {
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.1;
-}
-
 /* ── Wind controls ── */
-
-#wildfireTool .ww-wind-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 4px;
-}
 
 #wildfireTool .ww-arrow-wrap {
     color: var(--color-h, #ffdd5c);
@@ -386,29 +242,6 @@
     transition: transform 0.3s ease;
 }
 
-#wildfireTool .ww-wind-source {
-    font-size: 12px;
-    color: #d5d9dc;
-    flex: 1;
-}
-
-#wildfireTool .ww-edit-winds-toggle {
-    margin-left: auto;
-    padding: 2px 10px;
-    font-size: 11px;
-    cursor: pointer;
-    border-radius: 4px;
-    border: 1px solid rgba(255,255,255,0.35);
-    background: transparent;
-    color: #ffffff;
-}
-
-#wildfireTool .ww-edit-winds-toggle:hover {
-    border-color: #ffffff;
-    background: rgba(255,255,255,0.08);
-    color: #ffffff;
-}
-
 #wildfireTool .ww-slider-row {
     display: flex;
     align-items: center;
@@ -418,7 +251,7 @@
 
 #wildfireTool .ww-slider-label {
     font-size: 12px;
-    color: #d5d9dc;
+    color: #e3e7ea;
     min-width: 42px;
     text-align: right;
     flex-shrink: 0;
@@ -436,37 +269,6 @@
     flex-shrink: 0;
 }
 
-#wildfireTool .ww-hour-tools {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 4px;
-    padding: 6px 7px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 2px;
-    font-size: 12px;
-}
-
-#wildfireTool .ww-hour-tools-hint {
-    flex: 1;
-    color: #d5d9dc;
-}
-
-#wildfireTool .ww-refetch-btn {
-    padding: 2px 10px;
-    font-size: 11px;
-    cursor: pointer;
-    border-radius: 4px;
-    border: 1px solid rgba(255,255,255,0.35);
-    background: transparent;
-    color: #ffffff;
-}
-
-#wildfireTool .ww-refetch-btn:hover {
-    background: rgba(255,255,255,0.08);
-    border-color: #ffffff;
-}
-
 /* ── Wind speed legend ── */
 
 #wildfireTool .ww-wind-legend {
@@ -475,7 +277,7 @@
     gap: 6px;
     margin-top: 8px;
     font-size: 11px;
-    color: #b4bac0;
+    color: #cfd5da;
 }
 
 #wildfireTool .ww-wind-legend-bar {
@@ -493,7 +295,7 @@
 /* ── Runs list ── */
 
 #wildfireTool .ww-jobs {
-    margin-top: 10px;
+    margin-top: 16px;
 }
 
 #wildfireTool .ww-jobs-header {
@@ -505,12 +307,6 @@
 #wildfireTool .ww-jobs-header .ww-section-label {
     flex: 1;
     margin-top: 0;
-    margin-right: 10px;
-}
-
-#wildfireTool .ww-jobs-hint {
-    font-size: 11px;
-    color: #b4bac0;
 }
 
 #wildfireTool .ww-jobs-filter {
@@ -519,7 +315,7 @@
 
 #wildfireTool .ww-empty {
     font-size: 12px;
-    color: #b4bac0;
+    color: #cfd5da;
     padding: 8px 0;
 }
 
@@ -540,7 +336,7 @@
     gap: 6px;
     cursor: pointer;
     font-size: 13px;
-    color: #e8ebee;
+    color: #f1f3f5;
     user-select: none;
 }
 
@@ -557,9 +353,9 @@
 }
 
 #wildfireTool .ww-job-dot.completed { background: #66bb6a; }
-#wildfireTool .ww-job-dot.failed    { background: #ef5350; }
-#wildfireTool .ww-job-dot.running   { background: #ffb74d; }
-#wildfireTool .ww-job-dot.queued    { background: #ccc; }
+#wildfireTool .ww-job-dot.failed { background: #ef5350; }
+#wildfireTool .ww-job-dot.running { background: #ffb74d; }
+#wildfireTool .ww-job-dot.queued { background: #ccc; }
 
 #wildfireTool .ww-job-name {
     flex: 1;
@@ -582,12 +378,12 @@
 
 #wildfireTool .ww-sim-badge.smoke {
     background: rgba(120, 144, 156, 0.3);
-    color: #b0bec5;
+    color: #cfd5da;
 }
 
 #wildfireTool .ww-job-time {
     font-size: 10px;
-    color: #b4bac0;
+    color: #cfd5da;
     flex-shrink: 0;
 }
 
@@ -600,7 +396,7 @@
     justify-content: center;
     border-radius: 3px;
     font-size: 11px;
-    color: #b4bac0;
+    color: #cfd5da;
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.15s, color 0.15s, background 0.15s;
@@ -615,50 +411,7 @@
     background: rgba(239, 83, 80, 0.15);
 }
 
-/* ── Run details drawer ── */
-
-#wildfireTool .ww-job-expanded {
-    padding: 6px 4px 2px 14px;
-    font-size: 12px;
-    color: #d5d9dc;
-    cursor: default;
-}
-
-#wildfireTool .ww-exp-uuid {
-    font-size: 10px;
-    font-family: monospace;
-    color: #a5abb0;
-    margin-bottom: 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-#wildfireTool .ww-exp-label {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #b4bac0;
-    margin: 6px 0 2px 0;
-}
-
-#wildfireTool .ww-exp-name-row {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 6px;
-}
-
-#wildfireTool .ww-exp-name-row input {
-    flex: 1;
-}
-
-#wildfireTool .ww-exp-row {
-    margin-bottom: 3px;
-}
-
-#wildfireTool .ww-exp-dim {
-    color: #b4bac0;
-}
+/* ── Downloads / details ── */
 
 #wildfireTool .ww-exp-downloads {
     display: flex;
@@ -680,7 +433,7 @@
 #wildfireTool .ww-param-key {
     font-size: 11px;
     font-family: monospace;
-    color: #b4bac0;
+    color: #cfd5da;
 }
 
 #wildfireTool .ww-param-val {
@@ -706,6 +459,307 @@
     border-radius: 2px;
 }
 
+/* ── Setup sections ── */
+
+#wildfireTool .ww-section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+#wildfireTool .ww-section-title {
+    flex: 1;
+}
+
+#wildfireTool .ww-section-opt {
+    text-transform: none;
+    letter-spacing: 0;
+    color: #cfd5da;
+    font-size: 11px;
+}
+
+#wildfireTool .ww-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    padding: 8px 10px;
+    margin: 4px 0 6px 0;
+}
+
+#wildfireTool .ww-card-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#wildfireTool .ww-card-title {
+    flex: 1;
+    font-size: 14px;
+    color: #fff;
+    font-weight: bold;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#wildfireTool .ww-card-line {
+    font-size: 12px;
+    color: #cfd5da;
+    margin-top: 2px;
+}
+
+/* Small actions tucked into a card's top-right corner */
+#wildfireTool .ww-corner-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    align-self: flex-start;
+    flex-shrink: 0;
+}
+
+#wildfireTool .ww-edit-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
+}
+
+/* Space between a button's icon and its label */
+#wildfireTool .ww-btn-icon {
+    margin-right: 6px;
+}
+
+#wildfireTool .ww-wind-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#wildfireTool .ww-wind-text {
+    flex: 1;
+    min-width: 0;
+}
+
+#wildfireTool .ww-wind-text .ww-card-title {
+    white-space: normal;
+}
+
+#wildfireTool .ww-status-info {
+    color: #7fd8f6;
+    background: rgba(8, 174, 234, 0.14);
+}
+
+#wildfireTool .ww-link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #6fd0f5;
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+#wildfireTool .ww-link-btn:hover {
+    color: #fff;
+}
+
+#wildfireTool .ww-list {
+    padding: 2px 10px;
+}
+
+#wildfireTool .ww-list-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #f1f3f5;
+}
+
+#wildfireTool .ww-list-label {
+    flex: 1;
+}
+
+#wildfireTool .ww-dozer-swatch {
+    width: 16px;
+    height: 4px;
+    border-radius: 2px;
+    background: #8d6e63;
+}
+
+#wildfireTool .ww-field-label-compact {
+    margin-top: 8px;
+    color: #cfd5da;
+    font-size: 12px;
+}
+
+#wildfireTool .ww-submit-hint {
+    font-size: 12px;
+    color: #cfd5da;
+    text-align: center;
+    margin-top: 6px;
+}
+
+#wildfireTool .ww-start {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+}
+
+#wildfireTool .ww-start .mdi {
+    color: var(--color-mmgis, #08aeea);
+}
+
+/* ── Results view ── */
+
+#wildfireTool .ww-results-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 10px;
+}
+
+#wildfireTool .ww-back-link {
+    background: none;
+    border: none;
+    padding: 2px 0;
+    color: #6fd0f5;
+    font-size: 13px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+#wildfireTool .ww-back-link:hover {
+    color: #fff;
+}
+
+#wildfireTool .ww-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    margin-top: 8px;
+    padding: 0;
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: text;
+    text-align: left;
+}
+
+#wildfireTool .ww-title .mdi {
+    color: #cfd5da;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+#wildfireTool .ww-title:hover .mdi,
+#wildfireTool .ww-title:focus .mdi {
+    opacity: 1;
+}
+
+#wildfireTool .ww-title-text {
+    font-size: 18px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#wildfireTool input.ww-title-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 6px;
+    font-size: 16px;
+    padding: 4px 6px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--color-mmgis, #08aeea);
+    border-radius: 2px;
+    outline: none;
+}
+
+#wildfireTool .ww-results-sub {
+    font-size: 13px;
+    color: #cfd5da;
+    margin-top: 2px;
+}
+
+#wildfireTool .ww-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: 6px;
+    margin: 12px 0 4px 0;
+}
+
+#wildfireTool .ww-stat {
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+}
+
+#wildfireTool .ww-stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #cfd5da;
+}
+
+#wildfireTool .ww-stat-value {
+    font-size: 16px;
+    color: #fff;
+    margin-top: 3px;
+    white-space: nowrap;
+}
+
+#wildfireTool .ww-stat-sub {
+    font-size: 12px;
+    color: #ffb199;
+    margin-top: 1px;
+}
+
+
+#wildfireTool .ww-kv {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+
+#wildfireTool .ww-kv-key {
+    color: #cfd5da;
+}
+
+#wildfireTool .ww-kv-val {
+    color: #f1f3f5;
+}
+
+#wildfireTool .ww-results-actions {
+    display: flex;
+    gap: 6px;
+    margin: 12px 0 2px 0;
+}
+
+#wildfireTool .ww-details {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #cfd5da;
+}
+
+#wildfireTool .ww-details summary {
+    cursor: pointer;
+    user-select: none;
+    padding: 2px 0;
+}
+
+#wildfireTool .ww-details summary:hover {
+    color: #fff;
+}
+
 /* ── Pagination ── */
 
 #wildfireTool .ww-pagination {
@@ -717,7 +771,7 @@
 
 #wildfireTool .ww-page-label {
     font-size: 12px;
-    color: #b0b4b8;
+    color: #cfd5da;
     flex: 1;
     text-align: center;
 }
@@ -756,20 +810,38 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    font-size: 12px;
-    color: #aab4bc;
-    padding: 4px 0 2px;
-    border-bottom: 1px solid #2e3234;
+    font-size: 13px;
+    color: #f1f3f5;
+    padding: 6px 8px;
+    margin-top: 6px;
     margin-bottom: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+#wildfireTool .ww-account {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#wildfireTool .ww-account .mdi {
+    color: var(--color-mmgis, #08aeea);
+}
+
+#wildfireTool .ww-account strong {
+    color: #fff;
+    font-weight: bold;
 }
 
 #wildfireTool .ww-logout-btn {
     background: transparent;
-    border: 1px solid #44484a;
+    border: 1px solid #6b7275;
     border-radius: 2px;
-    color: #b8c0c8;
-    font-size: 11px;
-    padding: 2px 8px;
+    color: #f1f3f5;
+    font-size: 12px;
+    padding: 3px 10px;
     cursor: pointer;
 }
 
@@ -796,7 +868,7 @@
 #wildfireTool .ww-login-title {
     font-size: 15px;
     font-weight: 600;
-    color: #e8ebee;
+    color: #f1f3f5;
     text-align: center;
     margin-bottom: 4px;
 }
@@ -818,12 +890,12 @@
     background: #1e2224;
     border: 1px solid #3a3e40;
     border-radius: 3px;
-    color: #e8ebee;
+    color: #f1f3f5;
     font-size: 13px;
     padding: 7px 10px;
     width: 100%;
     box-sizing: border-box;
-    font-family: lato-light, sans-serif;
+    font-family: inherit; /* the app font (roboto), same as the Legend */
     outline: none;
     transition: border-color 0.15s;
 }
@@ -838,6 +910,11 @@
 
 #wildfireTool .ww-login-hint {
     font-size: 12px;
-    color: #99a3ab;
+    color: #cfd5da;
     text-align: center;
+}
+
+#wildfireTool input::placeholder {
+    color: #aab3ba;
+    opacity: 1;
 }

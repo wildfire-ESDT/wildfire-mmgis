@@ -1,7 +1,6 @@
-import React, { useState } from 'react'
+import React from 'react'
 import useWhatIfStore, { PAGE_SIZE } from '../store'
-import { selectRun, renameRun, deleteRun, downloadSpreadGeoJSON, downloadSpreadPNG } from '../actions'
-import { dirLabel } from '../utils'
+import { selectRun, deleteRun } from '../actions'
 import { Button } from '@design/components'
 
 function normalizeStatus(s) {
@@ -12,91 +11,6 @@ function normalizeStatus(s) {
     if (['running', 'processing'].includes(l)) return 'running'
     if (['queued', 'pending'].includes(l)) return 'queued'
     return l
-}
-
-// Flat key/value summary of a run's payload — primitives only, the same idea
-// as Workflows' params grid. Structured values get their own rows above.
-function paramEntries(p) {
-    return Object.entries(p).filter(
-        ([, v]) =>
-            typeof v === 'string' ||
-            typeof v === 'number' ||
-            typeof v === 'boolean'
-    )
-}
-
-function ActiveRunDetails({ id, job }) {
-    const showActiveJson = useWhatIfStore((s) => s.showActiveJson)
-    const [nameDraft, setNameDraft] = useState(job.name || '')
-    const p = job.payload || {}
-    const profile = Array.isArray(p.wind_profile) ? p.wind_profile : null
-    const params = paramEntries(p)
-    const save = () => renameRun(id, nameDraft.trim())
-    return (
-        <div className="ww-job-expanded" onClick={(e) => e.stopPropagation()}>
-            <div className="ww-exp-uuid" title="Run id">
-                {id}
-            </div>
-            <div className="ww-exp-label">Name</div>
-            <div className="ww-exp-name-row">
-                <input
-                    type="text"
-                    placeholder="e.g. Palisades – SE wind shift"
-                    value={nameDraft}
-                    onChange={(e) => setNameDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') save()
-                    }}
-                />
-                <Button size="sm" onClick={save}>
-                    Save
-                </Button>
-            </div>
-            {p.wind_mods && (
-                <div className="ww-exp-row">
-                    Wind: {p.wind_mods.speed_ms} m/s from{' '}
-                    {Math.round(p.wind_mods.direction_deg)}°{' '}
-                    {dirLabel(p.wind_mods.direction_deg)}
-                </div>
-            )}
-            {params.length > 0 && (
-                <div className="ww-params-grid">
-                    {params.map(([k, v]) => (
-                        <React.Fragment key={k}>
-                            <span className="ww-param-key">{k}</span>
-                            <span className="ww-param-val" title={String(v)}>
-                                {String(v)}
-                            </span>
-                        </React.Fragment>
-                    ))}
-                </div>
-            )}
-            <div className="ww-exp-row ww-exp-dim">
-                Scenario restored to map · click the row again to deselect
-            </div>
-            <div className="ww-exp-downloads">
-                <Button size="sm" onClick={() => downloadSpreadGeoJSON(job)}>
-                    <i className="mdi mdi-download mdi-14px" /> GeoJSON
-                </Button>
-                <Button size="sm" onClick={() => downloadSpreadPNG(job)}>
-                    <i className="mdi mdi-image mdi-14px" /> PNG
-                </Button>
-                <Button
-                    size="sm"
-                    onClick={() =>
-                        useWhatIfStore.setState({ showActiveJson: !showActiveJson })
-                    }
-                >
-                    {showActiveJson ? 'Hide' : 'Show'} JSON
-                </Button>
-            </div>
-            {showActiveJson && (
-                <pre className="ww-exp-json">
-                    {JSON.stringify(job.result || job.payload, null, 2)}
-                </pre>
-            )}
-        </div>
-    )
 }
 
 export default function RunsList() {
@@ -127,9 +41,6 @@ export default function RunsList() {
         <div className="ww-jobs">
             <div className="ww-jobs-header">
                 <div className="ww-section-label">Runs</div>
-                <span className="ww-jobs-hint">
-                    Click a run to view it on the map
-                </span>
             </div>
             {jobIds.length > 0 && (
                 <input
@@ -193,9 +104,6 @@ export default function RunsList() {
                                     ✕
                                 </span>
                             </div>
-                            {isActive && (
-                                <ActiveRunDetails key={id} id={id} job={job} />
-                            )}
                         </div>
                     )
                 })}

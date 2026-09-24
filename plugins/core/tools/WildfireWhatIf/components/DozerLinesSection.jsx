@@ -7,6 +7,7 @@ import {
     clearDozerLines,
 } from '../actions'
 import { Button, IconButton } from '@design/components'
+import SectionLabel from './SectionLabel'
 
 export default function DozerLinesSection() {
     const drawingDozerLine = useWhatIfStore((s) => s.drawingDozerLine)
@@ -17,43 +18,15 @@ export default function DozerLinesSection() {
 
     return (
         <>
-            <div className="ww-section-label">Dozer Lines</div>
-            <div className="ww-row">
-                <Button
-                    className={`ww-grow${drawingDozerLine ? ' ww-btn-active' : ''}`}
-                    onClick={() =>
-                        drawingDozerLine
-                            ? cancelDozerLineDraw()
-                            : startDozerLineDraw()
-                    }
-                    title="Draw a dozer line — fuel cleared, the spread model won't cross it"
-                >
-                    <i className="mdi mdi-vector-polyline mdi-14px" />
-                    {drawingDozerLine ? 'Cancel Draw' : 'Draw Dozer Line'}
-                </Button>
-                {dozerLines.length > 0 && (
-                    <IconButton
-                        size="sm"
-                        onClick={() => clearDozerLines()}
-                        title="Clear all dozer lines"
-                    >
-                        <i className="mdi mdi-close mdi-16px" />
-                    </IconButton>
-                )}
-            </div>
-            {drawingDozerLine && (
-                <div className="ww-draw-hint">
-                    Click and drag to paint the line · release to finish · Esc
-                    cancels
-                </div>
-            )}
-            {dozerLines.length > 0 ? (
-                <div className="ww-status ww-status-ok">
-                    {dozerLines.length} dozer line
-                    {dozerLines.length > 1 ? 's' : ''} drawn
+            <SectionLabel optional>
+                Dozer lines
+            </SectionLabel>
+            {dozerLines.length > 0 && (
+                <div className="ww-card ww-list">
                     {dozerLines.map((l, i) => (
-                        <div className="ww-row" key={l.id}>
-                            <span>Line {i + 1}</span>
+                        <div className="ww-list-row" key={l.id}>
+                            <span className="ww-dozer-swatch" />
+                            <span className="ww-list-label">Line {i + 1}</span>
                             <IconButton
                                 size="sm"
                                 onClick={() => removeDozerLine(l.id)}
@@ -64,10 +37,29 @@ export default function DozerLinesSection() {
                         </div>
                     ))}
                 </div>
-            ) : (
-                <div className="ww-status ww-status-none">
-                    No dozer lines yet — optional; marks fuel cleared along a
-                    line the spread model should not cross.
+            )}
+            <div className="ww-row">
+                <Button
+                    className={`ww-grow${drawingDozerLine ? ' ww-btn-active' : ''}`}
+                    onClick={() =>
+                        drawingDozerLine
+                            ? cancelDozerLineDraw()
+                            : startDozerLineDraw()
+                    }
+                    title="Draw a dozer line: click and drag on the map"
+                >
+                    <i className="mdi mdi-vector-polyline mdi-14px ww-btn-icon" />
+                    {drawingDozerLine ? 'Cancel Draw' : 'Draw Dozer Line'}
+                </Button>
+                {dozerLines.length > 1 && (
+                    <Button onClick={() => clearDozerLines()} title="Remove all dozer lines">
+                        Clear all
+                    </Button>
+                )}
+            </div>
+            {drawingDozerLine && (
+                <div className="ww-draw-hint">
+                    Drag on the map to draw · Esc to cancel
                 </div>
             )}
         </>
