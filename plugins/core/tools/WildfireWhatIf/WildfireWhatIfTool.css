@@ -616,24 +616,14 @@
 #wildfireTool .ww-results-top {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-top: 10px;
+    gap: 8px;
+    margin-top: 12px;
 }
 
-#wildfireTool .ww-back-link {
-    background: none;
-    border: none;
-    padding: 2px 0;
-    color: #6fd0f5;
-    font-size: 13px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-
-#wildfireTool .ww-back-link:hover {
-    color: #fff;
+#wildfireTool .ww-results-top .ww-title {
+    flex: 1;
+    min-width: 0;
+    margin-top: 0;
 }
 
 #wildfireTool .ww-title {

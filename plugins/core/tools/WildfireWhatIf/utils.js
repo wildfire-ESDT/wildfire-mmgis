@@ -13,7 +13,7 @@ export function getMap() {
 // used. Top/bottom: whatever overlays the map there (the time bar, forecast
 // timeline, …), found by walking in from each edge until the map itself is
 // what's under that point.
-function coveredEdges(container) {
+export function coveredEdges(container) {
     const r = container.getBoundingClientRect()
     const edges = { left: 0, right: 0, top: 0, bottom: 0 }
 
@@ -272,6 +272,17 @@ export function fmtRunTime(ms) {
         hour: 'numeric',
         minute: '2-digit',
     })
+}
+
+// Fire name and run time, minus whatever the run's name already says (an
+// auto-generated name is exactly "<fire> · <time>").
+export function runSubtitle(job) {
+    const name = (job && job.name) || ''
+    const fire = job && job.payload && job.payload.fire_name
+    const time = fmtRunTime(job && job.startedAt)
+    return [fire && !name.includes(fire) ? fire : null, time && !name.includes(time) ? time : null]
+        .filter(Boolean)
+        .join(' · ')
 }
 
 export function fmtWind(wm) {

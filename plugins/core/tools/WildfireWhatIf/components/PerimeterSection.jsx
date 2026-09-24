@@ -49,7 +49,7 @@ export default function PerimeterSection() {
                 </div>
             ) : (
                 <div className="ww-card ww-start">
-                    <i className="mdi mdi-cursor-default-click-outline mdi-24px" />
+                    <i className="mdi mdi-fire mdi-24px" />
                     <div>
                         <div className="ww-card-title">Select a fire on the map</div>
                         <div className="ww-card-line">

@@ -1,8 +1,6 @@
 import React, { useState } from 'react'
 import useWhatIfStore from '../store'
 import {
-    closeRunView,
-    editRun,
     newScenario,
     renameRun,
     downloadSpreadGeoJSON,
@@ -12,7 +10,7 @@ import {
     runStats,
     fmtAcres,
     fmtPct,
-    fmtRunTime,
+    runSubtitle,
     fmtWind,
     fmtHrrr,
     simTypeLabel,
@@ -114,9 +112,7 @@ export default function RunResults({ id }) {
     const p = job.payload || {}
     const isSmoke = p.sim_type === 'smoke_dispersion'
     const nDozer = Array.isArray(p.dozer_lines) ? p.dozer_lines.length : 0
-    const subtitle = [p.fire_name, fmtRunTime(job.startedAt)]
-        .filter(Boolean)
-        .join(' · ')
+    const subtitle = runSubtitle(job)
     const inputs = [
         ['Wind', fmtWind(p.wind_mods)],
         ['Weather', fmtHrrr(p.hrrr_run)],
@@ -126,19 +122,11 @@ export default function RunResults({ id }) {
     return (
         <div className="ww-results">
             <div className="ww-results-top">
-                <button
-                    type="button"
-                    className="ww-back-link"
-                    onClick={() => closeRunView()}
-                >
-                    <i className="mdi mdi-arrow-left mdi-14px" /> Back to setup
-                </button>
+                <RunTitle key={job.name} id={id} name={job.name} />
                 <span className={`ww-sim-badge ${isSmoke ? 'smoke' : 'fire'}`}>
                     {simTypeLabel(p.sim_type)}
                 </span>
             </div>
-
-            <RunTitle key={job.name} id={id} name={job.name} />
             {subtitle && <div className="ww-results-sub">{subtitle}</div>}
 
             <RunStats job={job} isSmoke={isSmoke} />
@@ -156,14 +144,10 @@ export default function RunResults({ id }) {
                 <Button
                     variant="primary"
                     className="ww-grow"
-                    onClick={() => editRun(id)}
+                    onClick={() => newScenario()}
                 >
-                    <i className="mdi mdi-pencil mdi-14px ww-btn-icon" />
-                    Edit &amp; Re-run
-                </Button>
-                <Button className="ww-grow" onClick={() => newScenario()}>
-                    <i className="mdi mdi-plus mdi-14px ww-btn-icon" />
-                    New Scenario
+                    <i className="mdi mdi-fire mdi-14px ww-btn-icon" />
+                    Select New Perimeter
                 </Button>
             </div>
 

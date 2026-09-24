@@ -8,6 +8,7 @@ import * as map from './map'
 import {
     getMap,
     fitVisible,
+    coveredEdges,
     ringCentroid,
     meanWind,
     closeRing,
@@ -22,6 +23,7 @@ import {
     fmtWind,
     fmtHrrr,
     simTypeLabel,
+    runSubtitle,
 } from './utils'
 
 const S = useWhatIfStore
@@ -866,30 +868,52 @@ function triggerDownload(blob, filename) {
     URL.revokeObjectURL(url)
 }
 
+// Same stats as the Results card and PNG, as plain values
+function runSummary(job) {
+    const p = job.payload || {}
+    const st = runStats(job)
+    const round = (v, d = 0) => (v == null ? null : Number(v.toFixed(d)))
+    return {
+        name: job.name || '',
+        fire_name: p.fire_name || null,
+        sim_type: p.sim_type || 'fire_spread',
+        run_time: job.startedAt ? new Date(job.startedAt).toISOString() : null,
+        starting_acres: round(st.start, 1),
+        forecast_acres: round(st.end, 1),
+        growth_acres: round(st.growth, 1),
+        growth_pct: round(st.growthPct, 1),
+        wind_speed_ms: p.wind_mods ? p.wind_mods.speed_ms : null,
+        wind_direction_deg: p.wind_mods ? p.wind_mods.direction_deg : null,
+        hrrr: fmtHrrr(p.hrrr_run),
+        dozer_lines: Array.isArray(p.dozer_lines) ? p.dozer_lines.length : 0,
+    }
+}
+
 export function downloadSpreadGeoJSON(job) {
     const p = job && job.payload
     const spreadRing = job && job.spreadRing
+    const summary = runSummary(job)
     const features = []
     if (p && p.perimeter_coords && p.perimeter_coords[0]) {
         features.push({
             type: 'Feature',
-            properties: { type: 'current_perimeter', name: job.name || '' },
+            properties: {
+                type: 'current_perimeter',
+                name: summary.name,
+                fire_name: summary.fire_name,
+                acres: summary.starting_acres,
+            },
             geometry: { type: 'Polygon', coordinates: p.perimeter_coords },
         })
     }
     if (spreadRing) {
         features.push({
             type: 'Feature',
-            properties: {
-                type: 'predicted_spread',
-                name: job.name || '',
-                speed_ms: p && p.wind_mods ? p.wind_mods.speed_ms : null,
-                direction_deg: p && p.wind_mods ? p.wind_mods.direction_deg : null,
-            },
+            properties: { type: 'predicted_spread', ...summary },
             geometry: { type: 'Polygon', coordinates: [spreadRing] },
         })
     }
-    const geojson = { type: 'FeatureCollection', features }
+    const geojson = { type: 'FeatureCollection', properties: summary, features }
     const blob = new Blob([JSON.stringify(geojson, null, 2)], {
         type: 'application/geo+json',
     })
@@ -904,7 +928,7 @@ function drawSummaryCard(canvas, job, scale) {
     const p = job.payload || {}
     const isSmoke = p.sim_type === 'smoke_dispersion'
     const st = runStats(job)
-    const sub = [p.fire_name, fmtRunTime(job.startedAt)].filter(Boolean).join(' · ')
+    const sub = runSubtitle(job)
     const stats = isSmoke
         ? [['Fire area', fmtAcres(st.start)], ['Smoke extent', fmtAcres(st.end)]]
         : [
@@ -935,7 +959,8 @@ function drawSummaryCard(canvas, job, scale) {
     const y0 = canvas.height / scale - H - 16
 
     ctx.save()
-    ctx.scale(scale, scale)
+    // html2canvas leaves its own scale on the context; start from a clean one
+    ctx.setTransform(scale, 0, 0, scale, 0, 0)
     ctx.fillStyle = 'rgba(18, 22, 26, 0.9)'
     ctx.fillRect(x0, y0, W, H)
     ctx.fillStyle = '#ffdd5c'
@@ -989,14 +1014,42 @@ export function downloadSpreadPNG(job) {
     const leafletMap = getMap()
     if (!leafletMap) return
     const scale = 2
+    const container = leafletMap.getContainer()
+    // Only the part of the map the user can see: the tool panel and the time
+    // bars sit over its edges, and the view is centered on what's left.
+    const edges = coveredEdges(container)
     const fail = (err) =>
         window.alert('PNG export failed: ' + ((err && err.message) || 'the map image could not be read'))
     import('html2canvas')
         .then(({ default: html2canvas }) =>
             // useCORS without allowTaint: a tainted canvas can't be exported
-            html2canvas(leafletMap.getContainer(), { useCORS: true, scale })
+            html2canvas(container, {
+                useCORS: true,
+                scale,
+                // Zoom/home buttons, compass, scale bar
+                ignoreElements: (el) =>
+                    el.classList && el.classList.contains('leaflet-control-container'),
+            })
         )
-        .then((canvas) => {
+        .then((full) => {
+            const w = Math.max(1, container.clientWidth - edges.left - edges.right)
+            const h = Math.max(1, container.clientHeight - edges.top - edges.bottom)
+            const canvas = document.createElement('canvas')
+            canvas.width = Math.round(w * scale)
+            canvas.height = Math.round(h * scale)
+            canvas
+                .getContext('2d')
+                .drawImage(
+                    full,
+                    edges.left * scale,
+                    edges.top * scale,
+                    canvas.width,
+                    canvas.height,
+                    0,
+                    0,
+                    canvas.width,
+                    canvas.height
+                )
             drawSummaryCard(canvas, job, scale)
             canvas.toBlob((blob) => {
                 if (!blob) return fail()
