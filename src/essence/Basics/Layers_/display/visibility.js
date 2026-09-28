@@ -114,6 +114,7 @@ export async function toggleLayerHelper(
     if (!LayerTypeRegistry.isStructural(s.type)) {
         if (on) {
             if (
+                L_.layers.layer[s.name] &&
                 L_.Map_.map.hasLayer(L_.layers.layer[s.name]) &&
                 globeOnly != true
             ) {

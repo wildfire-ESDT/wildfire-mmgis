@@ -167,7 +167,7 @@ function generateMarkup() {
 // Either they have no map data or not initial data
 const quasiLayers = ['model', 'query']
 const isQuasiLayer = (type) => {
-    quasiLayers.includes(type) || !LayerTypeRegistry.rendersOnMap(type)
+    return quasiLayers.includes(type) || !LayerTypeRegistry.rendersOnMap(type)
 }
 const DEPTH_SIZE = 13
 const INDENT_COLOR = 'var(--color-a)'
