@@ -166,6 +166,9 @@ function generateMarkup() {
 // These layers are a bit different and we need to account for that.
 // Either they have no map data or not initial data
 const quasiLayers = ['model', 'query']
+const isQuasiLayer = (type) => {
+    quasiLayers.includes(type) || !LayerTypeRegistry.rendersOnMap(type)
+}
 const DEPTH_SIZE = 13
 const INDENT_COLOR = 'var(--color-a)'
 
@@ -1483,7 +1486,7 @@ function interfaceWithMMGIS(fromInit) {
                     // prettier-ignore
                     $('#layersToolList').append(
                         [
-                            '<li id="LayersTool' + F_.getSafeName(node[i].name) + '" class="' + ((!quasiLayers.includes(node[i].type) && L_.layers.layer[node[i].name] == null) ? 'layernotfound' : '') + '" type="' + node[i].type + '" on="true" depth="' + depth + '" name="' + node[i].name + '" parent="' + parent.name + '"  style="margin-bottom: 1px;">',
+                            '<li id="LayersTool' + F_.getSafeName(node[i].name) + '" class="' + ((!isQuasiLayer(node[i].type) && L_.layers.layer[node[i].name] == null) ? 'layernotfound' : '') + '" type="' + node[i].type + '" on="true" depth="' + depth + '" name="' + node[i].name + '" parent="' + parent.name + '"  style="margin-bottom: 1px;">',
                                 `<div class="title" id="layerstart${F_.getSafeName(node[i].name)}" style="border-left: ${depth * DEPTH_SIZE}px solid ${INDENT_COLOR};">`,
                                     '<div class="layersToolColor ' + node[i].type + '" style="--lt-color:' + getLayerTypeColor(node[i].type) + ';">',
                                         '<i class="mdi mdi-drag-vertical mdi-12px"></i>',
@@ -1603,7 +1606,7 @@ function interfaceWithMMGIS(fromInit) {
             L_.setGlobalLoaded(layerName)
 
             if (
-                quasiLayers.includes(li.attr('type')) ||
+                isQuasiLayer(li.attr('type')) ||
                 L_.layers.layer[layerName]
             ) {
                 // Set class based on actual state (idempotent — safe with
@@ -1611,7 +1614,7 @@ function interfaceWithMMGIS(fromInit) {
                 const isOn = L_.layers.on[layerName] === true
                 checkbox.toggleClass('on', isOn).toggleClass('off', !isOn)
             } else if (
-                !quasiLayers.includes(li.attr('type')) &&
+                !isQuasiLayer(li.attr('type')) &&
                 L_.layers.layer[layerName] == null
             )
                 li.addClass('layernotfound')

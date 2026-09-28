@@ -1,0 +1,107 @@
+{
+  "uuid": "950B0333-5CE2-4C53-8EDA-FBA8D7ED32DD",
+  "id": "core-layertype-googletiles",
+  "name": "GoogleTiles",
+  "type": "layertype",
+  "typeId": "googletiles",
+  "version": "core",
+  "tier": "core",
+  "overridable": false,
+  "color": "#4285f4",
+  "defaultIcon": "Language",
+  "description": "Google Photorealistic 3D Tiles streamed onto the Cesium globe. Globe only.",
+  "capabilities": {
+    "renderers": {
+      "map": false,
+      "globe": { "engines": ["cesium"] }
+    },
+    "map": { "stacking": false, "tracksLoad": false },
+    "time": false
+  },
+  "supportedData": [
+    {
+      "label": "Google Photorealistic 3D Tiles",
+      "category": "3d-tiles",
+      "standards": ["3D Tiles"],
+      "formats": ["json"],
+      "description": "Google's global photorealistic 3D mesh, streamed from the Google Map Tiles API. Needs a Google API key with the Map Tiles API enabled.",
+      "procurement": "Create an API key in Google Cloud with the Map Tiles API enabled, restricted to your MMGIS domains."
+    }
+  ],
+  "config": {
+    "tabs": [
+      {
+        "name": "Core",
+        "rows": [
+          {
+            "name": "Core",
+            "components": [
+              {
+                "field": "type",
+                "name": "Layer Type",
+                "description": "",
+                "type": "dropdown",
+                "optionsFrom": "layerTypes",
+                "width": 2
+              },
+              {
+                "field": "name",
+                "name": "Layer Name",
+                "description": "A display name for the layer.",
+                "type": "textnotrim",
+                "width": 6,
+                "required": true
+              },
+              {
+                "field": "visibility",
+                "name": "Initial Visibility",
+                "description": "Whether the layer is on initially.",
+                "type": "checkbox",
+                "width": 2,
+                "defaultChecked": false
+              }
+            ]
+          },
+          {
+            "components": [
+              {
+                "field": "googleApiKey",
+                "name": "Google API Key",
+                "description": "A Google Cloud API key with the Map Tiles API enabled. Restrict it to the Map Tiles API and to your MMGIS domains in the Google Cloud console.",
+                "type": "text",
+                "width": 12,
+                "required": true
+              }
+            ]
+          },
+          {
+            "name": "Settings",
+            "components": [
+              {
+                "field": "maximumScreenSpaceError",
+                "name": "Max Screen Space Error",
+                "description": "Level of detail. Lower is sharper but loads more tiles. Default 16.",
+                "type": "number",
+                "width": 4,
+                "default": 16
+              },
+              {
+                "field": "hideGlobe",
+                "name": "Hide Globe Surface",
+                "description": "Hide the plain globe while this layer is on, so it does not show through the mesh. Default on.",
+                "type": "switch",
+                "width": 4,
+                "defaultChecked": true
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "modules": {
+    "globe": {
+      "cesium": "./globe/cesium"
+    }
+  }
+}
