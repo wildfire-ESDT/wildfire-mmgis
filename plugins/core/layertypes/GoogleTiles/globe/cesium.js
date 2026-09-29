@@ -1,122 +1,249 @@
 /**
- * Google Photorealistic 3D Tiles layer type, Cesium globe renderer.
+ * Google Photorealistic 3D Tiles on the Cesium globe. While visible, hides the
+ * globe surface, shows Google's required credits, and drapes the chosen
+ * layers over the mesh.
  */
 import * as Cesium from 'cesium'
 import L_ from '@basics/Layers_/Layers_'
 
-const TYPE = 'googletiles'
+const GOOGLE_TILES_LAYER_TYPE = 'googletiles'
 
-function toGlobeConfig(layerObj) {
+function buildTilesetSettings(missionLayerConfig) {
+    const drapedLayerNames = missionLayerConfig.drapedLayers || []
     return {
-        name: layerObj.name,
-        apiKey: layerObj.googleApiKey,
-        opacity: L_.layers.opacity[layerObj.name] ?? 1,
-        maximumScreenSpaceError: layerObj.maximumScreenSpaceError ?? 16,
-        hideGlobe: layerObj.hideGlobe !== false,
+        layerName: missionLayerConfig.name,
+        googleApiKey: missionLayerConfig.googleApiKey,
+        opacity: L_.layers.opacity[missionLayerConfig.name] ?? 1,
+        maximumScreenSpaceError:
+            missionLayerConfig.maximumScreenSpaceError ?? 16,
+        hideGlobeSurface: missionLayerConfig.hideGlobe !== false,
+        drapedLayerIds: drapedLayerNames
+            .map((drapedLayerName) => L_.asLayerUUID(drapedLayerName))
+            .filter((drapedLayerId) => drapedLayerId != null),
     }
 }
 
-function make(layerObj, gctx) {
-    if (gctx.hasLayer(layerObj.name))
-        return gctx.toggleLayer(layerObj.name, true)
-    return render(toGlobeConfig(layerObj), gctx)
+// A hidden tileset stays loaded, so turning it back on only shows it.
+function make(missionLayerConfig, globeContext) {
+    if (globeContext.hasLayer(missionLayerConfig.name))
+        return globeContext.toggleLayer(missionLayerConfig.name, true)
+    return render(buildTilesetSettings(missionLayerConfig), globeContext)
 }
 
-function onToggle(layerObj, gctx) {
-    if (!gctx.visible) gctx.toggleLayer(layerObj.name, false)
+function onToggle(missionLayerConfig, globeContext) {
+    const isBeingTurnedOff = !globeContext.visible
+    if (isBeingTurnedOff)
+        globeContext.toggleLayer(missionLayerConfig.name, false)
 }
 
-async function render(layerConfig, gctx) {
-    const { renderer, layers, loadingLayers } = gctx
-    const { name } = layerConfig
+async function render(tilesetSettings, globeContext) {
+    const {
+        renderer: cesiumViewer,
+        layers: globeLayersByName,
+        loadingLayers: layersCurrentlyLoading,
+    } = globeContext
+    const { layerName } = tilesetSettings
 
-    if (loadingLayers[name]) return
-    if (!layerConfig.apiKey) {
-        console.error(`Google 3D Tiles layer "${name}" has no API key.`)
+    if (layersCurrentlyLoading[layerName]) return
+    if (!tilesetSettings.googleApiKey) {
+        console.error(`Google 3D Tiles layer "${layerName}" has no API key.`)
         return
     }
-    loadingLayers[name] = true
+    layersCurrentlyLoading[layerName] = true
 
     try {
-        const tileset = await Cesium.createGooglePhotorealistic3DTileset(
+        const googleTileset = await Cesium.createGooglePhotorealistic3DTileset(
             {
-                key: layerConfig.apiKey,
-                // MMGIS's globe has no geocoder, so these tiles are never
-                // paired with a non-Google one.
+                key: tilesetSettings.googleApiKey,
                 onlyUsingWithGoogleGeocoder: true,
             },
             {
-                maximumScreenSpaceError: layerConfig.maximumScreenSpaceError,
-                // Google requires its data attributions on screen, not only
-                // behind the credits popup.
+                maximumScreenSpaceError:
+                    tilesetSettings.maximumScreenSpaceError,
                 showCreditsOnScreen: true,
+                preloadWhenHidden: true,
             }
         )
-        delete loadingLayers[name]
+        delete layersCurrentlyLoading[layerName]
 
-        renderer.scene.primitives.add(tileset)
-        layers[name] = {
-            type: TYPE,
+        // Hidden until the first view has fully loaded, so it never shows blurry.
+        googleTileset.show = false
+        cesiumViewer.scene.primitives.add(googleTileset)
+
+        const googleTilesEntry = {
+            type: GOOGLE_TILES_LAYER_TYPE,
             kind: 'tileset',
-            tileset,
+            tileset: googleTileset,
             visible: true,
-            hideGlobe: layerConfig.hideGlobe,
-            opacity: layerConfig.opacity,
+            initialViewHasLoaded: false,
+            hideGlobeSurface: tilesetSettings.hideGlobeSurface,
+            opacity: tilesetSettings.opacity,
+            stopDrapingLayers: drapeLayersOnTileset(
+                googleTileset,
+                tilesetSettings.drapedLayerIds,
+                globeContext
+            ),
         }
-        applyOpacity(layers[name])
-        syncScene(gctx)
-    } catch (err) {
-        delete loadingLayers[name]
-        console.error(`Failed to load Google 3D Tiles layer "${name}":`, err)
+        globeLayersByName[layerName] = googleTilesEntry
+        applyTilesetOpacity(googleTilesEntry)
+
+        googleTileset.initialTilesLoaded.addEventListener(() => {
+            googleTilesEntry.initialViewHasLoaded = true
+            googleTileset.show = googleTilesEntry.visible
+            updateGlobeSurfaceAndCreditBar(globeContext)
+        })
+    } catch (loadError) {
+        delete layersCurrentlyLoading[layerName]
+        console.error(
+            `Failed to load Google 3D Tiles layer "${layerName}":`,
+            loadError
+        )
     }
 }
-function destroy(name, gctx) {
-    const layerInfo = gctx.layers[name]
-    if (!layerInfo) return
-    layerInfo.visible = false
-    gctx.renderer.scene.primitives.remove(layerInfo.tileset)
-    syncScene(gctx)
+
+// Core deletes the entry after this returns, so mark it hidden first.
+function destroy(layerName, globeContext) {
+    const googleTilesEntry = globeContext.layers[layerName]
+    if (!googleTilesEntry) return
+    googleTilesEntry.visible = false
+    googleTilesEntry.stopDrapingLayers?.()
+    globeContext.renderer.scene.primitives.remove(googleTilesEntry.tileset)
+    updateGlobeSurfaceAndCreditBar(globeContext)
 }
 
-function setVisibility(name, visible, gctx) {
-    const layerInfo = gctx.layers[name]
-    if (!layerInfo) return
-    layerInfo.tileset.show = visible
-    layerInfo.visible = visible
-    syncScene(gctx)
+function setVisibility(layerName, isVisible, globeContext) {
+    const googleTilesEntry = globeContext.layers[layerName]
+    if (!googleTilesEntry) return
+    googleTilesEntry.visible = isVisible
+    googleTilesEntry.tileset.show =
+        isVisible && googleTilesEntry.initialViewHasLoaded
+    updateGlobeSurfaceAndCreditBar(globeContext)
 }
 
-function setOpacity(name, opacity, gctx) {
-    const layerInfo = gctx.layers[name]
-    if (!layerInfo) return
-    layerInfo.opacity = opacity
-    applyOpacity(layerInfo)
-    gctx.requestRender()
+function setOpacity(layerName, opacity, globeContext) {
+    const googleTilesEntry = globeContext.layers[layerName]
+    if (!googleTilesEntry) return
+    googleTilesEntry.opacity = opacity
+    applyTilesetOpacity(googleTilesEntry)
+    globeContext.requestRender()
 }
 
-function applyOpacity(layerInfo) {
-    layerInfo.tileset.style =
-        layerInfo.opacity < 1
-            ? new Cesium.Cesium3DTileStyle({
-                  color: `color("white", ${layerInfo.opacity})`,
-              })
-            : undefined
+function applyTilesetOpacity(googleTilesEntry) {
+    const isFaded = googleTilesEntry.opacity < 1
+    googleTilesEntry.tileset.style = isFaded
+        ? new Cesium.Cesium3DTileStyle({
+              color: `color("white", ${googleTilesEntry.opacity})`,
+          })
+        : undefined
 }
 
-function syncScene(gctx) {
-    const on = Object.values(gctx.layers).filter(
-        (l) => l.type === TYPE && l.visible
+// The chosen layers' globe imagery is replaced whenever they are toggled,
+// restyled or reloaded, so any change marks the copies for updating on the
+// next frame, where only the differences are applied.
+function drapeLayersOnTileset(tileset, drapedLayerIds, globeContext) {
+    const globeImageryLayers = globeContext.renderer.imageryLayers
+    const tilesetImageryLayers = tileset.imageryLayers
+    const tilesetCopyByGlobeLayer = new Map()
+    let copiesNeedUpdating = true
+
+    const findGlobeImageryLayersOf = (drapedLayerId) => {
+        const globeLayerEntry = globeContext.layers[drapedLayerId]
+        if (globeLayerEntry?.kind === 'imagery') return [globeLayerEntry.layer]
+        if (globeLayerEntry?.kind === 'sliced')
+            return globeLayerEntry.slicedLayer.globeImageryLayers
+        return []
+    }
+
+    const updateCopies = () => {
+        const globeLayersToDrape = drapedLayerIds
+            .flatMap(findGlobeImageryLayersOf)
+            .filter((globeLayer) => globeImageryLayers.contains(globeLayer))
+            .sort(
+                (globeLayerA, globeLayerB) =>
+                    globeImageryLayers.indexOf(globeLayerA) -
+                    globeImageryLayers.indexOf(globeLayerB)
+            )
+
+        for (const [globeLayer, tilesetCopy] of tilesetCopyByGlobeLayer) {
+            if (globeLayersToDrape.includes(globeLayer)) continue
+            tilesetImageryLayers.remove(tilesetCopy)
+            tilesetCopyByGlobeLayer.delete(globeLayer)
+        }
+
+        globeLayersToDrape.forEach((globeLayer, index) => {
+            const existingCopy = tilesetCopyByGlobeLayer.get(globeLayer)
+            if (!existingCopy) {
+                const tilesetCopy = new Cesium.ImageryLayer(
+                    globeLayer.imageryProvider,
+                    {
+                        alpha: globeLayer.alpha,
+                        show: globeLayer.show,
+                    }
+                )
+                tilesetImageryLayers.add(tilesetCopy, index)
+                tilesetCopyByGlobeLayer.set(globeLayer, tilesetCopy)
+            } else if (tilesetImageryLayers.indexOf(existingCopy) !== index) {
+                tilesetImageryLayers.remove(existingCopy, false)
+                tilesetImageryLayers.add(existingCopy, index)
+            }
+        })
+    }
+
+    // Opacity changes fire no event, so check each frame.
+    const updateCopiesAndSyncOpacityAndVisibility = () => {
+        if (copiesNeedUpdating) {
+            copiesNeedUpdating = false
+            updateCopies()
+        }
+        for (const [globeLayer, tilesetCopy] of tilesetCopyByGlobeLayer) {
+            if (tilesetCopy.alpha !== globeLayer.alpha)
+                tilesetCopy.alpha = globeLayer.alpha
+            if (tilesetCopy.show !== globeLayer.show)
+                tilesetCopy.show = globeLayer.show
+        }
+    }
+
+    const markCopiesForUpdating = () => {
+        copiesNeedUpdating = true
+        globeContext.requestRender()
+    }
+
+    const removeListeners = [
+        globeImageryLayers.layerAdded.addEventListener(markCopiesForUpdating),
+        globeImageryLayers.layerRemoved.addEventListener(markCopiesForUpdating),
+        globeImageryLayers.layerMoved.addEventListener(markCopiesForUpdating),
+        globeContext.renderer.scene.preRender.addEventListener(
+            updateCopiesAndSyncOpacityAndVisibility
+        ),
+    ]
+    globeContext.requestRender()
+    return () => {
+        removeListeners.forEach((removeListener) => removeListener())
+        tilesetImageryLayers.removeAll()
+    }
+}
+
+function updateGlobeSurfaceAndCreditBar(globeContext) {
+    const shownGoogleTilesEntries = Object.values(globeContext.layers).filter(
+        (globeLayerEntry) =>
+            globeLayerEntry.type === GOOGLE_TILES_LAYER_TYPE &&
+            globeLayerEntry.visible &&
+            globeLayerEntry.initialViewHasLoaded
     )
-    gctx.renderer.scene.globe.show = !on.some((l) => l.hideGlobe)
+    globeContext.renderer.scene.globe.show = !shownGoogleTilesEntries.some(
+        (googleTilesEntry) => googleTilesEntry.hideGlobeSurface
+    )
 
-    const credits = gctx.renderer.container.querySelector(
+    const creditBarElement = globeContext.renderer.container.querySelector(
         '.cesium-widget-credits'
     )
-    if (credits) {
-        if (on.length > 0) credits.style.setProperty('display', 'block', 'important')
-        else credits.style.removeProperty('display')
+    if (creditBarElement) {
+        // Inline !important is the only way to beat mmgis.css's !important.
+        if (shownGoogleTilesEntries.length > 0)
+            creditBarElement.style.setProperty('display', 'block', 'important')
+        else creditBarElement.style.removeProperty('display')
     }
-    gctx.requestRender()
+    globeContext.requestRender()
 }
 
 export default {
@@ -127,3 +254,4 @@ export default {
     setVisibility,
     setOpacity,
 }
+

@@ -382,6 +382,9 @@ class CesiumSlicedVectorLayer {
     get highlightedIndex() {
         return this._highlightIndex
     }
+    get globeImageryLayers() {
+        return [this._imageryLayer, this._highlightLayer].filter(Boolean)
+    }
 
     /**
      * Draw one feature in selection colours, or none when passed null.
