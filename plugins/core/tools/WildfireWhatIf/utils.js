@@ -101,7 +101,8 @@ export function fitVisible(bounds, pad = 40, center = null) {
             bounds,
             false,
             window.L.point(e.left + e.right + 2 * pad, e.top + e.bottom + 2 * pad)
-        )
+        ),
+        { pad, coveredEdgesOf: coveredEdges }
     )
 }
 

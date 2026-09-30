@@ -7,6 +7,7 @@
 // lands on any drawn shape to that shape's layer, so a filled perimeter or
 // box would swallow clicks meant for the fire layer underneath.
 
+import * as Cesium from 'cesium'
 import L_ from '@basics/Layers_/Layers_'
 import Globe_ from '@basics/Globe_/Globe_'
 
@@ -73,18 +74,78 @@ function sync() {
     } catch (e) {}
 }
 
-// Move the globe camera over bounds ([[latMin, lonMin], [latMax, lonMax]]) at
-// the zoom the 2D map used for them.
-export function centerGlobeOn(bounds, zoom) {
+// Move the globe camera over bounds ([[latMin, lonMin], [latMax, lonMax]]):
+// framed to fit on Cesium, at the 2D map's zoom.
+export function centerGlobeOn(bounds, zoom, framing = {}) {
     const g = globe()
-    if (!g || typeof g.setCenter !== 'function' || !bounds) return
+    if (!g || !bounds) return
     try {
+        const camera = g.rendererType !== 'lithosphere' && g.renderer?.camera
+        if (camera) {
+            camera.setView({
+                destination: visibleFrameRectangle(
+                    bounds,
+                    g.renderer.container,
+                    framing
+                ),
+                orientation: {
+                    heading: camera.heading,
+                    pitch: -Cesium.Math.PI_OVER_TWO,
+                    roll: 0,
+                },
+            })
+            return
+        }
+        if (typeof g.setCenter !== 'function') return
         g.setCenter({
             lat: (bounds[0][0] + bounds[1][0]) / 2,
             lng: (bounds[0][1] + bounds[1][1]) / 2,
             zoom,
         })
     } catch (e) {}
+}
+
+const METERS_PER_DEGREE = 111320
+
+function visibleFrameRectangle(bounds, container, framing) {
+    const [[south, west], [north, east]] = bounds
+    const containerRect = container?.getBoundingClientRect()
+    if (
+        !containerRect ||
+        !containerRect.width ||
+        !containerRect.height ||
+        typeof framing.coveredEdgesOf !== 'function'
+    )
+        return Cesium.Rectangle.fromDegrees(west, south, east, north)
+
+    const pad = framing.pad ?? 0
+    const edges = framing.coveredEdgesOf(container)
+    const left = edges.left + pad
+    const right = edges.right + pad
+    const top = edges.top + pad
+    const bottom = edges.bottom + pad
+    const visibleWidth = Math.max(1, containerRect.width - left - right)
+    const visibleHeight = Math.max(1, containerRect.height - top - bottom)
+
+    const centerLat = (south + north) / 2
+    const centerLon = (west + east) / 2
+    const metersPerLonDegree =
+        METERS_PER_DEGREE * Math.cos((centerLat * Math.PI) / 180)
+    const metersPerPixel = Math.max(
+        ((east - west) * metersPerLonDegree) / visibleWidth,
+        ((north - south) * METERS_PER_DEGREE) / visibleHeight
+    )
+    const lonPerPixel = metersPerPixel / metersPerLonDegree
+    const latPerPixel = metersPerPixel / METERS_PER_DEGREE
+
+    const frameWest = centerLon - lonPerPixel * (left + visibleWidth / 2)
+    const frameNorth = centerLat + latPerPixel * (top + visibleHeight / 2)
+    return Cesium.Rectangle.fromDegrees(
+        frameWest,
+        frameNorth - latPerPixel * containerRect.height,
+        frameWest + lonPerPixel * containerRect.width,
+        frameNorth
+    )
 }
 
 // ─── Feature builders ─────────────────────────────────────────────────────────
