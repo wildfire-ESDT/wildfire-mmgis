@@ -17,6 +17,7 @@ const ACRES_KEYS = [
     'attr_IncidentSize',
     'attr_DiscoveryAcres',
     'GISAcres',
+    'GIS_ACRES',
     'DAILY_AC',
     'acres',
 ]
@@ -95,7 +96,11 @@ export function frontFacingLabel(layerObj, properties) {
     if (name != null) parts.push(`Fire Incident: ${name}`)
     if (acres != null)
         parts.push(
-            `Acres: ${typeof acres === 'number' ? acres.toLocaleString() : acres}`
+            `Acres: ${
+                typeof acres === 'number'
+                    ? Math.round(acres).toLocaleString()
+                    : acres
+            }`
         )
 
     // CursorInfo's tooltip div is `white-space: pre-wrap`, so a plain

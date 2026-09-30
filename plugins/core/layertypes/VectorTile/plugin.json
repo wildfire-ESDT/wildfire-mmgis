@@ -170,7 +170,7 @@
               {
                 "field": "sliceEnabled",
                 "name": "Slice GeoJSON Into Tiles",
-                "description": "Tile a plain GeoJSON document in the browser instead of requesting an existing tileset — no tippecanoe step and no geodataset ingest. Each zoom level is simplified independently, so zoomed-out views stay cheap and full detail loads only where you zoom in. This is the fix for a large vector layer that makes panning the globe laggy. Leave unset to decide from the URL: a URL with no {z}/{x}/{y} placeholders and no 'geodatasets:' scheme is sliced.",
+                "description": "Tile a plain GeoJSON document in the browser instead of requesting an existing tileset — no tippecanoe step and no geodataset ingest. Each zoom level is simplified independently, so zoomed-out views stay cheap and full detail loads only where you zoom in. This is the fix for a large vector layer that makes panning the globe laggy. A URL with no {z}/{x}/{y} placeholders and no 'geodatasets:' scheme is always sliced.",
                 "type": "checkbox",
                 "width": 12,
                 "defaultChecked": false

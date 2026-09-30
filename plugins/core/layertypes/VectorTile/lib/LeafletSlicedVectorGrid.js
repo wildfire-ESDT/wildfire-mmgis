@@ -69,12 +69,25 @@ const LeafletSlicedVectorGrid = L.VectorGrid.extend({
                       maxZoom: options.sliceMaxZoom,
                       tolerance: options.tolerance,
                   })
+        this._configuredMaxNativeZoom = this.options.maxNativeZoom
+        this._clampMaxNativeZoom()
+    },
+
+    _clampMaxNativeZoom() {
         // The slicer can't serve a tile deeper than its own max zoom, so
         // past it the grid overzooms that zoom's tiles instead of asking.
-        const maxNativeZoom = parseInt(this.options.maxNativeZoom, 10)
+        const maxNativeZoom = parseInt(this._configuredMaxNativeZoom, 10)
         this.options.maxNativeZoom = isNaN(maxNativeZoom)
             ? this._slicer.maxZoom
             : Math.min(maxNativeZoom, this._slicer.maxZoom)
+    },
+
+    setSlicer(slicer) {
+        this._slicer = slicer
+        this._clampMaxNativeZoom()
+        this._overriddenStyles = {}
+        this.highlight = null
+        this.redraw()
     },
 
     /** The source feature behind a rendered tile feature (for callers that

@@ -9,18 +9,18 @@
  * A flat, non-sliced vector tileset remains a 2D-map-only rendering.
  */
 import L_ from '@basics/Layers_/Layers_'
+import { timeResolvedSliceUrl } from '../lib/sliceTime'
 
 /**
  * True when the layer's source is a GeoJSON document to be tiled at runtime
  * rather than an existing `{z}/{x}/{y}` tileset.
  *
- * Explicit `sliceEnabled` wins; otherwise a url with no tile placeholders and
- * no `geodatasets:` scheme can only be a whole document, so slicing is what
- * the user must have meant.
+ * `sliceEnabled: true` forces it; otherwise a url with no tile placeholders
+ * and no `geodatasets:` scheme can only be a whole document, so it is sliced
+ * even when `sliceEnabled` was saved as false.
  */
 export function isSliced(layerObj) {
     if (layerObj.sliceEnabled === true) return true
-    if (layerObj.sliceEnabled === false) return false
 
     const url = layerObj.url || ''
     if (url === '') return false
@@ -71,7 +71,7 @@ export function toGlobeConfig(layerObj) {
 
     return {
         name: s.name,
-        path: L_.getUrl(s.type, s.url, s),
+        path: sliced ? timeResolvedSliceUrl(s) : L_.getUrl(s.type, s.url, s),
         opacity: L_.layers.opacity[s.name],
         sliced,
         // Resolved by sliceOptions — the same values the 2D map slices with,

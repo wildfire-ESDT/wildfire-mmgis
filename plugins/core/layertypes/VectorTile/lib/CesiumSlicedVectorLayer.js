@@ -35,6 +35,7 @@ import GeoJSONSlicer, { sliceUrl, SOURCE_INDEX_KEY } from './GeoJSONSlicer'
 import { resolveFeatureStyle } from './slicedStyle'
 
 const TILE_SIZE = 256
+const RETIRE_FALLBACK_MS = 5000
 
 // geojson-vt tile geometry types.
 const TYPE_POINT = 1
@@ -309,6 +310,8 @@ class CesiumSlicedVectorLayer {
         // this one (see setHighlightedFeature), by source index.
         this._highlightIndex = null
         this._highlightLayer = null
+        this._retiringLayers = new Set()
+        this._replacementSlicer = null
         this.slicer = null
 
         this._sliceOptions = {
@@ -333,11 +336,12 @@ class CesiumSlicedVectorLayer {
             // The layer may have been turned off or removed while we fetched.
             if (this._destroyed) return
 
-            this.slicer = slicer
+            this.slicer = this._replacementSlicer ?? slicer
+            this._replacementSlicer = null
             // The slicer's own (clamped) max zoom: Cesium must not ask it for
             // a deeper tile than it can serve — it upsamples from there.
-            this.maxZoom = slicer.maxZoom
-            this._provider = new SlicedVectorImageryProvider(slicer, {
+            this.maxZoom = this.slicer.maxZoom
+            this._provider = new SlicedVectorImageryProvider(this.slicer, {
                 style: this.style,
                 minimumLevel: this.minZoom,
                 maximumLevel: this.maxZoom,
@@ -383,7 +387,63 @@ class CesiumSlicedVectorLayer {
         return this._highlightIndex
     }
     get globeImageryLayers() {
-        return [this._imageryLayer, this._highlightLayer].filter(Boolean)
+        return [
+            ...this._retiringLayers,
+            this._imageryLayer,
+            this._highlightLayer,
+        ].filter(Boolean)
+    }
+
+    setSlicer(slicer, url) {
+        if (this._destroyed) return
+        if (url != null) this.url = url
+        if (!this._imageryLayer) {
+            this._replacementSlicer = slicer
+            return
+        }
+
+        this._removeHighlightLayer()
+        this._highlightIndex = null
+        this.slicer = slicer
+        this.maxZoom = slicer.maxZoom
+        this._provider = new SlicedVectorImageryProvider(slicer, {
+            style: this.style,
+            minimumLevel: this.minZoom,
+            maximumLevel: this.maxZoom,
+        })
+
+        const layers = this.viewer.imageryLayers
+        const previousLayer = this._imageryLayer
+        const previousIndex = layers.indexOf(previousLayer)
+        this._imageryLayer = layers.addImageryProvider(
+            this._provider,
+            previousIndex >= 0 ? previousIndex + 1 : undefined
+        )
+        this._imageryLayer.alpha = this.opacity
+        this._imageryLayer.show = this._visible
+        this._retireWhenLoaded(previousLayer)
+        this.viewer.scene.requestRender()
+    }
+
+    _retireWhenLoaded(imageryLayer) {
+        this._retiringLayers.add(imageryLayer)
+        let fallbackTimer = null
+        let stopListening = null
+        const retire = () => {
+            clearTimeout(fallbackTimer)
+            stopListening?.()
+            if (!this._retiringLayers.delete(imageryLayer)) return
+            const layers = this.viewer.imageryLayers
+            if (layers.contains(imageryLayer)) layers.remove(imageryLayer, true)
+            this.viewer.scene.requestRender()
+        }
+        stopListening =
+            this.viewer.scene.globe.tileLoadProgressEvent.addEventListener(
+                (queuedTileCount) => {
+                    if (queuedTileCount === 0) retire()
+                }
+            )
+        fallbackTimer = setTimeout(retire, RETIRE_FALLBACK_MS)
     }
 
     /**
@@ -475,6 +535,11 @@ class CesiumSlicedVectorLayer {
         this._destroyed = true
         this._removeHighlightLayer()
         this._highlightIndex = null
+        for (const imageryLayer of this._retiringLayers)
+            if (this.viewer.imageryLayers.contains(imageryLayer))
+                this.viewer.imageryLayers.remove(imageryLayer, true)
+        this._retiringLayers.clear()
+        this._replacementSlicer = null
         if (this._imageryLayer) {
             this.viewer.imageryLayers.remove(this._imageryLayer, true)
             this._imageryLayer = null

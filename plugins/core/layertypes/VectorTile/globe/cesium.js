@@ -18,6 +18,10 @@ import L_ from '@basics/Layers_/Layers_'
 import { makeWith, onToggle as hideOrRemove, isSliced } from './layerConfig'
 import { frontFacingLabel } from '../lib/sliceMetadata'
 import {
+    registerSlicedGlobeLayer,
+    unregisterSlicedGlobeLayer,
+} from '../lib/sliceTime'
+import {
     layerInteractionsDisabled,
     selectSlicedFeature,
     clearSlicedSelection,
@@ -95,10 +99,13 @@ function renderSliced(layerConfig, gctx) {
         // layer could never be rebuilt. Unregistered, the next toggle-on
         // tries again.
         onError: () => {
+            unregisterSlicedGlobeLayer(name, slicedLayer)
             if (layers[name]?.slicedLayer === slicedLayer)
                 gctx.removeLayer(name)
         },
     })
+
+    registerSlicedGlobeLayer(name, slicedLayer)
 
     layers[name] = {
         type: 'vectortile',
@@ -138,8 +145,10 @@ function renderSliced(layerConfig, gctx) {
 function destroy(name, gctx) {
     const layerInfo = gctx.layers[name]
     if (!layerInfo) return
-    if (layerInfo.kind === 'sliced') layerInfo.slicedLayer.destroy()
-    else layerInfo.mvtLayer.destroy()
+    if (layerInfo.kind === 'sliced') {
+        unregisterSlicedGlobeLayer(name, layerInfo.slicedLayer)
+        layerInfo.slicedLayer.destroy()
+    } else layerInfo.mvtLayer.destroy()
 }
 
 function setVisibility(name, visible, gctx) {

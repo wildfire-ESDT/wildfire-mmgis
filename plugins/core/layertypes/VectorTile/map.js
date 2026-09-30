@@ -32,7 +32,15 @@ import { frontFacingLabel } from './lib/sliceMetadata'
 import {
     layerInteractionsDisabled,
     selectSlicedFeature,
+    clearSlicedSelection,
 } from './lib/slicedSelection'
+import {
+    timeResolvedSliceUrl,
+    slicedGlobeLayer,
+    setAppliedSliceUrl,
+    beginSliceRequest,
+    isLatestSliceRequest,
+} from './lib/sliceTime'
 
 // The single sublayer name our sliced grid gives generated tiles.
 const SLICED_VT_LAYER = 'sliced'
@@ -313,11 +321,12 @@ async function makeGrid(layerObj, ctx) {
     let grid
     if (sliced) {
         const slice = sliceOptions(layerObj)
+        const sourceUrl = timeResolvedSliceUrl(layerObj, ctx.resolvedUrl)
         // A deliberate refresh wants the document as it is now.
-        if (ctx.isRefresh) invalidateSlice(layerUrl)
+        if (ctx.isRefresh) invalidateSlice(sourceUrl)
         let slicer
         try {
-            slicer = await sliceUrl(layerUrl, slice)
+            slicer = await sliceUrl(sourceUrl, slice)
         } catch (err) {
             console.error(
                 `Failed to fetch/slice GeoJSON for sliced layer "${layerObj.name}":`,
@@ -358,7 +367,10 @@ async function makeGrid(layerObj, ctx) {
     grid.vtKey = layerStyle.vtKey
 
     if (sliced) {
-        if (mctx.default) wireSlicedInteractions(layerObj, grid, mctx.map)
+        if (mctx.default) {
+            wireSlicedInteractions(layerObj, grid, mctx.map)
+            syncSliceToTime(layerObj)
+        }
     } else {
         wireTilesetInteractions(layerObj, grid, {
             L,
@@ -575,6 +587,65 @@ function wireSlicedInteractions(layerObj, grid, map) {
     })
 }
 
+async function syncSliceToTime(layerObj, options = {}) {
+    const layerName = layerObj.name
+    const url = timeResolvedSliceUrl(
+        layerObj,
+        options.template,
+        options.timeFormat
+    )
+    const request = beginSliceRequest(layerName)
+    if (options.force) invalidateSlice(url)
+
+    let slicer
+    try {
+        slicer = await sliceUrl(url, sliceOptions(layerObj))
+    } catch (err) {
+        console.error(
+            `Failed to fetch/slice GeoJSON for sliced layer "${layerObj.name}":`,
+            err
+        )
+        return
+    }
+    if (!isLatestSliceRequest(layerName, request)) return
+
+    const grid = L_.layers.layer[layerName]
+    const globeLayer = slicedGlobeLayer(layerName)
+    const gridChanges = grid?.setSlicer != null && grid._slicer !== slicer
+    const globeChanges = globeLayer != null && globeLayer.slicer !== slicer
+
+    if (
+        (gridChanges || globeChanges) &&
+        L_.activeFeature?.layerName === layerName
+    )
+        clearSlicedSelection()
+    if (gridChanges) grid.setSlicer(slicer)
+    if (globeChanges) globeLayer.setSlicer(slicer, url)
+
+    const previousUrl = setAppliedSliceUrl(layerName, url)
+    if (previousUrl != null && previousUrl !== url) invalidateSlice(previousUrl)
+}
+
+function timeChange(layerObj, ctx = {}) {
+    if (!isSliced(layerObj)) return ctx.reload()
+    if (ctx.evenIfControlled !== true && layerObj.controlled === true) return
+    if (!L_.layers.on[layerObj.name] && !ctx.evenIfOff) return
+
+    return syncSliceToTime(layerObj, {
+        template: ctx.changedUrl ?? layerObj.url,
+        timeFormat: ctx.timeFormat,
+        force: ctx.forceRequery === true,
+    })
+}
+
+function onToggle(layerObj, ctx = {}) {
+    if (!ctx.visible || ctx.hadToMake || ctx.globeOnly) return
+    if (!isSliced(layerObj) || layerObj.time?.enabled !== true) return
+    syncSliceToTime(layerObj)
+}
+
 export default {
     make,
+    timeChange,
+    onToggle,
 }
