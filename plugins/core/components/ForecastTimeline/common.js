@@ -56,6 +56,41 @@ export function isStacForecast(ld) {
     )
 }
 
+// True when a STAC forecast's collection holds every run's forecast rather
+// than one forecast per hour (time.forecast.itemsPerRun): each item is stamped
+// at its valid hour and tagged with its run (forecast:reference_datetime), and
+// the card asks for the selected run's items only.
+export function hasItemsPerRun(fc) {
+    return fc?.itemsPerRun === true
+}
+
+// The STAC `query` value restricting a per-run collection to one run, URL
+// encoded. titiler-pgstac's tile endpoint and the STAC items endpoint both
+// take it; neither honours a CQL2 `filter` on tiles.
+export function runQueryParameter(runMs) {
+    const runIso = new Date(runMs).toISOString().split('.')[0] + 'Z'
+    return encodeURIComponent(
+        JSON.stringify({ 'forecast:reference_datetime': { eq: runIso } })
+    )
+}
+
+// The STAC API address of a layer's collection, for availability probes, or
+// null if it can't be worked out. An external layer names its titiler-pgstac
+// collection URL, whose /stac/ twin serves the items. A local layer names only
+// the collection, served by this MMGIS's own /stac, beside the /titilerpgstac
+// the tiles come from (the same base core's transformStacUrl builds).
+export function stacCollectionUrl(ld) {
+    const collectionReference = (ld?.url || '').replace(/^stac-collection:/i, '')
+    if (!collectionReference) return null
+    if (collectionReference.includes('/titilerpgstac/'))
+        return collectionReference.replace('/titilerpgstac/', '/stac/')
+    // Any other URL or path isn't a collection we know how to ask about.
+    if (collectionReference.includes('/')) return null
+    const collectionName = collectionReference.split('?')[0]
+    const pathname = window.location.pathname.replace(/\/$/, '')
+    return `${window.location.origin}${pathname}/stac/collections/${encodeURIComponent(collectionName)}`
+}
+
 // True when an hourly card declares the one UTC hour a day its model
 // initializes (runHourUTC). Such cards are gated to that hour, and their
 // STAC items are stamped at VALID hours, not issue hours.

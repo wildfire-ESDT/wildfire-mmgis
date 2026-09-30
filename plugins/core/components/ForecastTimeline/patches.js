@@ -10,6 +10,9 @@
  *                                        (TimeControl.applyTimeParams-bypassing)
  *                                        main-timeline refresh
  *   L_.toggleLayer                      show the card the instant a toggle starts
+ *   L.TileLayer.ColorFilter
+ *     .prototype.getTileUrl             add the selected run to a per-run STAC
+ *                                        forecast layer's tile requests
  */
 
 import TimeControl from '@basics/TimeControl_/TimeControl'
@@ -17,7 +20,7 @@ import TimeUI from '@basics/TimeControl_/TimeUI'
 import L_ from '@basics/Layers_/Layers_'
 import LayerTypeRegistry from '@basics/Layers_/registry/LayerTypeRegistry'
 
-import { invalidateCacheLayer } from './common'
+import { invalidateCacheLayer, isStacForecast, hasItemsPerRun, runQueryParameter } from './common'
 
 const patchMethods = {
     // ── The registry ───────────────────────────────────────
@@ -266,6 +269,49 @@ const patchMethods = {
                 }
             }
         )
+    },
+
+    // ── Per-run STAC forecasts ─────────────────────────────
+    // A collection holding every run's forecast (time.forecast.itemsPerRun)
+    // must be asked for the selected run's items only, or titiler-pgstac
+    // mosaics all runs' forecasts for the hour. A layer's url can't carry the
+    // filter (core drops a stac-collection url's own parameters), and a
+    // rebuilt layer is a new Leaflet instance, so the run is added where every
+    // tile request is built: the tile layer class's getTileUrl.
+    _patchStacRunFilter: function () {
+        const tileLayerPrototype = window.L?.TileLayer?.ColorFilter?.prototype
+        const originalGetTileUrl = tileLayerPrototype?.getTileUrl
+        if (typeof originalGetTileUrl !== 'function') return
+        if (!this._patches) this._patches = []
+        if (this._patches.some((p) => p.target === tileLayerPrototype && p.method === 'getTileUrl'))
+            return
+        // Not _installPatch: a prototype method must run with the tile layer
+        // instance as `this`, not bound to the prototype.
+        this._patches.push({ target: tileLayerPrototype, method: 'getTileUrl', original: originalGetTileUrl })
+        const self = this
+        tileLayerPrototype.getTileUrl = function (coords) {
+            const url = originalGetTileUrl.call(this, coords)
+            const runQuery = self._runQueryForTileLayer(this)
+            return runQuery ? `${url}${url.includes('?') ? '&' : '?'}query=${runQuery}` : url
+        }
+    },
+
+    // The selected run's STAC query for a per-run forecast layer's tiles, or
+    // null for any other tile layer.
+    _runQueryForTileLayer: function (tileLayer) {
+        // Remembered once found; not while missing, since a layer's first
+        // tiles can be requested before core registers it.
+        if (tileLayer._forecastLayerName == null) {
+            const layerName = Object.keys(L_.layers.layer).find(
+                (name) => L_.layers.layer[name] === tileLayer
+            )
+            if (layerName == null) return null
+            tileLayer._forecastLayerName = layerName
+        }
+        const layerData = L_.layers.data[tileLayer._forecastLayerName]
+        const fc = layerData?.time?.forecast
+        if (!isStacForecast(layerData) || !hasItemsPerRun(fc)) return null
+        return runQueryParameter(this._forecastBase(fc))
     },
 
     // ── Optimistic card on toggle ──────────────────────────

@@ -64,6 +64,7 @@ const ForecastTimeline = {
         this._patchTimeUINavigation()
         this._patchSetLayerWmsParams()
         this._patchTileTimeChange()
+        this._patchStacRunFilter()
         this._optimisticOn = new Set()
         this._toggleTick = {}
         this._patchToggleLayer()

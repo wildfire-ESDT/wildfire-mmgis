@@ -15,6 +15,7 @@ import L_ from '@basics/Layers_/Layers_'
 import {
     STEP_UNITS,
     hasInitHour,
+    hasItemsPerRun,
     isCogFxx,
     isFxxVelocity,
     isStacForecast,
@@ -192,11 +193,12 @@ const stepMethods = {
             queryEndIso = isFutureMonth
                 ? new Date(stepMs).toISOString().split('.')[0] + 'Z'
                 : TimeControl.currentTime || ld.time.end
-        } else if (hasInitHour(fc)) {
-            // Init-hour collections stamp an item at each VALID hour: the
-            // tick queries the hour it is labeled with. One step back would
-            // serve the PREVIOUS run's tail (its last valid hour sits exactly
-            // on this run's init instant).
+        } else if (hasInitHour(fc) || hasItemsPerRun(fc)) {
+            // Init-hour and per-run collections stamp an item at each VALID
+            // hour: the tick queries the hour it is labeled with. One step
+            // back would serve the PREVIOUS run's tail (its last valid hour
+            // sits exactly on this run's init instant). A per-run layer's
+            // tiles also carry the selected run (see _patchStacRunFilter).
             queryEndIso = new Date(stepMs).toISOString()
         } else {
             // The tick is labeled with the VALID day but queries the ISSUE
@@ -300,6 +302,15 @@ const stepMethods = {
         if (isNaN(t0)) return null
         const fc = ld.time?.forecast
         const iso = (ms) => new Date(ms).toISOString().split('.')[0] + 'Z'
+        // A per-run layer always shows its card's step of the selected run,
+        // whatever instant is asked for. Core's own refresh after a timeline
+        // change asks for the selected (init) instant, where the run has no
+        // item (its first is one hour later), so the layer would go blank.
+        if (hasItemsPerRun(fc)) {
+            const stepIndex = this.state.cards[ld.name]?.stepIndex ?? 0
+            const stepMs = stepTime(fc, stepIndex, this._forecastBase(fc))
+            return [iso(stepMs), iso(stepMs + 1000)]
+        }
         // Not the model's init hour: items exist at every valid hour, so the
         // timeline would render one. A zero-length window draws nothing.
         if (this._initHourMismatch(fc)) return [iso(t0), iso(t0)]

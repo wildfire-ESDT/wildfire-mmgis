@@ -28,6 +28,9 @@ import {
     isStacForecast,
     setFxx,
     resolveUrlTokens,
+    stacCollectionUrl,
+    hasItemsPerRun,
+    runQueryParameter,
 } from './common'
 import { periodBounds, stepTime } from './time'
 
@@ -271,22 +274,24 @@ const availabilityMethods = {
     // Uses the items endpoint (limit=1) so the answer matches the mosaic.
     _probeStacStepPresent: function (name, ms) {
         const ld = L_.layers.data[name]
-        // Strip the stac-collection: protocol prefix or fetch() rejects the URL.
-        const tilerUrl = (ld?.url || '').replace(/^stac-collection:/i, '')
-        const stacUrl = tilerUrl.replace('/titilerpgstac/', '/stac/')
-        if (!stacUrl || stacUrl === tilerUrl) return Promise.resolve(true)
-        const unit = ld.time?.forecast?.stepUnit || 'hour'
+        const stacUrl = stacCollectionUrl(ld)
+        if (!stacUrl) return Promise.resolve(true)
+        const fc = ld.time?.forecast
+        const unit = fc?.stepUnit || 'hour'
         const [startMs, nextMs] = periodBounds(unit, ms)
         const endMs = nextMs - 1000
         if (!this._stacStepCache) this._stacStepCache = {}
         if (!this._stacStepMiss) this._stacStepMiss = {}
-        const key = `${name}:${startMs}`
+        // A per-run collection answers for the selected run only.
+        const runMs = hasItemsPerRun(fc) ? this._forecastBase(fc) : null
+        const key = runMs == null ? `${name}:${startMs}` : `${name}:${startMs}:${runMs}`
         if (this._stacStepCache[key]) return Promise.resolve(true)
         const missAt = this._stacStepMiss[key]
         if (missAt != null && Date.now() - missAt < PROBE_MISS_TTL_MS)
             return Promise.resolve(false)
         const iso = (t) => new Date(t).toISOString().split('.')[0] + 'Z'
-        const url = `${stacUrl}/items?limit=1&datetime=${iso(startMs)}/${iso(endMs)}`
+        const runQuery = runMs == null ? '' : `&query=${runQueryParameter(runMs)}`
+        const url = `${stacUrl}/items?limit=1&datetime=${iso(startMs)}/${iso(endMs)}${runQuery}`
         this._dbg('probe STAC step', name, url)
         return fetch(url, this._probeFetchOpts())
             .then((r) => {
@@ -322,16 +327,18 @@ const availabilityMethods = {
         const rec = this._stacPresence[key]
         if (rec && (rec.pending || Date.now() - rec.at < PROBE_MISS_TTL_MS))
             return
-        const tilerUrl = (ld.url || '').replace(/^stac-collection:/i, '')
-        const stacUrl = tilerUrl.replace('/titilerpgstac/', '/stac/')
-        if (!stacUrl || stacUrl === tilerUrl) return
+        const stacUrl = stacCollectionUrl(ld)
+        if (!stacUrl) return
         const unit = fc.stepUnit || 'hour'
         const steps = this._effectiveSteps(fc, name)
         const first = this._stacQueryPeriodStart(fc, 0, base)
         const lastStart = this._stacQueryPeriodStart(fc, steps - 1, base)
         const endMs = periodBounds(unit, lastStart)[1] - 1000
         const iso = (ms) => new Date(ms).toISOString().split('.')[0] + 'Z'
-        const url = `${stacUrl}/items?limit=200&datetime=${iso(first)}/${iso(endMs)}`
+        // A per-run collection holds every run's forecast for these hours;
+        // only the selected run's items (base) decide which ticks are live.
+        const runQuery = hasItemsPerRun(fc) ? `&query=${runQueryParameter(base)}` : ''
+        const url = `${stacUrl}/items?limit=200&datetime=${iso(first)}/${iso(endMs)}${runQuery}`
         this._stacPresence[key] = {
             present: rec ? rec.present : null,
             at: Date.now(),
@@ -361,11 +368,12 @@ const availabilityMethods = {
     },
 
     // The period a tick's QUERY targets: its own month for monthly cards,
-    // its own VALID hour for init-hour cards (their items are stamped at
-    // valid hours), the issue period (one step earlier) for the rest.
+    // its own VALID hour for init-hour and per-run cards (their items are
+    // stamped at valid hours), the issue period (one step earlier) for the rest.
     _stacQueryPeriodStart: function (fc, idx, base) {
         if ((fc.stepUnit || 'hour') === 'month') return stepTime(fc, idx, base)
-        return stepTime(fc, hasInitHour(fc) ? idx : idx - 1, base)
+        const stampedAtValidTime = hasInitHour(fc) || hasItemsPerRun(fc)
+        return stepTime(fc, stampedAtValidTime ? idx : idx - 1, base)
     },
 
     // True once this base's presence sweep resolved (always true for non-STAC).

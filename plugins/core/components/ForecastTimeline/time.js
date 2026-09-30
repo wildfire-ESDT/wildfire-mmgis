@@ -148,8 +148,9 @@ const timeMethods = {
         const ld = name ? L_.layers.data[name] : null
         if (!isFxxLayer(ld)) return fc.steps || 1
         const initHourUTC = new Date(this._originBase()).getUTCHours()
+        // Configure's list field saves text ("0,6"), so compare as numbers.
         const extendedHours = Array.isArray(fc.extendedRunHoursUTC)
-            ? fc.extendedRunHoursUTC
+            ? fc.extendedRunHoursUTC.map(Number)
             : EXTENDED_RUN_HOURS_UTC_DEFAULT
         const isExtendedRun = extendedHours.includes(initHourUTC)
         return (
