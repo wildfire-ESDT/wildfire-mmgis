@@ -509,6 +509,141 @@
                 "width": 6
               }
             ]
+          },
+          {
+            "subname": "Forecast Timeline",
+            "components": [
+              {
+                "field": "time.forecast.enabled",
+                "name": "Forecast Card",
+                "description": "Shows a forecast stepper card for this layer above the timeline while the layer is on. The main timeline's selected time is the model run; the card steps through that run's forecast. Needs the ForecastTimeline component enabled in the mission.",
+                "type": "switch",
+                "width": 3
+              },
+              {
+                "field": "time.forecast.label",
+                "name": "Card Label",
+                "description": "Title shown on the forecast card.",
+                "type": "text",
+                "width": 5
+              },
+              {
+                "field": "time.forecast.description",
+                "name": "Card Description",
+                "description": "Text for the card's info icon. Leave empty for no icon.",
+                "type": "text",
+                "width": 4
+              }
+            ]
+          },
+          {
+            "components": [
+              {
+                "field": "time.forecast.itemsPerRun",
+                "name": "Items Per Run",
+                "description": "STAC collections only. On when the collection holds every run's forecast (one item per run and forecast hour, stamped at the forecast hour and tagged with forecast:reference_datetime = the run time). The card then shows the selected time's own run. Off for a collection with one item per hour holding the newest forecast.",
+                "type": "checkbox",
+                "width": 12
+              }
+            ]
+          },
+          {
+            "components": [
+              {
+                "field": "time.forecast.steps",
+                "name": "Steps",
+                "description": "Number of forecast steps on the card. HRRR-style fxx layers ignore it and follow their run schedule instead.",
+                "type": "number",
+                "width": 3,
+                "min": 1
+              },
+              {
+                "field": "time.forecast.stepUnit",
+                "name": "Step Unit",
+                "description": "hour, day or month. Defaults to hour.",
+                "type": "searchdropdown",
+                "width": 3,
+                "options": ["hour", "day", "month"]
+              },
+              {
+                "field": "time.forecast.stepOffset",
+                "name": "Step Offset",
+                "description": "0: the first step is the selected (init) time. 1: the first step is one unit after it.",
+                "type": "number",
+                "width": 3,
+                "min": 0
+              },
+              {
+                "field": "time.forecast.runHourUTC",
+                "name": "Run Hour (UTC)",
+                "description": "Daily models: the UTC hour the model runs (default 0). Hourly models: the one UTC hour a day the model initializes; other hours show 'run not yet generated'. Leave empty for a model that runs every hour.",
+                "type": "number",
+                "width": 3,
+                "min": 0,
+                "max": 23
+              }
+            ]
+          },
+          {
+            "components": [
+              {
+                "field": "time.forecast.urlTemplate",
+                "name": "URL Step Template",
+                "description": "The URL contains __FSTEP__, replaced with the 1-based step number.",
+                "type": "checkbox",
+                "width": 3
+              },
+              {
+                "field": "time.forecast.showWindow",
+                "name": "Show Valid Windows",
+                "description": "Daily cards label each step with its valid window (e.g. 5 PM – 5 PM) instead of a plain UTC date.",
+                "type": "checkbox",
+                "width": 3
+              },
+              {
+                "field": "time.forecast.stepLabel",
+                "name": "Step Label",
+                "description": "Overrides the label on each step chip.",
+                "type": "text",
+                "width": 3
+              },
+              {
+                "field": "time.forecast.stepSize",
+                "name": "Step Label Size",
+                "description": "Size of the step chip label. Default 1.",
+                "type": "number",
+                "width": 3,
+                "min": 1
+              }
+            ]
+          },
+          {
+            "subname": "Forecast Timeline: HRRR fxx Layers",
+            "components": [
+              {
+                "field": "time.forecast.fxxMax",
+                "name": "Last Forecast Hour",
+                "description": "fxx layers: last forecast hour of a regular run. Default 18.",
+                "type": "number",
+                "width": 4,
+                "min": 0
+              },
+              {
+                "field": "time.forecast.fxxMaxExtended",
+                "name": "Last Forecast Hour (Extended Runs)",
+                "description": "fxx layers: last forecast hour of an extended run. Default 48.",
+                "type": "number",
+                "width": 4,
+                "min": 0
+              },
+              {
+                "field": "time.forecast.extendedRunHoursUTC",
+                "name": "Extended Run Hours (UTC)",
+                "description": "fxx layers: comma-separated UTC init hours that run extended. Default 0,6,12,18.",
+                "type": "textarray",
+                "width": 4
+              }
+            ]
           }
         ]
       },
