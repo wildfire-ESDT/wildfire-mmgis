@@ -11,11 +11,10 @@ import {
     escHtml,
     escSel,
     isMobile,
-    isStacForecast,
     showWindow,
     pruneCacheInactive,
-} from './common'
-import { stepTime } from './time'
+} from '../shared/common'
+import { stepTime } from '../shared/timeMath'
 
 const cardMethods = {
     // ── Layer detection / card records ─────────────────────
@@ -50,7 +49,16 @@ const cardMethods = {
         layers.forEach(({ name, config: fc }) => {
             if (!this.state.cards[name]) {
                 this.state.cards[name] = { stepIndex: 0, collapsed: false, cardState: 'loading' }
-                if (fc.urlTemplate) this._applyUrlTemplate(name, 1)
+                const forecastType = this._forecastTypeFor(name)
+                if (forecastType?.prepareLayer) {
+                    try {
+                        forecastType.prepareLayer(
+                            this._forecastTypeCall(name, fc, { step: 0, steps: this._effectiveSteps(fc, name) })
+                        )
+                    } catch (e) {
+                        console.warn('[ForecastTimeline] prepareLayer failed for', name, e)
+                    }
+                }
             }
         })
 
@@ -74,8 +82,7 @@ const cardMethods = {
         }
         this._adjustTimeUIHeight()
 
-        pruneCacheInactive(this._edgeCache, activeNames)
-        pruneCacheInactive(this._idxSweep, activeNames)
+        pruneCacheInactive(this._presence, activeNames)
         this._probeAllAnchors()
     },
 
@@ -213,7 +220,7 @@ const cardMethods = {
                 // Don't let the tick behind it also handle the press.
                 e.stopPropagation()
                 const idx = parseInt(el.dataset.step)
-                this._retryFxxStep(name, fc, idx).then((present) => {
+                this._retryStep(name, fc, idx).then((present) => {
                     if (present) this._setCardStep(name, fc, idx)
                 })
             })
@@ -355,67 +362,34 @@ const cardMethods = {
     },
 
     // ── Tick painting (the single implementation) ──────────
-    // Tick classes + step-button disabling derived from card state. Used by
-    // _renderCardStep AND _setCardState so they can never drift. STAC cards
-    // stay navigable while unavailable; loading pulses (skeleton) while dark
-    // is reserved for unavailable/failed; a step with no data is never active.
+    // Tick classes and step-button disabling derived from card state. Used by
+    // _renderCardStep AND _setCardState so they can never drift.
     _paintCardTicks: function (card, name, fc) {
         const state = this.state.cards[name]?.cardState ?? 'available'
         const disabled = state !== 'available'
         const loading = state === 'loading'
-        // An uninitialized card is never navigable: there is no run to step
-        // through at this hour.
-        const navigable =
-            disabled &&
-            !loading &&
-            state !== 'uninitialized' &&
-            isStacForecast(L_.layers.data[name])
         const idx = this.state.cards[name]?.stepIndex ?? 0
         const steps = fc ? this._effectiveSteps(fc, name) : 1
-        // The gate skips the presence sweep, so an uninitialized card would
-        // otherwise wear the skeleton pulse forever.
-        const presenceReady =
-            state === 'uninitialized' || this._presenceReady(name, fc)
+        const gated = state === 'uninitialized' || state === 'notype'
+        const presenceReady = gated || this._presenceReady(name, fc)
+        const canRetry = this._canRetryStep(name)
 
-        // Card-level state classes assert on EVERY paint (state changes and
-        // refreshes alike) so no repaint can leave a stale combination, e.g.
-        // a leftover ftl-card-navigable brightening a disabled card's
-        // buttons. 'failed' and 'uninitialized' share the unavailable look.
         card.classList.toggle('ftl-card-loading', loading)
-        card.classList.toggle(
-            'ftl-card-unavailable',
-            state === 'unavailable' ||
-                state === 'failed' ||
-                state === 'uninitialized'
-        )
-        card.classList.toggle('ftl-card-navigable', navigable)
+        card.classList.toggle('ftl-card-unavailable', disabled && !loading)
 
         card.querySelectorAll('.ftl-tick').forEach((el, i) => {
             const missing = this._missingStep(name, fc, i)
-            // Only an fxx hour can be retried; a STAC period has no button.
-            el.classList.toggle(
-                'ftl-tick-missing',
-                missing && this._fxxMissingStep(name, fc, i)
-            )
+            el.classList.toggle('ftl-tick-missing', missing && canRetry)
             el.classList.toggle('ftl-tick-skeleton', loading || !presenceReady)
-            el.classList.toggle(
-                'ftl-future-item',
-                (disabled && !loading && !navigable) || missing
-            )
-            el.classList.toggle(
-                'active',
-                (!disabled || navigable) &&
-                    i === idx &&
-                    !missing &&
-                    presenceReady
-            )
+            el.classList.toggle('ftl-future-item', (disabled && !loading) || missing)
+            el.classList.toggle('active', !disabled && i === idx && !missing && presenceReady)
         })
 
-        card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', (disabled && !navigable) || idx === 0)
-        card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', (disabled && !navigable) || idx === steps - 1)
+        card.querySelector('.ftl-card-prev')?.toggleAttribute('disabled', disabled || idx === 0)
+        card.querySelector('.ftl-card-next')?.toggleAttribute('disabled', disabled || idx === steps - 1)
         card.querySelector('.ftl-card-play')?.toggleAttribute('disabled', disabled || steps <= 1)
 
-        return { state, disabled, loading, navigable, idx, steps }
+        return { state, disabled, loading, idx, steps }
     },
 
     _renderCardStep: function (name, fc, container) {
@@ -471,7 +445,8 @@ const cardMethods = {
     //   'uninitialized' the selected hour is not the model's declared init
     //                 hour (runHourUTC on an hourly card).
     //                 Renders exactly like 'unavailable' but names the
-    //                 selected hour; no probes, not navigable
+    //                 selected hour; no probes
+    //   'notype'      time.forecast.type names nothing registered
     _setCardState: function (name, state) {
         if (this.state.cards[name]) this.state.cards[name].cardState = state
         if (typeof window !== 'undefined' && window.FTL_DEBUG) {
@@ -517,6 +492,19 @@ const cardMethods = {
                 initEl.setAttribute(
                     'title',
                     'The forecast data failed to load. The layer and forecast services may be briefly out of sync. Toggle the layer off and on to retry.'
+                )
+            }
+        } else if (state === 'notype') {
+            if (captionEl) captionEl.style.display = 'none'
+            if (initEl) {
+                const typeName = fc?.forecastType || ''
+                initEl.innerHTML =
+                    '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
+                    ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">' +
+                    'Forecast type not found</span>'
+                initEl.setAttribute(
+                    'title',
+                    `No forecast forecastType named "${typeName}" is registered. See the ForecastTimeline README.`
                 )
             }
         } else if (state === 'unavailable' || state === 'uninitialized') {

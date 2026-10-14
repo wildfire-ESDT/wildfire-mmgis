@@ -4,15 +4,16 @@
  *
  *   TimeUI._populateExpandedRows        grey and block future items in the rows
  *   TimeUI._loopTime                    stop play/next passing the current hour
- *   TimeControl.applyTimeParams         re-apply STAC instant pinning (steps.js)
+ *   TimeControl.applyTimeParams         narrow a layer's window to the step
+ *                                        (forecastType.timeWindow)
  *   LayerTypeRegistry.get('tile').map
- *     .timeChange                       pin ld.time before the tile type's own
+ *     .timeChange                       same, before the tile type's own
  *                                        (TimeControl.applyTimeParams-bypassing)
  *                                        main-timeline refresh
  *   L_.toggleLayer                      show the card the instant a toggle starts
  *   L.TileLayer.ColorFilter
- *     .prototype.getTileUrl             add the selected run to a per-run STAC
- *                                        forecast layer's tile requests
+ *     .prototype.getTileUrl             let the forecastType rewrite tile requests
+ *                                        (forecastType.buildTileUrl)
  */
 
 import TimeControl from '@basics/TimeControl_/TimeControl'
@@ -20,7 +21,8 @@ import TimeUI from '@basics/TimeControl_/TimeUI'
 import L_ from '@basics/Layers_/Layers_'
 import LayerTypeRegistry from '@basics/Layers_/registry/LayerTypeRegistry'
 
-import { invalidateCacheLayer, isStacForecast, hasItemsPerRun, runQueryParameter } from './common'
+import { invalidateCacheLayer } from '../shared/common'
+import { stepTime } from '../shared/timeMath'
 
 const patchMethods = {
     // ── The registry ───────────────────────────────────────
@@ -223,7 +225,52 @@ const patchMethods = {
         }
     },
 
-    // ── STAC instant pinning hook ──────────────────────────
+    // ── Time window hook ───────────────────────────────────
+
+    // The [start, end] the forecast type wants this layer to request right now.
+    _timeWindowFor: function (ld, requestedEnd) {
+        const fc = ld?.time?.forecast
+        if (fc?.enabled !== true || !ld.name) return null
+        const forecastType = this._forecastTypeFor(ld.name)
+        if (!forecastType?.timeWindow) return null
+        const step = this.state.cards[ld.name]?.stepIndex ?? 0
+        const run = this._forecastBase(fc)
+        return (
+            forecastType.timeWindow(
+                this._forecastTypeCall(ld.name, fc, {
+                    step,
+                    stepTime: stepTime(fc, step, run),
+                    steps: this._effectiveSteps(fc, ld.name),
+                    requestedEnd,
+                })
+            ) || null
+        )
+    },
+
+    // Narrow a live layer's Leaflet options.
+    _applyTimeWindow: function (ld) {
+        const l = L_.layers.layer[ld?.name]
+        if (!l) return
+        const window_ = this._timeWindowFor(ld, l.options?.endtime)
+        if (!window_) return
+        l.options.starttime = window_[0]
+        l.options.endtime = window_[1]
+    },
+
+    // Narrow ld.time itself before the tile type rebuilds from it. Returns a
+    // restore(), or null when there's nothing to narrow.
+    _narrowTimeBeforeRebuild: function (ld) {
+        const window_ = this._timeWindowFor(ld, ld?.time?.end)
+        if (!window_) return null
+        const prevStart = ld.time.start
+        const prevEnd = ld.time.end
+        ld.time.start = window_[0]
+        ld.time.end = window_[1]
+        return () => {
+            ld.time.start = prevStart
+            ld.time.end = prevEnd
+        }
+    },
 
     _patchSetLayerWmsParams: function () {
         const self = this
@@ -233,13 +280,12 @@ const patchMethods = {
             (orig) =>
                 function (layer) {
                     orig(layer)
-                    self._pinStacInstant(layer)
+                    self._applyTimeWindow(layer)
                 }
         )
-        // Pre-built tile layers may still carry the open epoch start; pin now.
         if (installed) {
             for (const name in L_.layers.data) {
-                this._pinStacInstant(L_.layers.data[name])
+                this._applyTimeWindow(L_.layers.data[name])
             }
         }
     },
@@ -261,7 +307,7 @@ const patchMethods = {
                 // timeChange's own body reads layerObj.time and issues the
                 // refresh itself before returning; pinning AFTER orig() is
                 // too late, the un-pinned tiles are already requested.
-                const restore = self._pinStacTimeBeforeRebuild(layerObj)
+                const restore = self._narrowTimeBeforeRebuild(layerObj)
                 try {
                     return orig(layerObj, ctx)
                 } finally {
@@ -271,14 +317,11 @@ const patchMethods = {
         )
     },
 
-    // ── Per-run STAC forecasts ─────────────────────────────
-    // A collection holding every run's forecast (time.forecast.itemsPerRun)
-    // must be asked for the selected run's items only, or titiler-pgstac
-    // mosaics all runs' forecasts for the hour. A layer's url can't carry the
-    // filter (core drops a stac-collection url's own parameters), and a
-    // rebuilt layer is a new Leaflet instance, so the run is added where every
-    // tile request is built: the tile layer class's getTileUrl.
-    _patchStacRunFilter: function () {
+    // ── Tile URL hook ──────────────────────────────────────
+    // A rebuilt layer is a new Leaflet instance, so a forecast type's per-request
+    // rewrite goes where every tile request is built: the tile layer class's
+    // getTileUrl.
+    _patchTileUrl: function () {
         const tileLayerPrototype = window.L?.TileLayer?.ColorFilter?.prototype
         const originalGetTileUrl = tileLayerPrototype?.getTileUrl
         if (typeof originalGetTileUrl !== 'function') return
@@ -291,14 +334,11 @@ const patchMethods = {
         const self = this
         tileLayerPrototype.getTileUrl = function (coords) {
             const url = originalGetTileUrl.call(this, coords)
-            const runQuery = self._runQueryForTileLayer(this)
-            return runQuery ? `${url}${url.includes('?') ? '&' : '?'}query=${runQuery}` : url
+            return self._tileUrlFor(this, url) || url
         }
     },
 
-    // The selected run's STAC query for a per-run forecast layer's tiles, or
-    // null for any other tile layer.
-    _runQueryForTileLayer: function (tileLayer) {
+    _tileUrlFor: function (tileLayer, url) {
         // Remembered once found; not while missing, since a layer's first
         // tiles can be requested before core registers it.
         if (tileLayer._forecastLayerName == null) {
@@ -308,10 +348,16 @@ const patchMethods = {
             if (layerName == null) return null
             tileLayer._forecastLayerName = layerName
         }
-        const layerData = L_.layers.data[tileLayer._forecastLayerName]
-        const fc = layerData?.time?.forecast
-        if (!isStacForecast(layerData) || !hasItemsPerRun(fc)) return null
-        return runQueryParameter(this._forecastBase(fc))
+        const name = tileLayer._forecastLayerName
+        const fc = L_.layers.data[name]?.time?.forecast
+        if (fc?.enabled !== true) return null
+        const forecastType = this._forecastTypeFor(name)
+        if (!forecastType?.buildTileUrl) return null
+        const step = this.state.cards[name]?.stepIndex ?? 0
+        const run = this._forecastBase(fc)
+        return forecastType.buildTileUrl(
+            this._forecastTypeCall(name, fc, { step, stepTime: stepTime(fc, step, run), url })
+        )
     },
 
     // ── Optimistic card on toggle ──────────────────────────
@@ -339,17 +385,14 @@ const patchMethods = {
                         self._optimisticOn.delete(name)
                     } else {
                         self._optimisticOn.add(name)
-                        // A fresh toggle-on is a natural retry: drop cached
-                        // misses so the availability check runs again.
-                        invalidateCacheLayer(self._edgeCache, name)
-                        invalidateCacheLayer(self._stacStepMiss, name)
-                        invalidateCacheLayer(self._idxSweep, name)
-                        self._forgetIdxMisses()
+                        // A fresh toggle-on is a natural retry.
+                        invalidateCacheLayer(self._presence, name)
+                        self._freshProbe.add(name)
                     }
                     self._rebuildCards()
-                    // Pin BEFORE the toggle adds the pre-built layer so the
-                    // first tile requests already carry the pinned instant.
-                    self._pinStacInstant(s)
+                    // Before the toggle adds the pre-built layer, so the first
+                    // tile requests already carry the narrowed window.
+                    self._applyTimeWindow(s)
                 }
                 return orig(s, ...rest)
             }

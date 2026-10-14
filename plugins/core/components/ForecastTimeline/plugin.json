@@ -25,18 +25,10 @@
           {
             "field": "variables.experimentalPlayback",
             "name": "Forecast Playback (Experimental)",
-            "description": "Adds a play button to each forecast card that prefetches the run and animates through its steps. Experimental: playback smoothness varies by product — HRRR wind fields animate from memory, while tile-based products (WFPI, COG rasters) refetch each frame and can flicker.",
+            "description": "Adds a play button to each forecast card that prefetches the run and animates through its steps. Experimental: playback smoothness varies by product \u2014 HRRR wind fields animate from memory, while tile-based products (WFPI, COG rasters) refetch each frame and can flicker.",
             "type": "checkbox",
-            "width": 6,
+            "width": 12,
             "defaultChecked": false
-          },
-          {
-            "field": "variables.perHourAvailability",
-            "name": "Per-Hour Availability",
-            "description": "Checks each HRRR forecast hour against NOAA's public bucket instead of judging the whole run from forecast hour 0. A run publishes its hours one at a time, so this marks the card available as soon as any hour is out, darkens the hours that are not, and gives each dark hour a retry button. Costs one small request per forecast hour per run, shared across every HRRR card. Turn it off to go back to the single check at forecast hour 0.",
-            "type": "checkbox",
-            "width": 6,
-            "defaultChecked": true
           }
         ]
       }

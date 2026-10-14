@@ -2,19 +2,8 @@
  * ForecastTimeline. Forecast stepper cards inside TimeUI's expanded content;
  * the main timeline stays visible and owns the selected time.
  *
- * A layer opts in with a time.forecast config block:
- *   enabled     required   turns the card on
- *   label       required   card title
- *   steps       required   step count (fxx layers ignore it, see time.js)
- *   stepUnit    required   'hour' | 'day' | 'month'
- *   stepOffset  required   0 = first step is the init time, 1 = init + 1 unit
- *   runHourUTC  optional   UTC run hour. Daily: anchor (default 0). Hourly:
- *                          declares the model's one init hour a day
- *   showWindow  optional   daily cards label per-step valid windows
- *   urlTemplate optional   URL carries __FSTEP__, replaced with the 1-based step
- *   description optional   info-icon text (no description, no icon)
- *   stepLabel / stepSize    optional step-chip label overrides
- *   fxxMax / fxxMaxExtended / extendedRunHoursUTC  optional fxx run schedule
+ * A layer opts in with a time.forecast config block and names its forecast
+ * type. README.md documents every setting and the forecast type interface.
  *
  * This file is the plugin entry point: lifecycle (init/cleanup),
  * subscriptions, and the console/debug surface (window.ForecastTimeline,
@@ -24,15 +13,15 @@
 import TimeControl from '@basics/TimeControl_/TimeControl'
 import L_ from '@basics/Layers_/Layers_'
 
-import timeMixin from './time'
-import availabilityMixin from './availability'
-import hrrrIndexMixin from './hrrrIndex'
-import stepsMixin from './steps'
-import cardsMixin from './cards'
-import patchesMixin from './patches'
-import playbackMixin from './playback'
+import './forecastTypes/allTypes'
+import timeMathMixin from './shared/timeMath'
+import stepsMixin from './stepping/applyStep'
+import availabilityMixin from './stepping/availability'
+import patchesMixin from './stepping/patches'
+import cardsMixin from './ui/cards'
+import playbackMixin from './ui/playback'
 
-import './ForecastTimeline.css'
+import './ui/ForecastTimeline.css'
 
 const ForecastTimeline = {
     // ── State ──────────────────────────────────────────────
@@ -43,6 +32,16 @@ const ForecastTimeline = {
 
     // Mission config variables (plugin.json → config.rows).
     vars: {},
+
+    // Selected time floored to the hour. The timeline's time, never the clock.
+    _originBase: function () {
+        let t = NaN
+        if (TimeControl.currentTime) t = new Date(TimeControl.currentTime).getTime()
+        if (isNaN(t)) t = this.state.originMs || Date.now()
+        const d = new Date(t)
+        d.setMinutes(0, 0, 0)
+        return d.getTime()
+    },
 
     // ── Lifecycle ──────────────────────────────────────────
 
@@ -64,7 +63,7 @@ const ForecastTimeline = {
         this._patchTimeUINavigation()
         this._patchSetLayerWmsParams()
         this._patchTileTimeChange()
-        this._patchStacRunFilter()
+        this._patchTileUrl()
         this._optimisticOn = new Set()
         this._toggleTick = {}
         this._patchToggleLayer()
@@ -103,17 +102,10 @@ const ForecastTimeline = {
         // Stop animations first or their intervals fire against dead DOM.
         Object.keys(this._playTimers || {}).forEach((n) => this._stopPlay(n))
         this._playTimers = {}
-        this._frameCache = {}
 
         this.state.cards = {}
-        this._edgeCache = {}
-        this._idxCache = {}
-        this._idxMissAt = {}
-        this._idxPending = {}
-        this._idxSweep = {}
-        this._gribCache = {}
-        this._gribMissAt = {}
-        this._gribPending = {}
+        this._presence = {}
+        this._freshProbe.clear()
 
         const timeUI = document.getElementById('timeUI')
         if (timeUI) {
@@ -147,7 +139,6 @@ const ForecastTimeline = {
         this._tickSpinTimers = {}
         Object.values(this._probeLoadingTimers || {}).forEach(clearTimeout)
         this._probeLoadingTimers = {}
-        if (this._visitedSteps) this._visitedSteps.clear()
 
         // Restore Next button appearance
         const nextBtn = document.getElementById('mmgisTimeUIBottomNext')
@@ -173,9 +164,8 @@ const ForecastTimeline = {
 
 Object.assign(
     ForecastTimeline,
-    timeMixin,
+    timeMathMixin,
     availabilityMixin,
-    hrrrIndexMixin,
     stepsMixin,
     cardsMixin,
     patchesMixin,
