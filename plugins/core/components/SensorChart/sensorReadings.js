@@ -1,5 +1,4 @@
 const ONE_HOUR = 3600000
-const LONGEST_READING_AGE = 3 * ONE_HOUR
 const AQI_COLOR_STOPS = [
     [0, [0, 228, 0]],
     [50, [255, 255, 0]],
@@ -18,14 +17,16 @@ export function runAt(sensor, time) {
     return Object.keys(sensor.forecasts).find((run) => Date.parse(run) === time)
 }
 
+export function forecastAt(sensor, time, run) {
+    if (!run || time <= Date.parse(run)) return null
+    const forecast = sensor.forecasts[run].find((reading) => Date.parse(reading.time) === time)
+    return forecast?.aqi != null ? { ...forecast, isForecast: true } : null
+}
+
 export function readingAt(sensor, time, run) {
-    if (run && time > Date.parse(run)) {
-        const forecast = sensor.forecasts[run].find((reading) => Date.parse(reading.time) === time)
-        if (forecast?.aqi != null) return { ...forecast, isForecast: true }
-    }
-    return sensor.observed.findLast(
-        (reading) => reading.aqi != null && Date.parse(reading.time) <= time && time - Date.parse(reading.time) < LONGEST_READING_AGE
-    )
+    const forecast = forecastAt(sensor, time, run)
+    if (forecast) return forecast
+    return sensor.observed.find((reading) => reading.aqi != null && Date.parse(reading.time) === time)
 }
 export function readingsAt(sensor, view) {
     const observed = sensor.observed.find((reading) => Date.parse(reading.time) === view.observedTime && reading.aqi != null)

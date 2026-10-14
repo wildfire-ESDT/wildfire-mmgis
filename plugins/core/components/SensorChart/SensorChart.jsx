@@ -4,7 +4,7 @@ import L_ from '@basics/Layers_/Layers_'
 import Map_ from '@basics/Map_/Map_'
 import TimeControl from '@basics/TimeControl_/TimeControl'
 import SensorChartPanel from './SensorChartPanel'
-import { readingAt, runAt, aqiColor, toHour } from './sensorReadings'
+import { readingAt, forecastAt, runAt, aqiColor, toHour } from './sensorReadings'
 
 const SELECTED_STROKE = { color: '#ffffff', weight: 3, opacity: 1 }
 const SELECTED_RADIUS_GROWTH = 2
@@ -158,10 +158,13 @@ function colorAllSensors() {
     renderPanel()
 }
 
+// While a forecast step is picked only that forecast colors a sensor, so one
+// with no run for that hour turns grey rather than showing an old reading.
 function colorSensor(marker) {
     const sensor = marker.feature.properties
     const { time, run } = viewOf(sensor)
-    sensor.color = aqiColor(readingAt(sensor, time, run)?.aqi)
+    const reading = forecastStep ? forecastAt(sensor, time, run) : readingAt(sensor, time, run)
+    sensor.color = aqiColor(reading?.aqi)
     marker.setStyle({ fillColor: sensor.color })
 }
 
