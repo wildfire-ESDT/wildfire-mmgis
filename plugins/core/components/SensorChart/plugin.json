@@ -1,0 +1,27 @@
+{
+  "uuid": "4c6b2e8d-91a7-4f3e-b5d0-7e2a1c9f8b36",
+  "id": "core-sensorchart",
+  "version": "core",
+  "type": "component",
+  "tier": "core",
+  "overridable": true,
+  "name": "SensorChart",
+  "description": "Clicking a sensor (a vector feature with observed_aqi) opens a chart of its observed AQI (blue) and forecast AQI (orange). Scroll to zoom out to the full history.",
+  "descriptionFull": {
+    "title": "Sensor Chart",
+    "example": {
+      "enabled": true
+    }
+  },
+  "defaultIcon": "chart-line",
+  "hasVars": false,
+  "paths": {
+    "SensorChart": "./SensorChart.jsx"
+  },
+  "config": {
+    "rows": []
+  },
+  "author": "NASA-AMMOS/MMGIS",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/NASA-AMMOS/MMGIS"
+}

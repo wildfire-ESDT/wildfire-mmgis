@@ -1,0 +1,130 @@
+.panel {
+    position: fixed;
+    top: 56px;
+    right: 64px;
+    width: 520px;
+    z-index: 1600;
+    border-radius: 10px;
+    background: rgba(var(--color-a-rgb, 29, 31, 32), 0.88);
+    border: 1px solid var(--color-a1);
+    backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px var(--color-shadow);
+    color: var(--color-f);
+}
+
+.header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--color-a1);
+}
+
+.title {
+    flex: 1;
+}
+
+.label {
+    font-size: 10px;
+    line-height: 14px;
+    color: var(--color-a5);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.siteName {
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.subtitle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--color-a5);
+}
+
+.unitToggle {
+    display: flex;
+    height: 20px;
+    border: 1px solid var(--color-a1);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 11px;
+}
+
+.unit,
+.selectedUnit {
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    cursor: pointer;
+}
+
+.unit {
+    color: var(--color-a5);
+}
+
+.selectedUnit {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.close {
+    display: flex;
+    align-items: center;
+    height: 20px;
+    cursor: pointer;
+    color: var(--color-a3);
+}
+
+.unit:hover,
+.close:hover {
+    color: var(--color-f);
+}
+
+.readings {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    padding: 14px 14px 6px;
+}
+
+.reading {
+    padding-left: 12px;
+    border-left: 3px solid;
+}
+
+.readingValue {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0 2px;
+    font-size: 18px;
+    line-height: 22px;
+}
+
+.colorDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.modelLogo {
+    height: 14px;
+}
+
+.body {
+    display: flex;
+    flex-direction: column;
+    height: 180px;
+    padding: 6px 14px 12px 8px;
+}
+
+.chart {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+}
