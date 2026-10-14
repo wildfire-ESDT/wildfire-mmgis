@@ -29,7 +29,7 @@ export function readingAt(sensor, time, run) {
 }
 export function readingsAt(sensor, view) {
     const observed = sensor.observed.find((reading) => Date.parse(reading.time) === view.observedTime && reading.aqi != null)
-    const selected = readingAt(sensor, view.time, view.run)
+    const selected = readingAt(sensor, view.forecastTime, view.run)
     const forecast = selected?.isForecast ? selected : null
     const hoursAhead = forecast && Math.round((Date.parse(forecast.time) - Date.parse(view.run)) / ONE_HOUR)
     return { observed, forecast, hoursAhead }

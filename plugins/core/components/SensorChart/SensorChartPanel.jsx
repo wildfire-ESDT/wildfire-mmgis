@@ -40,7 +40,7 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose }) {
                     />
                     {!view.run && (
                         <SensorReading
-                            label={`Forecast · ${formatTime(view.time)}`}
+                            label={`Forecast · ${formatTime(view.forecastTime)}`}
                             value={formatValue(null)}
                             color={aqiColor(null)}
                             accent={FORECAST_COLOR}
@@ -68,7 +68,7 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose }) {
                         sensor={sensor}
                         unit={unit}
                         run={view.run}
-                        selectedTime={view.time}
+                        selectedTime={view.forecastTime}
                         observedTime={view.observedTime}
                     />
                 </div>
@@ -132,7 +132,7 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose }) {
                                     sensor={sensor}
                                     unit={unit}
                                     run={view.run}
-                                    selectedTime={view.time}
+                                    selectedTime={view.forecastTime}
                                     observedTime={view.observedTime}
                                 />
                             </div>

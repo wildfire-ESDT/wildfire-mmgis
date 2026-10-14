@@ -65,11 +65,17 @@ const SensorChart = {
     },
 }
 
+// time colors the map. forecastTime is the forecast the panel shows: the step
+// picked on the forecast card, or before one is picked, the run's first
+// forecast hour, the tick the card opens on.
 function viewOf(sensor) {
+    const run = runAt(sensor, forecastStep?.run ?? timelineTime)
+    const firstForecastTime = run ? Date.parse(sensor.forecasts[run][0]?.time) : NaN
     return {
         time: forecastStep?.time ?? timelineTime,
+        forecastTime: forecastStep?.time ?? (Number.isNaN(firstForecastTime) ? timelineTime : firstForecastTime),
         observedTime: timelineTime,
-        run: runAt(sensor, forecastStep?.run ?? timelineTime),
+        run,
     }
 }
 
