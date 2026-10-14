@@ -77,7 +77,7 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose }) {
     }
 
     return (
-        <div className={styles.panel} style={{ '--sensor-count': entries.length }}>
+        <div className={styles.panel}>
             <div className={styles.header}>
                 <div className={styles.title}>
                     <div className={styles.siteName}>{entries.length} AirNow Sensors</div>

@@ -161,6 +161,8 @@
 }
 
 .sensorCards {
+    display: flex;
+    flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
@@ -169,7 +171,9 @@
 .sensorCard {
     display: flex;
     flex-direction: column;
-    height: clamp(110px, calc((100vh - 56px - var(--sensor-chart-bottom-space, 0px) - 12px - 90px) / var(--sensor-count)), 220px);
+    flex: 1 1 220px;
+    min-height: 130px;
+    max-height: 220px;
     border-bottom: 1px solid var(--color-a1);
 }
 
