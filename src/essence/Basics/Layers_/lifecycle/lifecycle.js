@@ -100,6 +100,11 @@ export function fullyLoaded(L_) {
     Description.updateInfo()
 
     $('#main-container').css('filter', '')
+    // Let clicks through immediately. The overlay stays in the DOM for the
+    // duration of the fade below (and longer if the animation stalls while
+    // lazy-loaded layers are being toggled on), during which the map is
+    // already visible and should be interactive.
+    $('.LoadingPage').css('pointer-events', 'none')
     $('.LoadingPage').animate(
         {
             opacity: 0,
