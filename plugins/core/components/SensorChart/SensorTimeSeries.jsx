@@ -17,7 +17,7 @@ const MISSING = 'Unavailable'
 const HOURLY_POINTS_RANGE = 48 * ONE_HOUR
 const TEXT = { color: 'rgba(255, 255, 255, 0.6)', font: { family: 'roboto', size: 11 } }
 
-const chartOptions = (firstTime, lastTime) => ({
+const chartOptions = (firstTime, lastTime, unitRef) => ({
     animation: false,
     maintainAspectRatio: false,
     parsing: false,
@@ -65,7 +65,10 @@ const chartOptions = (firstTime, lastTime) => ({
             filter: (item) => !item.raw.joinsObserved && (item.dataset.label !== MISSING || item.raw.missing),
             callbacks: {
                 title: (items) => formatTime(items[0].parsed.x),
-                label: (item) => (item.raw.missing ? ' Sensor unavailable' : ` ${item.dataset.label}  ${item.formattedValue}`),
+                label: (item) =>
+                    item.raw.missing
+                        ? ' Sensor unavailable'
+                        : ` ${item.dataset.label}  ${item.formattedValue}${unitRef.current === 'pm25' ? ' µg/m³' : ''}`,
             },
         },
         zoom: {
@@ -112,10 +115,12 @@ const CHART_PLUGINS = [zoomPlugin, timeMarkers]
 
 export default function SensorTimeSeries({ sensor, unit, run, selectedTime, observedTime }) {
     const chartRef = useRef(null)
+    const unitRef = useRef(unit)
+    unitRef.current = unit
     const runTime = run ? Date.parse(run) : Infinity
     const firstTime = Date.parse(sensor.observed[0]?.time)
     const lastTime = Math.max(Date.parse(sensor.observed.at(-1)?.time), Date.parse(sensor.forecasts[run]?.at(-1)?.time) || 0)
-    const options = useMemo(() => chartOptions(firstTime, lastTime), [firstTime, lastTime])
+    const options = useMemo(() => chartOptions(firstTime, lastTime, unitRef), [firstTime, lastTime])
 
     const data = useMemo(() => {
         const toPoints = (readings) => readings.map((reading) => ({ x: Date.parse(reading.time), y: reading[unit] }))
