@@ -85,6 +85,11 @@ const ForecastTimeline = {
             this._rebuildCards()
         })
 
+        if (!this._showTimeHandler) {
+            this._showTimeHandler = (event) => this._showForecastTime(event.detail)
+            document.addEventListener('forecasttimeline:show-time', this._showTimeHandler)
+        }
+
         // Dismiss any open info tooltip on an outside click (tip anchors
         // stopPropagation their own clicks).
         if (!this._tipDismissHandler) {
@@ -155,6 +160,10 @@ const ForecastTimeline = {
         if (this._tipDismissHandler) {
             document.removeEventListener('click', this._tipDismissHandler)
             this._tipDismissHandler = null
+        }
+        if (this._showTimeHandler) {
+            document.removeEventListener('forecasttimeline:show-time', this._showTimeHandler)
+            this._showTimeHandler = null
         }
 
         document.getElementById('ftl-strip')?.remove()

@@ -23,15 +23,13 @@ export function forecastAt(sensor, time, run) {
     return forecast?.aqi != null ? { ...forecast, isForecast: true } : null
 }
 
-export function readingAt(sensor, time, run) {
-    const forecast = forecastAt(sensor, time, run)
-    if (forecast) return forecast
+export function observedAt(sensor, time) {
     return sensor.observed.find((reading) => reading.aqi != null && Date.parse(reading.time) === time)
 }
+
 export function readingsAt(sensor, view) {
-    const observed = sensor.observed.find((reading) => Date.parse(reading.time) === view.observedTime && reading.aqi != null)
-    const selected = readingAt(sensor, view.forecastTime, view.run)
-    const forecast = selected?.isForecast ? selected : null
+    const observed = observedAt(sensor, view.observedTime)
+    const forecast = forecastAt(sensor, view.forecastTime, view.run)
     const hoursAhead = forecast && Math.round((Date.parse(forecast.time) - Date.parse(view.run)) / ONE_HOUR)
     return { observed, forecast, hoursAhead }
 }

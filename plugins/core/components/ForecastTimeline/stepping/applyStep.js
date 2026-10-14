@@ -112,6 +112,24 @@ const stepMethods = {
         forecastType.showStep(this._forecastTypeCall(name, fc, { step: idx, stepTime: stepMs, steps }))
     },
 
+    // Another component asks to show a forecast hour (forecasttimeline:show-time).
+    // Steps each visible card whose run has that hour, or only layerName's card
+    // when one is given.
+    _showForecastTime: function ({ time, layerName } = {}) {
+        if (!Number.isFinite(time)) return
+        this._detectForecastLayers().forEach(({ name, config: fc }) => {
+            if (layerName && name !== layerName) return
+            if (this._initHourMismatch(fc)) return
+            const run = this._forecastBase(fc)
+            const steps = this._effectiveSteps(fc, name)
+            const step = Array.from({ length: steps }, (_, index) => index).find(
+                (index) => stepTime(fc, index, run) === time
+            )
+            if (step == null || this._missingStep(name, fc, step)) return
+            this._setCardStep(name, fc, step)
+        })
+    },
+
     _onTimeChange: function (timeData) {
         if (this._applyingStep || this._reapplying) return
         if (timeData?.currentTime) {

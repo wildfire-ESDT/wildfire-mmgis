@@ -216,4 +216,12 @@ document.addEventListener('forecasttimeline:step', (event) => {
 
 `time` is the step's valid time and `run` is the run it belongs to. The SensorChart component follows it to recolor its sensors and move its forecast marker.
 
+Other components can ask a card to show an hour by dispatching `forecasttimeline:show-time`:
+
+```js
+document.dispatchEvent(new CustomEvent('forecasttimeline:show-time', { detail: { time, layerName } }))
+```
+
+`time` is in ms. Every visible card whose current run has that hour steps to it, or only `layerName`'s card when it is given. An hour with no data is ignored. The SensorChart sends this when a forecast point is clicked.
+
 Debugging: `window.ForecastTimeline` is the live object and `window.FTL_DEBUG = true` traces the availability chain.

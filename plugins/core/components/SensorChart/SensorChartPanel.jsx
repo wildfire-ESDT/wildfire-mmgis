@@ -8,7 +8,7 @@ import csulaLogo from './csula-logo.png'
 
 const UNITS = { aqi: 'AQI', pm25: 'PM2.5' }
 
-export default function SensorChartPanel({ entries, onRemoveSensor, onClose }) {
+export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onPickObservedTime, onPickForecastTime }) {
     const [unit, setUnit] = useState('aqi')
     if (!entries.length) return null
     const formatValue = (reading) => {
@@ -70,6 +70,8 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose }) {
                         run={view.run}
                         selectedTime={view.forecastTime}
                         observedTime={view.observedTime}
+                        onPickObservedTime={onPickObservedTime}
+                        onPickForecastTime={onPickForecastTime}
                     />
                 </div>
             </div>
@@ -134,6 +136,8 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose }) {
                                     run={view.run}
                                     selectedTime={view.forecastTime}
                                     observedTime={view.observedTime}
+                                    onPickObservedTime={onPickObservedTime}
+                                    onPickForecastTime={onPickForecastTime}
                                 />
                             </div>
                         </div>

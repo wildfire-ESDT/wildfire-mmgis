@@ -14,16 +14,21 @@ export const OBSERVED_COLOR = '#4a9eff'
 export const FORECAST_COLOR = '#ffdd5c'
 const MISSING_COLOR = '#9e9e9e'
 const MISSING = 'Unavailable'
+const OBSERVED = 'Observed'
+const FORECAST = 'Forecast'
+const PICK_DISTANCE = 24
+const DRAG_DISTANCE = 4
 const HOURLY_POINTS_RANGE = 48 * ONE_HOUR
 const TEXT = { color: 'rgba(255, 255, 255, 0.6)', font: { family: 'roboto', size: 11 } }
 
-const chartOptions = (firstTime, lastTime, unitRef) => ({
+const chartOptions = (firstTime, lastTime, unitRef, pickRef, viewRef) => ({
     animation: false,
     maintainAspectRatio: false,
     parsing: false,
     normalized: true,
     layout: { padding: { top: 8, right: 28 } },
     interaction: { mode: 'nearest', axis: 'x', intersect: false },
+    onClick: (event, _elements, chart) => pickPoint(event, chart, pickRef.current),
     scales: {
         x: {
             type: 'linear',
@@ -53,28 +58,41 @@ const chartOptions = (firstTime, lastTime, unitRef) => ({
     plugins: {
         legend: { display: false },
         tooltip: {
-            backgroundColor: 'rgba(18, 18, 18, 0.95)',
-            borderColor: 'rgba(255, 255, 255, 0.1)',
+            backgroundColor: 'rgba(29, 31, 32, 0.9)',
+            borderColor: 'rgba(255, 255, 255, 0.08)',
             borderWidth: 1,
-            padding: 8,
-            titleFont: { family: 'roboto', size: 11, weight: 'normal' },
-            bodyFont: { family: 'roboto', size: 12 },
+            cornerRadius: 4,
+            caretSize: 4,
+            padding: { x: 6, y: 4 },
+            titleColor: 'rgba(255, 255, 255, 0.6)',
+            titleFont: { family: 'roboto', size: 10, weight: 'normal' },
+            titleMarginBottom: 2,
+            bodyFont: { family: 'roboto', size: 11 },
+            bodySpacing: 1,
             usePointStyle: true,
-            boxWidth: 6,
-            boxHeight: 6,
+            boxWidth: 5,
+            boxHeight: 5,
+            boxPadding: 3,
             filter: (item) => !item.raw.joinsObserved && (item.dataset.label !== MISSING || item.raw.missing),
             callbacks: {
                 title: (items) => formatTime(items[0].parsed.x),
                 label: (item) =>
                     item.raw.missing
-                        ? ' Sensor unavailable'
+                        ? item.raw.notReportedYet
+                            ? ' Not reported yet'
+                            : ' Sensor unavailable'
                         : ` ${item.dataset.label}  ${item.formattedValue}${unitRef.current === 'pm25' ? ' µg/m³' : ''}`,
             },
         },
         zoom: {
             limits: { x: { min: firstTime, max: lastTime, minRange: 6 * ONE_HOUR } },
-            zoom: { wheel: { enabled: true, modifierKey: 'ctrl', speed: 0.07 }, pinch: { enabled: true }, mode: 'x' },
-            pan: { enabled: true, mode: 'x' },
+            zoom: {
+                wheel: { enabled: true, modifierKey: 'ctrl', speed: 0.07 },
+                pinch: { enabled: true },
+                mode: 'x',
+                onZoomComplete: ({ chart }) => rememberView(chart, viewRef),
+            },
+            pan: { enabled: true, mode: 'x', onPanComplete: ({ chart }) => rememberView(chart, viewRef) },
         },
     },
 })
@@ -113,43 +131,79 @@ const timeMarkers = {
 }
 const CHART_PLUGINS = [zoomPlugin, timeMarkers]
 
-export default function SensorTimeSeries({ sensor, unit, run, selectedTime, observedTime }) {
+export default function SensorTimeSeries({ sensor, unit, run, selectedTime, observedTime, onPickObservedTime, onPickForecastTime }) {
     const chartRef = useRef(null)
+    // Read at event time, so neither a unit change nor new handlers rebuild
+    // the options and reset the zoom.
     const unitRef = useRef(unit)
     unitRef.current = unit
+    const pickRef = useRef(null)
+    pickRef.current = { onPickObservedTime, onPickForecastTime }
+    // The range the user zoomed or panned to, kept while the timeline moves.
+    const viewRef = useRef(null)
     const runTime = run ? Date.parse(run) : Infinity
     const firstTime = Date.parse(sensor.observed[0]?.time)
-    const lastTime = Math.max(Date.parse(sensor.observed.at(-1)?.time), Date.parse(sensor.forecasts[run]?.at(-1)?.time) || 0)
-    const options = useMemo(() => chartOptions(firstTime, lastTime, unitRef), [firstTime, lastTime])
+    const lastTime = Math.max(
+        Date.parse(sensor.observed.at(-1)?.time),
+        Date.parse(sensor.forecasts[run]?.at(-1)?.time) || 0,
+        observedTime || 0
+    )
+    const options = useMemo(() => chartOptions(firstTime, lastTime, unitRef, pickRef, viewRef), [firstTime, lastTime])
 
     const data = useMemo(() => {
         const toPoints = (readings) => readings.map((reading) => ({ x: Date.parse(reading.time), y: reading[unit] }))
         const observed = toPoints(sensor.observed)
+        // Hours up to the selected one that AirNow hasn't reported yet, so the
+        // line reaches the selected hour as a grey gap.
+        for (let time = (observed.at(-1)?.x ?? observedTime) + ONE_HOUR; time <= observedTime; time += ONE_HOUR)
+            observed.push({ x: time, y: null, notReportedYet: true })
         const observedAtRun = observed.filter((point) => point.x <= runTime && point.y != null).pop()
         const joinPoint = observedAtRun && { ...observedAtRun, joinsObserved: true }
         const forecast = run ? [joinPoint, ...toPoints(sensor.forecasts[run])].filter(Boolean) : []
                 return {
             datasets: [
-                toLine('Observed', observed, OBSERVED_COLOR),
-                toLine('Forecast', forecast, FORECAST_COLOR),
+                toLine(OBSERVED, observed, OBSERVED_COLOR),
+                toLine(FORECAST, forecast, FORECAST_COLOR),
                 { ...toLine(MISSING, bridgeMissingHours(observed), MISSING_COLOR), borderDash: [2, 3], borderWidth: 1.5, pointRadius: 0 },
             ],
         }
-    }, [sensor, unit, run, runTime])
+    }, [sensor, unit, run, runTime, observedTime])
 
     useEffect(() => {
         const chart = chartRef.current
         const viewEnd = runTime === Infinity ? lastTime : runTime + 24 * ONE_HOUR
-        chart.zoomScale('x', { min: viewEnd - 36 * ONE_HOUR, max: viewEnd }, 'none')
+        const range = viewRef.current ?? { min: viewEnd - 36 * ONE_HOUR, max: viewEnd }
+        chart.zoomScale('x', range, 'none')
 
         const panWithWheel = (event) => {
             if (event.ctrlKey) return
             event.preventDefault()
             chart.pan({ x: -(event.deltaX || event.deltaY) }, undefined, 'none')
+            rememberView(chart, viewRef)
+        }
+        // A drag pans the chart; only a click that stays put picks a point.
+        const rememberPress = (event) => {
+            chart.pressedAt = { x: event.clientX, y: event.clientY }
         }
         chart.canvas.addEventListener('wheel', panWithWheel, { passive: false })
-        return () => chart.canvas.removeEventListener('wheel', panWithWheel)
+        chart.canvas.addEventListener('pointerdown', rememberPress)
+        return () => {
+            chart.canvas.removeEventListener('wheel', panWithWheel)
+            chart.canvas.removeEventListener('pointerdown', rememberPress)
+        }
     }, [runTime, lastTime])
+
+    // Keep the picked hour on screen: slide the user's range to it, same width.
+    useEffect(() => {
+        const chart = chartRef.current
+        const view = viewRef.current
+        if (!view || !Number.isFinite(selectedTime)) return
+        if (selectedTime >= view.min && selectedTime <= view.max) return
+        const width = view.max - view.min
+        const min = Math.max(firstTime, Math.min(selectedTime - width / 2, lastTime - width))
+        chart.zoomScale('x', { min, max: min + width }, 'none')
+        rememberView(chart, viewRef)
+    }, [selectedTime, firstTime, lastTime])
 
     useEffect(() => {
         const [observed, forecast] = data.datasets
@@ -172,6 +226,31 @@ export default function SensorTimeSeries({ sensor, unit, run, selectedTime, obse
             </div>
         </>
     )
+}
+
+function rememberView(chart, viewRef) {
+    viewRef.current = { min: chart.scales.x.min, max: chart.scales.x.max }
+}
+
+// The observed or forecast point nearest a click, handed to its handler.
+function pickPoint(event, chart, handlers) {
+    const press = chart.pressedAt
+    const native = event.native
+    if (press && native && Math.hypot(native.clientX - press.x, native.clientY - press.y) > DRAG_DISTANCE) return
+    let nearest = null
+    chart.data.datasets.forEach((dataset, datasetIndex) => {
+        if (dataset.label !== OBSERVED && dataset.label !== FORECAST) return
+        chart.getDatasetMeta(datasetIndex).data.forEach((element, index) => {
+            const point = dataset.data[index]
+            if (point?.y == null || point.joinsObserved) return
+            const distance = Math.hypot(element.x - event.x, element.y - event.y)
+            if (distance <= PICK_DISTANCE && (!nearest || distance < nearest.distance))
+                nearest = { distance, time: point.x, label: dataset.label }
+        })
+    })
+    if (!nearest) return
+    if (nearest.label === OBSERVED) handlers.onPickObservedTime?.(nearest.time)
+    else handlers.onPickForecastTime?.(nearest.time)
 }
 
 function bridgeMissingHours(points) {
@@ -199,6 +278,7 @@ function bridgeGap(points, gapStart, gapEnd) {
         x: point.x,
         y: startValue + ((endValue - startValue) * (offset + 1)) / gapLength,
         missing: true,
+        notReportedYet: point.notReportedYet,
     }))
     const lineBreak = { x: (after ?? missing.at(-1)).x, y: null }
     return [before, ...missing, after, lineBreak].filter(Boolean)

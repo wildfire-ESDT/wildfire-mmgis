@@ -4,7 +4,7 @@ import L_ from '@basics/Layers_/Layers_'
 import Map_ from '@basics/Map_/Map_'
 import TimeControl from '@basics/TimeControl_/TimeControl'
 import SensorChartPanel from './SensorChartPanel'
-import { readingAt, forecastAt, runAt, aqiColor, toHour } from './sensorReadings'
+import { forecastAt, observedAt, runAt, aqiColor, toHour } from './sensorReadings'
 
 const SELECTED_STROKE = { color: '#ffffff', weight: 3, opacity: 1 }
 const SELECTED_RADIUS_GROWTH = 2
@@ -97,6 +97,8 @@ function renderPanel() {
             entries={entries}
             onRemoveSensor={removeSensor}
             onClose={() => setSelection([])}
+            onPickObservedTime={moveTimelineTo}
+            onPickForecastTime={showForecastHour}
         />
     )
 }
@@ -116,6 +118,20 @@ function measureSpaceAboveTimeline() {
         .map((rect) => rect.top)
     const lowestAllowed = Math.min(window.innerHeight, ...tops)
     document.documentElement.style.setProperty('--sensor-chart-bottom-space', `${window.innerHeight - lowestAllowed}px`)
+}
+
+// A blue point moves the main timeline; the forecast card follows to the new
+// run's first hour on its own.
+function moveTimelineTo(time) {
+    const iso = new Date(time).toISOString().split('.')[0] + 'Z'
+    TimeControl.setTime(TimeControl.getStartTime(), iso, false, '00:00:00', iso)
+}
+
+// A yellow point asks the forecast card to step to that hour of its run.
+function showForecastHour(time) {
+    document.dispatchEvent(
+        new CustomEvent('forecasttimeline:show-time', { detail: { time, layerName: forecastStep?.layerName } })
+    )
 }
 
 function trackSensorMarker(layer) {
@@ -158,12 +174,12 @@ function colorAllSensors() {
     renderPanel()
 }
 
-// While a forecast step is picked only that forecast colors a sensor, so one
-// with no run for that hour turns grey rather than showing an old reading.
+// The forecast for the picked hour when there is one, else the reading observed
+// at the timeline's hour. Grey only when there is neither.
 function colorSensor(marker) {
     const sensor = marker.feature.properties
-    const { time, run } = viewOf(sensor)
-    const reading = forecastStep ? forecastAt(sensor, time, run) : readingAt(sensor, time, run)
+    const { time, run, observedTime } = viewOf(sensor)
+    const reading = forecastAt(sensor, time, run) ?? observedAt(sensor, observedTime)
     sensor.color = aqiColor(reading?.aqi)
     marker.setStyle({ fillColor: sensor.color })
 }
