@@ -75,6 +75,42 @@ Like `time`, plus one items request per run that says which periods have an item
 "time": { "enabled": true, "forecast": { "enabled": true, "type": "stac", "perRun": true, "label": "Smoke PM2.5", "steps": 24, "stepUnit": "hour", "stepOffset": 1 } }
 ```
 
+#### `stac` collection layout
+
+Without `perRun` the collection holds one forecast (the current run) and each item's `datetime` is the issue period: the tick for valid day D looks for an item one day earlier. With `perRun` the collection keeps every run, so one valid day is predicted by several runs and the layer needs the run to pick the right item. Use `perRun` whenever the collection holds more than one run.
+
+Each `perRun` item needs two timestamps:
+
+- `datetime`: the valid time, the day or hour the item forecasts.
+- `forecast:reference_datetime`: the run time. Every item from one run has the same value, and (`forecast:reference_datetime`, `datetime`) is unique.
+
+Example for a 6-day daily product (`steps: 6`, `stepUnit: "day"`, `stepOffset: 0`), run of 2026-10-19:
+
+| item id | `datetime` (valid) | `forecast:reference_datetime` (run) |
+|---|---|---|
+| `run20261019-d0` | 2026-10-19T00:00:00Z | 2026-10-19T00:00:00Z |
+| `run20261019-d1` | 2026-10-20T00:00:00Z | 2026-10-19T00:00:00Z |
+| ... | ... | ... |
+| `run20261019-d5` | 2026-10-24T00:00:00Z | 2026-10-19T00:00:00Z |
+
+The next run adds six more items, so valid days 10-20 to 10-24 exist once per run. That is expected.
+
+The timeline filters the collection to the selected run with `query={"forecast:reference_datetime":{"eq":"2026-10-19T00:00:00Z"}}` on both the items request and every tile request (`runQueryParameter` in `shared/common.js`).
+
+`stepOffset`: tick i is at `run + (i + stepOffset)` units. `0` makes tick 0 the run's own day; `1` starts after it. For a day product the run is the latest UTC `runHourUTC` at or before the selected time, so with `runHourUTC: 0` it changes at 00:00 UTC, not local midnight.
+
+Rules the data must follow:
+
+1. `forecast:reference_datetime` is exact: UTC, whole seconds, trailing `Z`. The filter compares strings, so `.000Z` or `+00:00` will not match.
+2. For day products `datetime` is the valid day at exactly 00:00:00Z. Tile requests ask for `[step instant, step instant + 1s]`, so an item stamped at noon is missed.
+3. Two items of the same run must not share a `datetime`.
+4. Missing items are fine: a run with 4 of 6 items shows the other 2 ticks dark.
+5. Index `properties->>'forecast:reference_datetime'` in pgstac once many runs accumulate.
+
+Run times other than midnight UTC: `stepsWithItems` floors each item's `datetime` to UTC midnight but looks it up by `run + n days`, and `tileTimeWindow` windows on the same instant. With `runHourUTC: 5` those instants no longer line up with midnight-stamped items and every tick renders dark. Either keep `runHourUTC: 0` and set `forecast:reference_datetime` to that UTC day's midnight (the newest run's ticks stay dark until its items are published), or change `forecastTypes/stac.js` to floor the step instant to the UTC day in `stepsWithItems` and the `perRun` branch of `tileTimeWindow`. The second edits shared code, so check with its owner.
+
+To check a run, open `<stac url>/items?datetime=<first valid>/<last valid>&query=<url-encoded filter>` and confirm it returns exactly `steps` items.
+
 ### `url-template`
 
 The URL carries `__FSTEP__`, replaced with the 1-based step number in both the path and the `LAYERS` parameter. Availability is a 1x1 GetMap of step 1 judged by content type, since GeoServer answers a missing TIME with HTTP 200 and an XML body. That GetMap fills `{time}` with the run's date (`YYYY-MM-DD`).
