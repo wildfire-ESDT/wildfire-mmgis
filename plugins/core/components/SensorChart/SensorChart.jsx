@@ -7,7 +7,7 @@ import SensorChartPanel from './SensorChartPanel'
 import { forecastAt, observedAt, runAt, aqiColor, toHour } from './sensorReadings'
 
 const SELECTED_STROKE = { color: '#ffffff', weight: 3, opacity: 1 }
-const SELECTED_RADIUS_GROWTH = 2
+const SELECTED_RADIUS_GROWTH = 4
 
 const sensorMarkers = new Set()
 const baseStrokes = new Map()

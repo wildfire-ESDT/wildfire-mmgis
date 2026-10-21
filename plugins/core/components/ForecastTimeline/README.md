@@ -97,7 +97,7 @@ Knows veloserver and NOAA. A layer only uses it if its config names it.
 
 `?fxx=N` in the layer URL is the forecast hour. COG tiles (`COG:http://veloserver/cog/<product>/{time}.tiff?fxx=0`) rewrite fxx inside titiler's `url=` and refresh; velocity layers fetch the hour's gribjson and `setData` in place. Step count follows the HRRR run schedule, not `steps`.
 
-For HRRR products, availability comes from NOAA's HRRR bucket: each hour's `.idx` sidecar says whether the hour is published and carries the layer's field, so hours that are not render dark with a retry button. Hours are fetched once per run and shared by every HRRR card. For anything else on veloserver (the GFS winds layer) it is one check of forecast hour 0.
+For HRRR products, availability comes from NOAA's HRRR bucket: each hour's `.idx` file says whether the hour is published and carries the layer's field, so hours that are not render dark with a retry button. Hours are fetched once per run and shared by every HRRR card. For anything else on veloserver (the GFS winds layer) it is one check of forecast hour 0.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|

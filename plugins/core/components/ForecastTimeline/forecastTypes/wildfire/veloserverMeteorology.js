@@ -6,7 +6,7 @@
  * titiler's url= source and refresh; velocity layers fetch the hour's gribjson
  * and setData in place. Step count follows the HRRR run schedule.
  *
- * Availability: for HRRR products, every hour's .idx sidecar in NOAA's public
+ * Availability: for HRRR products, every hour's .idx file in NOAA's public
  * bucket says whether the hour is published and carries the layer's field, so
  * missing hours render dark with a retry button. Hours are shared across every
  * HRRR card on the run. The bucket sends CORS headers on GET only, so no HEAD
@@ -265,7 +265,7 @@ function fetchIdx(runMs, fxx, fetchOptions) {
     return p
 }
 
-// The sidecar can lag the GRIB it describes; one ranged byte of the GRIB
+// The .idx can lag the GRIB it describes; one ranged byte of the GRIB
 // settles whether the hour can be served.
 function gribExists(runMs, fxx, fetchOptions) {
     const key = `${runMs}:${fxx}`

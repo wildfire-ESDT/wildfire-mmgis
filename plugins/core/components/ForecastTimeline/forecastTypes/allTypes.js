@@ -11,9 +11,8 @@ import stacForecastType from './stac'
 import urlTemplateForecastType from './urlTemplate'
 
 // Mission types. One folder per mission.
-import veloserverMeteorologyForecastType from './wildfire/veloserverMeteorology'
-
-;[stacForecastType, urlTemplateForecastType].forEach((forecastType) =>
+import veloserverMeteorologyForecastType from './wildfire/veloserverMeteorology';
+[stacForecastType, urlTemplateForecastType].forEach((forecastType) =>
     registerForecastType(forecastType, { generic: true })
 )
 registerForecastType(veloserverMeteorologyForecastType)

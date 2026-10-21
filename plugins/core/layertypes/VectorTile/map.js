@@ -521,7 +521,7 @@ function wireSlicedInteractions(layerObj, grid, map) {
             if (layerInteractionsDisabled()) return
             const feature = featureAt(e.latlng)
             if (!feature) return
-            selectSlicedFeature(layerObj.name, feature)
+            selectSlicedFeature(layerObj.name, feature, e.latlng)
         } catch (err) {
             console.error(
                 `Sliced click handling failed for layer "${layerObj.name}":`,

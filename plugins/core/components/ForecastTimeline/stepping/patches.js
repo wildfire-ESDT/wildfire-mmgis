@@ -120,10 +120,12 @@ const patchMethods = {
             : ''
     },
 
-    // Mark future year/month/day/hour items after each populate. Reads the
-    // shown end through local accessors so it matches what the user sees.
+    // Mark future year/month/day/hour items after each populate. TimeUI keeps
+    // its timestamps shifted so local accessors read the digits the rows show
+    // (UTC digits in core, local digits under LocalTimezone). addOffset puts
+    // now in that same frame, so now and the shown end compare like for like.
     _markFutureExpandedItems: function () {
-        const now = new Date()
+        const now = TimeUI.addOffset(Date.now())
         const nowYear = now.getFullYear()
         const nowMonth = now.getMonth() // 0-indexed
         const nowDay = now.getDate()

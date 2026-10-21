@@ -8,6 +8,12 @@
  */
 import L_ from '@basics/Layers_/Layers_'
 import ToolController_ from '@basics/ToolController_/ToolController_'
+import LayerTypeRegistry from '@basics/Layers_/registry/LayerTypeRegistry'
+import Map_ from '@basics/Map_/Map_'
+import {
+    runInteractions,
+    resolveLayerInteractions,
+} from '@basics/InteractionRunner/InteractionRunner'
 import { pickIncidentNameKey } from './sliceMetadata'
 
 /**
@@ -24,8 +30,10 @@ export function layerInteractionsDisabled() {
  * @param {string} layerName
  * @param {object} feature - the slicer's own source feature (what
  *        GeoJSONSlicer.featureAt returns on either view)
+ * @param {{lat: number, lng: number}} [latlng] - where the click landed
+ *        (absent for a globe click)
  */
-export function selectSlicedFeature(layerName, feature) {
+export function selectSlicedFeature(layerName, feature, latlng) {
     // L_.selectFeature restyles the map's copy and syncs the globe. Only a
     // feature's properties identify it there (a VectorGrid has no per-feature
     // geometry to match), yet selectFeature deep-copies whatever it is
@@ -52,7 +60,7 @@ export function selectSlicedFeature(layerName, feature) {
     // whichever real property holds the incident name, so it's still
     // labeled sensibly without touching the feature that has to keep
     // matching.
-    L_.setActiveFeature({
+    const layer = {
         feature,
         properties: feature.properties,
         useKeyAsName:
@@ -61,7 +69,54 @@ export function selectSlicedFeature(layerName, feature) {
                 feature.properties
             ) ?? undefined,
         options: { layerName },
-    })
+    }
+    L_.setActiveFeature(layer)
+    runSlicedClickInteractions(layerName, feature, layer, latlng)
+}
+
+/**
+ * Run the layer's click interaction pipeline (InfoSilent/InfoOpen, …) — what
+ * Map_.featureDefaultClick does for every other layer type, and what feeds
+ * the Info tool the feature's properties. setActiveFeature alone doesn't.
+ */
+async function runSlicedClickInteractions(layerName, feature, layer, latlng) {
+    try {
+        const layerData = L_.layers.data[layerName]
+        if (!layerData) return
+        const typeInteractions = LayerTypeRegistry.defaultInteractions(
+            layerData.type
+        )
+        const pipeline = resolveLayerInteractions(
+            layerData,
+            undefined,
+            typeInteractions.ids
+        ).click
+
+        L_.clearFeatureAttachments()
+
+        await runInteractions(pipeline, {
+            Map_,
+            feature,
+            layer,
+            layerName,
+            layerData,
+            layerVar: layerData.variables || {},
+            event: { latlng: latlng ? { lat: latlng.lat, lng: latlng.lng } : null },
+            eventType: 'click',
+            layerTypeChain: LayerTypeRegistry.typeChain(layerData.type),
+            typeInteractionConfigs: typeInteractions.settings,
+            additional: null,
+            stop: false,
+            // The slicer already resolved the clicked feature; skip the
+            // point-in-polygon gathering (and its DOM/map dependencies).
+            state: { preFeatures: [feature] },
+        })
+    } catch (err) {
+        console.error(
+            `Sliced click interactions failed for layer "${layerName}":`,
+            err
+        )
+    }
 }
 
 /**
