@@ -2,7 +2,17 @@
 
 A core MMGIS component plugin that shows an air-quality chart when the user clicks AirNow sensor markers on the map. It plots each sensor's **observed** AQI (blue) against the **forecast** AQI (yellow) from the CSULA predictive air quality model. It also colors the markers by AQI for the current time.
 
-Declared in [plugin.json](plugin.json) as `core-sensorchart`. It has no config options (`hasVars: false`).
+Declared in [plugin.json](plugin.json) as `core-sensorchart`. It is configured per mission through `variables.sensorCharts`, an array with one entry per kind of sensor (read by [sensorConfig.js](sensorConfig.js)):
+
+| Field | Meaning |
+|---|---|
+| `sensorLayers` | Vector layers whose features are the sensors. A layer in no entry is still charted with defaults and no forecast. |
+| `forecastLayers` | Layers that forecast these sensors. The forecast line, card and legend entry show only while one of them is on. Empty means observed-only. |
+| `modelName`, `modelLogo` | Credit shown beside the forecast. The logo is a URL. |
+| `colorBy` | Reading field that colors markers and cards, using that field's color scale (default `aqi`; `pm25` uses the PM2.5 tile colormap so dots match the tiles). Add scales to `COLOR_SCALES` in [sensorReadings.js](sensorReadings.js). |
+| `units` | Reading fields the chart can plot: `key`, `label`, optional `suffix` and `decimals`. The first is the default and more than one adds a toggle. |
+
+Example for the wildfire mission: `{"sensorLayers": ["AirNow"], "forecastLayers": ["PM2.5 Forecast"], "modelName": "CSULA Predictive air quality model", "units": [{"key": "aqi", "label": "AQI"}, {"key": "pm25", "label": "PM2.5", "suffix": "µg/m³", "decimals": 1}]}`.
 
 ## What counts as a sensor
 
@@ -48,7 +58,7 @@ Module-level state:
 
 ### 2. Selection
 
-Clicking a sensor toggles it in `selectedMarkers`. The panel is re-rendered on every change. Selected markers get a white stroke and a slightly larger radius, and are brought to the front. Their original stroke and radius are remembered in `baseStrokes` and `baseRadii` so they can be restored.
+Clicking a sensor toggles it in `selectedMarkers`. The panel is re-rendered on every change. Every sensor marker gets a dark ring (`SENSOR_STROKE`) so it stays visible where its AQI fill matches the surface layer underneath. Selected markers get a thicker dark ring (`SELECTED_STROKE`) and a slightly larger radius, and are brought to the front. Their base radius is remembered in `baseRadii` so it can be restored. The ring is never read back from the layer's own style, because `L_.resetLayerFills` resets markers to that style and it would overwrite the dark ring. `styleSelectedSensors` reapplies the rings after every reset.
 
 ### 3. Time and the two "clocks"
 
@@ -57,13 +67,15 @@ The plugin tracks two times for each sensor (`viewOf`):
 - **Observed time** is the main timeline's hour.
 - **Forecast time** is the hour picked on the forecast timeline card, or the first hour of the active forecast run if none is picked.
 
+Forecasts only apply while one of the entry's `forecastLayers` is on (`L_.layers.on`); a `forecasttimeline:step` from any other layer is ignored. With it off, `viewOf` returns no run and `forecastOn: false`, so the panel shows only observed readings and the chart only the observed line.
+
 The active forecast **run** is the entry in `sensor.forecasts` whose start time equals the forecast step's run, or the timeline time if no step is set.
 
 Events that change time:
 
 - `L_.subscribeTimeChange` updates `timelineTime`, clears `forecastStep`, and recolors the markers.
 - The `forecasttimeline:step` document event (hourly steps only) sets `forecastStep` and recolors the markers.
-- Turning off the forecast layer clears `forecastStep`.
+- Turning off the forecast layer clears `forecastStep`, which hides the forecast line, card, and legend entry.
 
 ### 4. Marker coloring
 

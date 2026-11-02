@@ -2,24 +2,33 @@ import React, { useState } from 'react'
 import UnitToggle from './UnitToggle'
 import SensorReading from './SensorReading'
 import SensorTimeSeries, { formatTime, OBSERVED_COLOR, FORECAST_COLOR } from './SensorTimeSeries'
-import { readingsAt, aqiColor } from './sensorReadings'
+import { readingsAt, colorFor } from './sensorReadings'
 import styles from './SensorChart.module.css'
-import csulaLogo from './csula-logo.png'
-
-const UNITS = { aqi: 'AQI', pm25: 'PM2.5' }
 
 export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onPickObservedTime, onPickForecastTime }) {
-    const [unit, setUnit] = useState('aqi')
+    const [selectedUnit, setUnit] = useState(null)
     if (!entries.length) return null
+    // Sensors from different configs share one panel; the first sets its units and model.
+    const { config } = entries[0]
+    const unit = config.units.find((candidate) => candidate.key === selectedUnit) ?? config.units[0]
+    const unitLabels = Object.fromEntries(config.units.map((candidate) => [candidate.key, candidate.label]))
+    const forecastOn = entries.some(({ view }) => view.forecastOn)
     const formatValue = (reading) => {
-        const value = reading?.[unit]
-        if (value == null) return `${UNITS[unit]} —`
-        return unit === 'pm25' ? `${UNITS[unit]} ${value.toFixed(1)} µg/m³` : `${UNITS[unit]} ${value}`
+        const value = reading?.[unit.key]
+        if (value == null) return `${unit.label} —`
+        const shown = unit.decimals != null ? Number(value).toFixed(unit.decimals) : value
+        return `${unit.label} ${shown}${unit.suffix ? ` ${unit.suffix}` : ''}`
     }
+    const modelSource = config.modelName && (
+        <>
+            {config.modelLogo && <img className={styles.modelLogo} src={config.modelLogo} alt="" />}
+            {config.modelName}
+        </>
+    )
 
     if (entries.length === 1) {
         const { sensor, view } = entries[0]
-        const { observed, forecast, hoursAhead } = readingsAt(sensor, view)
+        const { observed, forecast, hoursAhead } = readingsAt(sensor, view, config.colorBy)
         return (
             <div className={styles.panel}>
                 <div className={styles.header}>
@@ -27,22 +36,22 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                         <div className={styles.siteName}>AirNow Sensor - {sensor.site_name}</div>
                         <div className={styles.subtitle}>Managed by {sensor.agency}</div>
                     </div>
-                        <UnitToggle units={UNITS} selectedUnit={unit} onSelect={setUnit} />
+                        <UnitToggle units={unitLabels} selectedUnit={unit.key} onSelect={setUnit} />
                     <i className={`mdi mdi-close ${styles.close}`} onClick={onClose} />
                 </div>
                 <div className={styles.readings}>
                     <SensorReading
                         label={`Observed · ${formatTime(view.observedTime)}`}
                         value={formatValue(observed)}
-                        color={aqiColor(observed?.aqi)}
+                        color={colorFor(config, observed?.[config.colorBy])}
                         accent={OBSERVED_COLOR}
                         source={observed ? 'AirNow sensor reading' : 'No reading yet'}
                     />
-                    {!view.run && (
+                    {view.forecastOn && !view.run && (
                         <SensorReading
                             label={`Forecast · ${formatTime(view.forecastTime)}`}
                             value={formatValue(null)}
-                            color={aqiColor(null)}
+                            color={colorFor(config, null)}
                             accent={FORECAST_COLOR}
                             source="Not available yet"
                         />
@@ -51,14 +60,9 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                         <SensorReading
                             label={`Forecast · ${formatTime(Date.parse(forecast.time))} · ${hoursAhead}h ahead`}
                             value={formatValue(forecast)}
-                            color={aqiColor(forecast.aqi)}
+                            color={colorFor(config, forecast[config.colorBy])}
                             accent={FORECAST_COLOR}
-                            source={
-                                <>
-                                    <img className={styles.modelLogo} src={csulaLogo} alt="Cal State LA" />
-                                    CSULA Predictive air quality model
-                                </>
-                            }
+                            source={modelSource || 'Forecast'}
                         />
                     )}
                 </div>
@@ -67,6 +71,7 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                         key={sensor.aqs_code}
                         sensor={sensor}
                         unit={unit}
+                        forecastLayerName={view.forecastLayerName}
                         run={view.run}
                         selectedTime={view.forecastTime}
                         observedTime={view.observedTime}
@@ -85,7 +90,7 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                     <div className={styles.siteName}>{entries.length} AirNow Sensors</div>
                     <div className={styles.subtitle}>{formatTime(entries[0].view.time)}</div>
                 </div>
-                <UnitToggle units={UNITS} selectedUnit={unit} onSelect={setUnit} />
+                <UnitToggle units={unitLabels} selectedUnit={unit.key} onSelect={setUnit} />
                 <i className={`mdi mdi-close ${styles.close}`} onClick={onClose} />
             </div>
             <div className={styles.legend}>
@@ -93,20 +98,21 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                     <span className={styles.legendLine} style={{ background: OBSERVED_COLOR }} />
                     Observed · AirNow
                 </span>
-                <span className={styles.legendItem}>
-                    <span className={styles.legendLine} style={{ background: FORECAST_COLOR }} />
-                    Forecast ·
-                    <img className={styles.modelLogo} src={csulaLogo} alt="Cal State LA" />
-                    CSULA Predictive air quality model
-                </span>
+                {forecastOn && (
+                    <span className={styles.legendItem}>
+                        <span className={styles.legendLine} style={{ background: FORECAST_COLOR }} />
+                        Forecast ·
+                        {modelSource}
+                    </span>
+                )}
                 <span className={styles.legendItem}>
                     <span className={styles.legendDashed} />
                     Sensor unavailable
                 </span>
             </div>
             <div className={styles.sensorCards}>
-                {entries.map(({ sensor, view }) => {
-                    const { observed, forecast, hoursAhead } = readingsAt(sensor, view)
+                {entries.map(({ sensor, config: sensorConfig, view }) => {
+                    const { observed, forecast, hoursAhead } = readingsAt(sensor, view, sensorConfig.colorBy)
                     return (
                         <div key={sensor.aqs_code} className={styles.sensorCard}>
                             <div className={styles.sensorCardHeader}>
@@ -115,14 +121,16 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                                     <span className={styles.sensorCardAgency}>{sensor.agency}</span>
                                 </div>
                                 <div className={styles.compactReading} style={{ borderColor: OBSERVED_COLOR }}>
-                                    <span className={styles.colorDot} style={{ background: aqiColor(observed?.aqi) }} />
+                                    <span className={styles.colorDot} style={{ background: colorFor(sensorConfig, observed?.[sensorConfig.colorBy]) }} />
                                     {formatValue(observed)}
                                 </div>
-                                <div className={styles.compactReading} style={{ borderColor: FORECAST_COLOR }}>
-                                    <span className={styles.colorDot} style={{ background: aqiColor(forecast?.aqi) }} />
-                                    {formatValue(forecast)}
-                                    {forecast && <span className={styles.hoursAhead}>{hoursAhead}h</span>}
-                                </div>
+                                {view.forecastOn && (
+                                    <div className={styles.compactReading} style={{ borderColor: FORECAST_COLOR }}>
+                                        <span className={styles.colorDot} style={{ background: colorFor(sensorConfig, forecast?.[sensorConfig.colorBy]) }} />
+                                        {formatValue(forecast)}
+                                        {forecast && <span className={styles.hoursAhead}>{hoursAhead}h</span>}
+                                    </div>
+                                )}
                                 <i
                                     className={`mdi mdi-close ${styles.close}`}
                                     onClick={() => onRemoveSensor(sensor.aqs_code)}
@@ -133,6 +141,7 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                                 <SensorTimeSeries
                                     sensor={sensor}
                                     unit={unit}
+                                    forecastLayerName={view.forecastLayerName}
                                     run={view.run}
                                     selectedTime={view.forecastTime}
                                     observedTime={view.observedTime}

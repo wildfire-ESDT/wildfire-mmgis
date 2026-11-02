@@ -91,7 +91,7 @@
 
 .readings {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 14px;
     padding: 14px 14px 6px;
 }

@@ -8,8 +8,9 @@
 import L_ from '@basics/Layers_/Layers_'
 
 import {
-    escHtml,
     escSel,
+    h,
+    mdi,
     isMobile,
     showWindow,
     pruneCacheInactive,
@@ -65,7 +66,7 @@ const cardMethods = {
         const strip = document.getElementById('ftl-strip')
         if (strip) {
             strip.classList.toggle('ftl-mobile', isMobile())
-            strip.innerHTML = this._buildStripHTML(layers)
+            strip.replaceChildren(...this._buildStripNodes(layers).filter(Boolean))
             layers.forEach(({ name, config: fc }) => {
                 this._attachCardHandlers(name, fc, strip)
                 this._renderCardStep(name, fc, strip)
@@ -108,9 +109,9 @@ const cardMethods = {
         })
     },
 
-    // ── Card HTML ──────────────────────────────────────────
+    // ── Card DOM ───────────────────────────────────────────
 
-    _buildCardHTML: function (name, fc) {
+    _buildCardEl: function (name, fc) {
         const steps = this._effectiveSteps(fc, name)
         const unit = fc.stepUnit || 'hour'
         const label = fc.label || name
@@ -118,24 +119,30 @@ const cardMethods = {
         const initStr = this._formatInit(originBase, unit, fc)
 
         // Info icon only when the layer configures a description.
-        const infoBtnHTML = fc.description
-            ? `<button class="ftl-card-info-btn" data-layer="${escHtml(name)}" type="button" aria-label="Forecast details"><i class="mdi mdi-information-outline"></i></button>`
-            : ''
+        const infoBtn = fc.description
+            ? h('button', { class: 'ftl-card-info-btn', 'data-layer': name, type: 'button', 'aria-label': 'Forecast details' },
+                mdi('mdi-information-outline'))
+            : null
 
-        const playBtnHTML = this._playbackAllowed(name)
-            ? `<button class="ftl-card-play" data-layer="${escHtml(name)}" type="button" title="Play forecast animation" aria-label="Play forecast animation"><i class="mdi mdi-play"></i></button>`
-            : ''
+        const playBtn = this._playbackAllowed(name)
+            ? h('button', { class: 'ftl-card-play', 'data-layer': name, type: 'button', title: 'Play forecast animation', 'aria-label': 'Play forecast animation' },
+                mdi('mdi-play'))
+            : null
 
         // The retry button rides on every tick and only shows on a dark one
         // (see .ftl-tick-missing in the CSS), so painting never has to build DOM.
         const ticks = Array.from({ length: steps }, (_, i) => {
             const { clock, rel } = this._tickLabels(fc, i, originBase)
-            return `<div class="ftl-tick mmgisTimeUIExpandedItem ftl-tick-twoline" data-layer="${escHtml(name)}" data-step="${i}"><span class="ftl-tick-clock">${clock}</span><span class="ftl-tick-rel">${rel}</span><button class="ftl-tick-retry" data-layer="${escHtml(name)}" data-step="${i}" type="button" tabindex="-1" title="Check for this hour again" aria-label="Check for this hour again"><i class="mdi mdi-refresh"></i></button></div>`
-        }).join('')
+            return h('div', { class: 'ftl-tick mmgisTimeUIExpandedItem ftl-tick-twoline', 'data-layer': name, 'data-step': i },
+                h('span', { class: 'ftl-tick-clock' }, clock),
+                h('span', { class: 'ftl-tick-rel' }, rel),
+                h('button', { class: 'ftl-tick-retry', 'data-layer': name, 'data-step': i, type: 'button', tabindex: '-1', title: 'Check for this hour again', 'aria-label': 'Check for this hour again' },
+                    mdi('mdi-refresh')))
+        })
 
         // Daily/monthly cards use fixed-width steps (see CSS) so a lone tick
         // doesn't stretch across the whole track.
-        const dailyClass = (unit === 'day' || unit === 'month') ? ' ftl-card-daily' : ''
+        const isDaily = unit === 'day' || unit === 'month'
 
         const unitWord = unit === 'month' ? 'monthly' : unit === 'day' ? 'daily' : unit === 'week' ? 'weekly' : 'hourly'
         // Hourly chips label by max lead time so H0..H18 reads "18 hrs" not 19.
@@ -150,57 +157,54 @@ const cardMethods = {
         const forecastChipLabel = `${unitWord} / ${span} ${unitPlural}`
 
         const isCollapsed = this.state.cards[name]?.collapsed === true
-        const collapsedAttr = isCollapsed ? ' ftl-card-collapsed' : ''
 
-        return `
-<div class="ftl-card${dailyClass}${collapsedAttr}" data-layer="${escHtml(name)}">
-  <div class="ftl-card-header">
-    <button class="ftl-card-collapse-btn" data-layer="${escHtml(name)}" title="${isCollapsed ? 'Expand' : 'Collapse'}">
-      <i class="mdi ${isCollapsed ? 'mdi-window-restore' : 'mdi-window-minimize'} mdi-18px"></i>
-    </button>
-    <div class="ftl-card-hdr-left">
-      <span class="ftl-card-forecast-title">FORECAST</span>
-      <span class="ftl-card-forecast-chip">${forecastChipLabel}</span>
-    </div>
-    <div class="ftl-card-hdr-right">
-      <div class="ftl-card-label-row">
-        <span class="ftl-card-label">${escHtml(label)}</span>
-        ${infoBtnHTML}
-        ${playBtnHTML}
-      </div>
-      <div class="ftl-card-init-row">
-        <span class="ftl-card-init-caption">INITIALIZED:</span>
-        <span class="ftl-card-init">${initStr}</span>
-      </div>
-    </div>
-  </div>
-  <div class="ftl-card-body">
-    <button class="ftl-card-prev" data-layer="${escHtml(name)}"><i class="mdi mdi-chevron-left"></i></button>
-    <div class="ftl-ticks-wrap mmgisTimeUIExpandedRowContainer">
-      <div class="ftl-ticks">${ticks}</div>
-    </div>
-    <button class="ftl-card-next" data-layer="${escHtml(name)}"><i class="mdi mdi-chevron-right"></i></button>
-  </div>
-  <div class="ftl-card-prefetch" data-layer="${escHtml(name)}"><div class="ftl-card-prefetch-bar"></div></div>
-</div>`
+        return h('div', {
+                class: 'ftl-card' + (isDaily ? ' ftl-card-daily' : '') + (isCollapsed ? ' ftl-card-collapsed' : ''),
+                'data-layer': name,
+            },
+            h('div', { class: 'ftl-card-header' },
+                h('button', { class: 'ftl-card-collapse-btn', 'data-layer': name, title: isCollapsed ? 'Expand' : 'Collapse' },
+                    mdi((isCollapsed ? 'mdi-window-restore' : 'mdi-window-minimize') + ' mdi-18px')),
+                h('div', { class: 'ftl-card-hdr-left' },
+                    h('span', { class: 'ftl-card-forecast-title' }, 'FORECAST'),
+                    h('span', { class: 'ftl-card-forecast-chip' }, forecastChipLabel)),
+                h('div', { class: 'ftl-card-hdr-right' },
+                    h('div', { class: 'ftl-card-label-row' },
+                        h('span', { class: 'ftl-card-label' }, label),
+                        infoBtn,
+                        playBtn),
+                    h('div', { class: 'ftl-card-init-row' },
+                        h('span', { class: 'ftl-card-init-caption' }, 'INITIALIZED:'),
+                        h('span', { class: 'ftl-card-init' }, initStr)))),
+            h('div', { class: 'ftl-card-body' },
+                h('button', { class: 'ftl-card-prev', 'data-layer': name }, mdi('mdi-chevron-left')),
+                h('div', { class: 'ftl-ticks-wrap mmgisTimeUIExpandedRowContainer' },
+                    h('div', { class: 'ftl-ticks' }, ticks)),
+                h('button', { class: 'ftl-card-next', 'data-layer': name }, mdi('mdi-chevron-right'))),
+            h('div', { class: 'ftl-card-prefetch', 'data-layer': name },
+                h('div', { class: 'ftl-card-prefetch-bar' })))
     },
 
-    _buildStripHTML: function (layers) {
-        if (layers.length === 0) return ''
+    _buildStripNodes: function (layers) {
         const collapsed = layers.filter(({ name }) => this.state.cards[name]?.collapsed)
         const expanded = layers.filter(({ name }) => !this.state.cards[name]?.collapsed)
 
-        const tabsHTML = collapsed.length > 0
-            ? `<div class="ftl-tabs-row">${collapsed.map(({ name, config: fc }) =>
-                `<button class="ftl-tab" data-layer="${escHtml(name)}" title="Expand ${escHtml(fc.label || name)}">${escHtml(fc.label || name)}</button>`
-              ).join('')}</div>`
-            : ''
+        const tabs = collapsed.length > 0
+            ? h('div', { class: 'ftl-tabs-row' }, collapsed.map(({ name, config: fc }) =>
+                h('button', { class: 'ftl-tab', 'data-layer': name, title: 'Expand ' + (fc.label || name) },
+                    fc.label || name)))
+            : null
 
-        const cardsHTML = expanded.map(({ name, config: fc }) =>
-            this._buildCardHTML(name, fc)
-        ).join('')
+        return [tabs, ...expanded.map(({ name, config: fc }) => this._buildCardEl(name, fc))]
+    },
 
-        return tabsHTML + cardsHTML
+    // Amber alert icon + uppercase message, for the init row's warning states.
+    _warnNodes: function (text) {
+        const icon = mdi('mdi-alert')
+        icon.style.cssText = 'color:#e8a020;font-size:13px;vertical-align:middle'
+        const msg = h('span', null, text)
+        msg.style.cssText = 'color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em'
+        return [icon, ' ', msg]
     },
 
     // ── Card event handlers ────────────────────────────────
@@ -254,7 +258,7 @@ const cardMethods = {
             // the play press.
             playBtn.classList.add('ftl-has-tip')
             playBtn.addEventListener('mouseenter', () =>
-                this._showTip(playBtn, this._playTipHtml(name, fc))
+                this._showTip(playBtn, this._playTipNode(name, fc))
             )
             playBtn.addEventListener('mouseleave', () => this._hideTip())
         }
@@ -287,11 +291,15 @@ const cardMethods = {
         const infoBtn = container.querySelector(`.ftl-card-info-btn[data-layer="${escSel(name)}"]`)
         if (infoBtn && fc.description) {
             const label = fc.label || name
-            this._bindTip(
-                infoBtn,
-                `<div class="ftl-tip-title">${escHtml(label)}</div>` +
-                `<div class="ftl-tip-body">${escHtml(fc.description)}</div>`
-            )
+            const frag = document.createDocumentFragment()
+            const title = document.createElement('div')
+            title.className = 'ftl-tip-title'
+            title.textContent = label
+            const body = document.createElement('div')
+            body.className = 'ftl-tip-body'
+            body.textContent = fc.description
+            frag.append(title, body)
+            this._bindTip(infoBtn, frag)
         }
     },
 
@@ -322,10 +330,10 @@ const cardMethods = {
         return tip
     },
 
-    _bindTip: function (el, html) {
-        if (!el || !html) return
+    _bindTip: function (el, content) {
+        if (!el || !content) return
         el.classList.add('ftl-has-tip')
-        el.addEventListener('mouseenter', () => this._showTip(el, html))
+        el.addEventListener('mouseenter', () => this._showTip(el, content))
         el.addEventListener('mouseleave', () => this._hideTip())
         el.addEventListener('click', (e) => {
             // Tap-toggle without bubbling to the document-level dismiss.
@@ -333,13 +341,15 @@ const cardMethods = {
             const tip = document.getElementById('ftl-tooltip')
             const openHere = tip && !tip.classList.contains('ftl-hidden') && tip._ftlAnchor === el
             if (openHere) this._hideTip()
-            else this._showTip(el, html)
+            else this._showTip(el, content)
         })
     },
 
-    _showTip: function (anchorEl, html) {
+    // `content` is a DOM node (e.g. a DocumentFragment), never an HTML string,
+    // so tooltip text can't be parsed as markup.
+    _showTip: function (anchorEl, content) {
         const tip = this._ensureTooltip()
-        tip.innerHTML = html
+        tip.replaceChildren(content.cloneNode(true))
         tip._ftlAnchor = anchorEl
         tip.classList.remove('ftl-hidden')
         // Place above the anchor, flip below if tight, clamp to viewport.
@@ -479,16 +489,13 @@ const cardMethods = {
         if (state === 'loading') {
             if (captionEl) captionEl.style.display = 'none'
             initEl?.removeAttribute('title')
-            if (initEl) initEl.innerHTML =
-                '<span class="ftl-loading-inline">' +
-                '<i class="mdi mdi-loading mdi-spin"></i> Loading…</span>'
+            if (initEl) initEl.replaceChildren(
+                h('span', { class: 'ftl-loading-inline' },
+                    mdi('mdi-loading mdi-spin'), ' Loading…'))
         } else if (state === 'failed') {
             if (captionEl) captionEl.style.display = 'none'
             if (initEl) {
-                initEl.innerHTML =
-                    '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
-                    ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">' +
-                    'Forecast not available</span>'
+                initEl.replaceChildren(...this._warnNodes('Forecast not available'))
                 initEl.setAttribute(
                     'title',
                     'The forecast data failed to load. The layer and forecast services may be briefly out of sync. Toggle the layer off and on to retry.'
@@ -498,10 +505,7 @@ const cardMethods = {
             if (captionEl) captionEl.style.display = 'none'
             if (initEl) {
                 const typeName = fc?.forecastType || ''
-                initEl.innerHTML =
-                    '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
-                    ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">' +
-                    'Forecast type not found</span>'
+                initEl.replaceChildren(...this._warnNodes('Forecast type not found'))
                 initEl.setAttribute(
                     'title',
                     `No forecast forecastType named "${typeName}" is registered. See the ForecastTimeline README.`
@@ -531,10 +535,7 @@ const cardMethods = {
                 const inlineMsg = showWindow(fc)
                     ? `${runStr} not yet generated`
                     : `${runStr} run not yet generated`
-                initEl.innerHTML =
-                    '<i class="mdi mdi-alert" style="color:#e8a020;font-size:13px;vertical-align:middle"></i>' +
-                    ' <span style="color:#e8a020;font-size:10px;text-transform:uppercase;letter-spacing:.04em">' +
-                    `${inlineMsg}</span>`
+                initEl.replaceChildren(...this._warnNodes(inlineMsg))
                 initEl.setAttribute(
                     'title',
                     showWindow(fc)

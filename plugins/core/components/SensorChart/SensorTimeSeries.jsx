@@ -81,7 +81,7 @@ const chartOptions = (firstTime, lastTime, unitRef, pickRef, viewRef) => ({
                         ? item.raw.notReportedYet
                             ? ' Not reported yet'
                             : ' Sensor unavailable'
-                        : ` ${item.dataset.label}  ${item.formattedValue}${unitRef.current === 'pm25' ? ' µg/m³' : ''}`,
+                        : ` ${item.dataset.label}  ${item.formattedValue}${unitRef.current.suffix ? ` ${unitRef.current.suffix}` : ''}`,
             },
         },
         zoom: {
@@ -131,27 +131,27 @@ const timeMarkers = {
 }
 const CHART_PLUGINS = [zoomPlugin, timeMarkers]
 
-export default function SensorTimeSeries({ sensor, unit, run, selectedTime, observedTime, onPickObservedTime, onPickForecastTime }) {
+export default function SensorTimeSeries({ sensor, unit, forecastLayerName, run, selectedTime, observedTime, onPickObservedTime, onPickForecastTime }) {
     const chartRef = useRef(null)
     // Read at event time, so neither a unit change nor new handlers rebuild
     // the options and reset the zoom.
     const unitRef = useRef(unit)
     unitRef.current = unit
     const pickRef = useRef(null)
-    pickRef.current = { onPickObservedTime, onPickForecastTime }
+    pickRef.current = { onPickObservedTime, onPickForecastTime, forecastLayerName }
     // The range the user zoomed or panned to, kept while the timeline moves.
     const viewRef = useRef(null)
     const runTime = run ? Date.parse(run) : Infinity
     const firstTime = Date.parse(sensor.observed[0]?.time)
     const lastTime = Math.max(
         Date.parse(sensor.observed.at(-1)?.time),
-        Date.parse(sensor.forecasts[run]?.at(-1)?.time) || 0,
+        Date.parse(sensor.forecasts?.[run]?.at(-1)?.time) || 0,
         observedTime || 0
     )
     const options = useMemo(() => chartOptions(firstTime, lastTime, unitRef, pickRef, viewRef), [firstTime, lastTime])
 
     const data = useMemo(() => {
-        const toPoints = (readings) => readings.map((reading) => ({ x: Date.parse(reading.time), y: reading[unit] }))
+        const toPoints = (readings) => readings.map((reading) => ({ x: Date.parse(reading.time), y: reading[unit.key] }))
         const observed = toPoints(sensor.observed)
         // Hours up to the selected one that AirNow hasn't reported yet, so the
         // line reaches the selected hour as a grey gap.
@@ -159,15 +159,15 @@ export default function SensorTimeSeries({ sensor, unit, run, selectedTime, obse
             observed.push({ x: time, y: null, notReportedYet: true })
         const observedAtRun = observed.filter((point) => point.x <= runTime && point.y != null).pop()
         const joinPoint = observedAtRun && { ...observedAtRun, joinsObserved: true }
-        const forecast = run ? [joinPoint, ...toPoints(sensor.forecasts[run])].filter(Boolean) : []
-                return {
+        const forecast = run ? [joinPoint, ...toPoints(sensor.forecasts?.[run] ?? [])].filter(Boolean) : []
+        return {
             datasets: [
                 toLine(OBSERVED, observed, OBSERVED_COLOR),
                 toLine(FORECAST, forecast, FORECAST_COLOR),
                 { ...toLine(MISSING, bridgeMissingHours(observed), MISSING_COLOR), borderDash: [2, 3], borderWidth: 1.5, pointRadius: 0 },
             ],
         }
-    }, [sensor, unit, run, runTime, observedTime])
+    }, [sensor, unit.key, run, runTime, observedTime])
 
     useEffect(() => {
         const chart = chartRef.current
@@ -250,7 +250,7 @@ function pickPoint(event, chart, handlers) {
     })
     if (!nearest) return
     if (nearest.label === OBSERVED) handlers.onPickObservedTime?.(nearest.time)
-    else handlers.onPickForecastTime?.(nearest.time)
+    else handlers.onPickForecastTime?.(nearest.time, handlers.forecastLayerName)
 }
 
 function bridgeMissingHours(points) {

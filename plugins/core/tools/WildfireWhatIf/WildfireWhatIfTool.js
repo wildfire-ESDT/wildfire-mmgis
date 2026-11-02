@@ -11,7 +11,8 @@ import {
     ignoreMapFire,
     isNewMapFire,
 } from './actions'
-import { restoreSession } from './auth'
+import ToolController_ from '@basics/ToolController_/ToolController_'
+import { restoreSession, isLoginCallback } from './auth'
 import WhatIfPanel from './components/WhatIfPanel'
 
 const DEFAULT_VELO_URL = 'https://firepanel.ai/veloserver'
@@ -22,6 +23,19 @@ const WildfireWhatIf = {
     _root: null,
     MMGISInterface: null,
     _wfigsLayerName: null,
+
+    // Runs once at MMGIS startup. When the page is Keycloak redirecting back
+    // after sign-in, reopen the tool so make() can finish the login.
+    initialize: function () {
+        if (!isLoginCallback()) return
+        let tries = 0
+        const open = () => {
+            if (document.getElementById('toolPanel') || ++tries > 50) {
+                ToolController_.openTool('WildfireWhatIf')
+            } else setTimeout(open, 100)
+        }
+        setTimeout(open, 0)
+    },
 
     make: function () {
         const vars = L_.getToolVars('wildfire-whatif') || {}

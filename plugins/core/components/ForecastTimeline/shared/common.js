@@ -70,6 +70,29 @@ export function escHtml(s) {
         .replace(/'/g, '&#39;')
 }
 
+// Build a DOM element without ever parsing markup. Attributes go through
+// setAttribute and string children through createTextNode, so values are
+// always data, never HTML. `cls` is the class attribute; null/false children
+// and attrs are skipped.
+export function h(tag, attrs, ...children) {
+    const el = document.createElement(tag)
+    for (const k in attrs || {}) {
+        const v = attrs[k]
+        if (v == null || v === false) continue
+        el.setAttribute(k, v === true ? '' : String(v))
+    }
+    for (const c of children.flat()) {
+        if (c == null || c === false) continue
+        el.append(c instanceof Node ? c : document.createTextNode(String(c)))
+    }
+    return el
+}
+
+// Material Design Icons glyph, e.g. mdi('mdi-play').
+export function mdi(cls) {
+    return h('i', { class: 'mdi ' + cls })
+}
+
 // For a value inside a quoted CSS attribute selector. Build from the RAW name.
 export function escSel(s) {
     return String(s == null ? '' : s).replace(/["\\]/g, '\\$&')

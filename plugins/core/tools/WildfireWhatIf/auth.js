@@ -1,5 +1,7 @@
-// Keycloak authentication for the Wildfire What-If tool (Direct Access
-// Grant, i.e. the password flow). This gates the tool UI only: the token is
+// Keycloak authentication for the Wildfire What-If tool (Authorization Code
+// flow with PKCE). The user signs in on Keycloak's own page, so this code never
+// sees a password; it only trades a one-time code for tokens. This gates the
+// tool UI only: the token is
 // kept in sessionStorage for reload survival and refreshed before expiry,
 // but is not attached to veloserver or MMGIS requests.
 
@@ -9,6 +11,9 @@ import { loadHistory, exitRunView, hideScenario, restoreScenario, clearPerimeter
 const S = useWhatIfStore
 
 const STORAGE_KEY = 'ww-kc-session'
+const PKCE_KEY = 'ww-kc-pkce'
+// Query params Keycloak appends to the redirect back; stripped from the URL.
+const CALLBACK_PARAMS = ['code', 'state', 'session_state', 'iss', 'error', 'error_description']
 const REFRESH_EARLY_MS = 60000
 
 let refreshTimer = null
@@ -21,6 +26,48 @@ function tokenEndpoint() {
     const s = S.getState()
     const base = s.kcUrl.replace(/\/$/, '')
     return `${base}/realms/${encodeURIComponent(s.kcRealm)}/protocol/openid-connect`
+}
+
+// ── PKCE ───────────────────────────────────────────────
+
+function randomString(bytes) {
+    const a = new Uint8Array(bytes)
+    crypto.getRandomValues(a)
+    return base64Url(a)
+}
+
+function base64Url(bytes) {
+    let bin = ''
+    bytes.forEach((b) => (bin += String.fromCharCode(b)))
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+async function challengeFor(verifier) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
+    return base64Url(new Uint8Array(digest))
+}
+
+// Where Keycloak sends the user back to: this page without any callback
+// params. Must be listed in the client's Valid Redirect URIs.
+function currentRedirectUri() {
+    const u = new URL(window.location.href)
+    CALLBACK_PARAMS.forEach((p) => u.searchParams.delete(p))
+    u.hash = ''
+    return u.toString()
+}
+
+function readPkce() {
+    try {
+        return JSON.parse(sessionStorage.getItem(PKCE_KEY))
+    } catch (e) {
+        return null
+    }
+}
+
+function clearPkce() {
+    try {
+        sessionStorage.removeItem(PKCE_KEY)
+    } catch (e) {}
 }
 
 // Decode a JWT payload without verification. Verification is the server's
@@ -140,19 +187,74 @@ function expire() {
     S.setState(signedOutState('Session expired. Sign in again.'))
 }
 
-export function login(username, password) {
+// Send the user to Keycloak's login page. Returns after navigation starts.
+export async function login() {
+    const s = S.getState()
+    S.setState({ authBusy: true, authError: null })
+    try {
+        const verifier = randomString(48)
+        const state = randomString(24)
+        const redirectUri = currentRedirectUri()
+        sessionStorage.setItem(PKCE_KEY, JSON.stringify({ verifier, state, redirectUri }))
+        const params = new URLSearchParams({
+            client_id: s.kcClientId,
+            response_type: 'code',
+            scope: 'openid',
+            redirect_uri: redirectUri,
+            state,
+            code_challenge: await challengeFor(verifier),
+            code_challenge_method: 'S256',
+        })
+        window.location.assign(`${tokenEndpoint()}/auth?${params}`)
+    } catch (err) {
+        S.setState({
+            authBusy: false,
+            authError: 'Could not start sign-in. ' + err.message,
+        })
+    }
+}
+
+// True when this page load is Keycloak redirecting back to us.
+export function isLoginCallback() {
+    const q = new URLSearchParams(window.location.search)
+    return !!readPkce() && q.has('state') && (q.has('code') || q.has('error'))
+}
+
+// Finish a sign-in: validate state, scrub the URL, trade the code for tokens.
+function completeLogin() {
+    const q = new URLSearchParams(window.location.search)
+    const pkce = readPkce()
+    const code = q.get('code')
+    const state = q.get('state')
+    const kcError = q.get('error_description') || q.get('error')
+
+    // The code is single-use; get it out of the address bar and history.
+    const clean = new URL(window.location.href)
+    CALLBACK_PARAMS.forEach((p) => clean.searchParams.delete(p))
+    window.history.replaceState(null, '', clean.toString())
+    clearPkce()
+
+    if (!pkce || state !== pkce.state) {
+        S.setState({ authBusy: false, authError: 'Sign-in could not be verified. Try again.' })
+        return
+    }
+    if (kcError || !code) {
+        S.setState({ authBusy: false, authError: kcError || 'Sign-in was cancelled.' })
+        return
+    }
+
     const s = S.getState()
     const gen = ++authGen
     S.setState({ authBusy: true, authError: null })
-    return fetch(`${tokenEndpoint()}/token`, {
+    fetch(`${tokenEndpoint()}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-            grant_type: 'password',
+            grant_type: 'authorization_code',
             client_id: s.kcClientId,
-            scope: 'openid',
-            username,
-            password,
+            code,
+            redirect_uri: pkce.redirectUri,
+            code_verifier: pkce.verifier,
         }),
     })
         .then((r) =>
@@ -162,21 +264,11 @@ export function login(username, password) {
                     applyTokens(data)
                     return
                 }
-                let msg
-                if (/not fully set up/i.test(data.error_description || '')) {
-                    // Keycloak's default user profile requires email, first
-                    // and last name; accounts missing them fail this way.
-                    msg =
-                        'Account setup is incomplete. Ask an admin to fill in the email and name fields for this user.'
-                } else if (data.error === 'invalid_grant') {
-                    msg = 'Invalid username or password.'
-                } else {
-                    msg =
-                        data.error_description ||
-                        data.error ||
-                        `Login failed (HTTP ${r.status}).`
-                }
-                S.setState({ authBusy: false, authError: msg })
+                S.setState({
+                    authBusy: false,
+                    authError:
+                        data.error_description || data.error || `Login failed (HTTP ${r.status}).`,
+                })
             })
         )
         .catch((err) => {
@@ -191,6 +283,7 @@ export function login(username, password) {
 // Rehydrate a previous session on tool open so a page reload doesn't log
 // the user out. Expired sessions are refreshed if possible, else dropped.
 export function restoreSession() {
+    if (isLoginCallback()) return completeLogin()
     const session = readSession()
     if (!session || !session.access_token) return
     if (session.expires_at - Date.now() > REFRESH_EARLY_MS) {

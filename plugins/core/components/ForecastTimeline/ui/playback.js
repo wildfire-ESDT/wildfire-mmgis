@@ -61,20 +61,25 @@ const playbackMethods = {
         if (bar) bar.style.width = `${Math.round((pct || 0) * 100)}%`
     },
 
-    _playTipHtml: function (name, fc) {
+    // Built with DOM nodes and textContent, never an HTML string.
+    _playTipNode: function (name, fc) {
         const steps = this._effectiveSteps(fc, name)
         const unit = (fc?.stepUnit || 'hour') === 'day' ? 'day' : 'hour'
+        const title = document.createElement('b')
+        const detail = document.createElement('span')
+        detail.style.opacity = '.75'
         if (this._isPlaying(name)) {
-            return (
-                '<b>Stop animation</b><br/>' +
-                '<span style="opacity:.75">Returns to manual stepping.</span>'
-            )
+            title.textContent = 'Stop animation'
+            detail.textContent = 'Returns to manual stepping.'
+        } else {
+            title.textContent = 'Play forecast animation'
+            detail.textContent =
+                `Loads all ${steps} ${unit} steps, then` +
+                ' steps through them on the map in a loop. Click again to stop.'
         }
-        return (
-            '<b>Play forecast animation</b><br/>' +
-            `<span style="opacity:.75">Loads all ${steps} ${unit} steps, then` +
-            ' steps through them on the map in a loop. Click again to stop.</span>'
-        )
+        const frag = document.createDocumentFragment()
+        frag.append(title, document.createElement('br'), detail)
+        return frag
     },
 
     _isPlaying: function (name) {

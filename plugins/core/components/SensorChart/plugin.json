@@ -6,20 +6,145 @@
   "tier": "core",
   "overridable": true,
   "name": "SensorChart",
-  "description": "Clicking a sensor (a vector feature with observed_aqi) opens a chart of its observed AQI (blue) and forecast AQI (orange). Scroll to zoom out to the full history.",
+  "description": "Clicking a sensor (a vector feature with observed readings) opens a time-series chart of its observed values and, when a configured forecast layer is on, that layer's forecast. Scroll to zoom out to the full history.",
   "descriptionFull": {
     "title": "Sensor Chart",
     "example": {
-      "enabled": true
+      "enabled": true,
+      "variables": {
+        "sensorCharts": [
+          {
+            "sensorLayers": [
+              "AirNow Sensors"
+            ],
+            "forecastLayers": [
+              "PM2.5 Forecast"
+            ],
+            "modelName": "CSULA Predictive air quality model",
+            "units": [
+              {
+                "key": "aqi",
+                "label": "AQI"
+              },
+              {
+                "key": "pm25",
+                "label": "PM2.5",
+                "suffix": "µg/m³",
+                "decimals": 1
+              }
+            ],
+            "colorBy": "aqi"
+          }
+        ]
+      }
     }
   },
   "defaultIcon": "chart-line",
-  "hasVars": false,
+  "hasVars": true,
   "paths": {
     "SensorChart": "./SensorChart.jsx"
   },
   "config": {
-    "rows": []
+    "rows": [
+      {
+        "name": "Sensor Charts",
+        "description": "Each entry describes one kind of sensor. Sensor layers are vector layers whose features have an observed array of hourly readings. A forecast shows only while one of the entry's forecast layers is on; with none listed the chart is observed-only.",
+        "components": [
+          {
+            "field": "variables.sensorCharts",
+            "type": "objectarray",
+            "name": "Sensor Charts",
+            "description": "Add an entry per measured quantity or sensor network.",
+            "width": 12,
+            "object": [
+              {
+                "field": "sensorLayers",
+                "type": "layerMultiSelect",
+                "name": "Sensor Layers",
+                "description": "Vector layers whose features are the sensors.",
+                "layerTypes": [
+                  "vector"
+                ],
+                "width": 6
+              },
+              {
+                "field": "forecastLayers",
+                "type": "layerMultiSelect",
+                "name": "Forecast Layers",
+                "description": "Layers that forecast these sensors. The forecast appears while one is on. Leave empty for no forecast.",
+                "width": 6
+              },
+              {
+                "field": "modelName",
+                "type": "text",
+                "name": "Forecast Model Name",
+                "description": "Credit shown beside the forecast.",
+                "width": 3
+              },
+              {
+                "field": "modelLogo",
+                "type": "text",
+                "name": "Forecast Model Logo URL",
+                "description": "Optional logo shown beside the model name.",
+                "width": 3
+              },
+              {
+                "field": "colorBy",
+                "type": "dropdown",
+                "name": "Color By",
+                "description": "Reading field that colors markers and cards. aqi uses the EPA AQI colors; pm25 uses the PM2.5 tile colormap, so dots match the tiles.",
+                "width": 3,
+                "default": "aqi",
+                "options": [
+                  "aqi",
+                  "pm25"
+                ]
+              },
+              {
+                "field": "units",
+                "type": "objectarray",
+                "name": "Units",
+                "description": "Each unit is a reading field the chart can plot. The first is the default; more than one adds a toggle.",
+                "width": 12,
+                "object": [
+                  {
+                    "field": "key",
+                    "type": "text",
+                    "name": "Reading Field",
+                    "description": "Field on each reading, e.g. aqi or pm25.",
+                    "width": 3
+                  },
+                  {
+                    "field": "label",
+                    "type": "text",
+                    "name": "Label",
+                    "description": "Name shown in the toggle and readings.",
+                    "width": 3
+                  },
+                  {
+                    "field": "suffix",
+                    "type": "text",
+                    "name": "Unit Suffix",
+                    "description": "Appended to values, e.g. µg/m³.",
+                    "width": 3
+                  },
+                  {
+                    "field": "decimals",
+                    "type": "number",
+                    "name": "Decimals",
+                    "description": "Decimal places to show.",
+                    "width": 3,
+                    "min": 0,
+                    "max": 6,
+                    "step": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
   },
   "author": "NASA-AMMOS/MMGIS",
   "license": "Apache-2.0",

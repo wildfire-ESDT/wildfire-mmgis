@@ -35,7 +35,7 @@ const useWhatIfStore = create((set) => ({
     activeJobId: null,
     showActiveJson: false,
 
-    // Keycloak auth (Direct Access Grant; gates the tool UI)
+    // Keycloak auth (Authorization Code + PKCE; gates the tool UI)
     loggedIn: false,
     authUser: null, // preferred_username — display label only
     authUserId: null, // Keycloak `sub` (immutable UUID) — the key runs are scoped by
