@@ -1,0 +1,120 @@
+{
+  "uuid": "275ACCE5-8359-4BEA-A522-EEBB92755C70",
+  "id": "core-layertype-ionphotorealistic",
+  "name": "IonPhotorealistic",
+  "type": "layertype",
+  "typeId": "ionphotorealistic",
+  "version": "core",
+  "tier": "core",
+  "overridable": false,
+  "color": "#4285f4",
+  "defaultIcon": "Language",
+  "description": "Photorealistic 3D Tiles streamed from Cesium ion onto the Cesium globe. Globe only.",
+  "capabilities": {
+    "renderers": {
+      "map": false,
+      "globe": { "engines": ["cesium"] }
+    },
+    "map": { "stacking": false, "tracksLoad": false },
+    "time": false
+  },
+  "supportedData": [
+    {
+      "label": "Cesium ion 3D Tiles asset",
+      "category": "3d-tiles",
+      "standards": ["3D Tiles"],
+      "formats": ["json"],
+      "description": "A photorealistic 3D mesh streamed from Cesium ion, by default asset 2275207 (Google Photorealistic 3D Tiles). Needs a Cesium ion access token with access to the asset.",
+      "procurement": "Add the asset to your Cesium ion account and create an access token scoped to assets:read for that asset, restricted to your MMGIS domains."
+    }
+  ],
+  "config": {
+    "tabs": [
+      {
+        "name": "Core",
+        "rows": [
+          {
+            "name": "Core",
+            "components": [
+              {
+                "field": "type",
+                "name": "Layer Type",
+                "description": "",
+                "type": "dropdown",
+                "optionsFrom": "layerTypes",
+                "width": 2
+              },
+              {
+                "field": "name",
+                "name": "Layer Name",
+                "description": "A display name for the layer.",
+                "type": "textnotrim",
+                "width": 6,
+                "required": true
+              },
+              {
+                "field": "visibility",
+                "name": "Initial Visibility",
+                "description": "Whether the layer is on initially.",
+                "type": "checkbox",
+                "width": 2,
+                "defaultChecked": false
+              }
+            ]
+          },
+          {
+            "name": "Cesium ion",
+            "components": [
+              {
+                "field": "ionAssetId",
+                "name": "Cesium ion Asset ID",
+                "description": "The Cesium ion asset to stream. Default 2275207 is Google Photorealistic 3D Tiles; 96188 is Cesium OSM Buildings. The access token is not set here, it comes from the server environment.",
+                "type": "number",
+                "width": 4,
+                "default": 2275207
+              }
+            ]
+          },
+          {
+            "components": [
+              {
+                "field": "drapedLayers",
+                "name": "Draped Layers",
+                "description": "Layers to drape onto this tileset, so they show over its 3D mesh instead of being hidden under it. Each draped layer follows its own visibility, opacity, order and time. Don't drape basemaps: they would cover the tileset's own imagery.",
+                "type": "layerMultiSelect",
+                "layerTypes": ["tile", "vectortile"],
+                "width": 12
+              }
+            ]
+          },
+          {
+            "name": "Settings",
+            "components": [
+              {
+                "field": "maximumScreenSpaceError",
+                "name": "Max Screen Space Error",
+                "description": "Level of detail. Lower is sharper but loads more tiles. Default 16.",
+                "type": "number",
+                "width": 4,
+                "default": 16
+              },
+              {
+                "field": "hideGlobe",
+                "name": "Hide Globe Surface",
+                "description": "Hide the plain globe while this layer is on, so it does not show through the mesh. Default on.",
+                "type": "switch",
+                "width": 4,
+                "defaultChecked": true
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "modules": {
+    "globe": {
+      "cesium": "./globe/cesium"
+    }
+  }
+}
