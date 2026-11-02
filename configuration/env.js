@@ -113,6 +113,7 @@ function getClientEnvironment(publicUrl) {
         IS_DOCKER: process.env.IS_DOCKER,
         WITH_TITILER: process.env.WITH_TITILER,
         FORCE_CONFIG_PATH: process.env.FORCE_CONFIG_PATH || "",
+        CESIUM_ION_ACCESS_TOKEN: process.env.CESIUM_ION_ACCESS_TOKEN || "",
       }
     );
   // Stringify all values so we can feed into webpack DefinePlugin

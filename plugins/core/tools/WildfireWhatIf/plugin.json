@@ -64,7 +64,7 @@
                     {
                         "field": "variables.keycloakClientId",
                         "name": "Keycloak Client ID",
-                        "description": "Public client with Direct Access Grants enabled.",
+                        "description": "Public client with Standard Flow and PKCE (S256), with this site in its Valid Redirect URIs.",
                         "type": "text",
                         "width": 6,
                         "placeholder": "wildfire-whatif"
