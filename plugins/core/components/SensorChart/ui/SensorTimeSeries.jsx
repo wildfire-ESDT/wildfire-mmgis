@@ -2,22 +2,26 @@ import React, { useEffect, useMemo, useRef } from 'react'
 import { Chart, registerables } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import zoomPlugin from 'chartjs-plugin-zoom'
+import {
+    ONE_HOUR,
+    buildSeries,
+    chartTimeRange,
+    initialViewRange,
+    pickedPoint,
+    placeHourTicks,
+    rangeShowing,
+} from '../logic/sensorSeries'
+import { formatReading } from '../logic/sensorReadings'
 import styles from './SensorChart.module.css'
 
 Chart.register(...registerables)
 
-const ONE_HOUR = 3600000
-const TICK_STEPS_IN_HOURS = [1, 2, 3, 6, 12, 24, 48, 96, 168]
-const PIXELS_BETWEEN_MARKS = 8
-const PIXELS_BETWEEN_LABELS = 60
 export const OBSERVED_COLOR = '#4a9eff'
 export const FORECAST_COLOR = '#ffdd5c'
 const MISSING_COLOR = '#9e9e9e'
 const MISSING = 'Unavailable'
 const OBSERVED = 'Observed'
 const FORECAST = 'Forecast'
-const PICK_DISTANCE = 24
-const DRAG_DISTANCE = 4
 const HOURLY_POINTS_RANGE = 48 * ONE_HOUR
 const TEXT = { color: 'rgba(255, 255, 255, 0.6)', font: { family: 'roboto', size: 11 } }
 
@@ -76,12 +80,7 @@ const chartOptions = (firstTime, lastTime, unitRef, pickRef, viewRef) => ({
             filter: (item) => !item.raw.joinsObserved && (item.dataset.label !== MISSING || item.raw.missing),
             callbacks: {
                 title: (items) => formatTime(items[0].parsed.x),
-                label: (item) =>
-                    item.raw.missing
-                        ? item.raw.notReportedYet
-                            ? ' Not reported yet'
-                            : ' Sensor unavailable'
-                        : ` ${item.dataset.label}  ${item.formattedValue}${unitRef.current.suffix ? ` ${unitRef.current.suffix}` : ''}`,
+                label: (item) => tooltipLabel(item, unitRef.current),
             },
         },
         zoom: {
@@ -142,38 +141,23 @@ export default function SensorTimeSeries({ sensor, unit, forecastLayerName, run,
     // The range the user zoomed or panned to, kept while the timeline moves.
     const viewRef = useRef(null)
     const runTime = run ? Date.parse(run) : Infinity
-    const firstTime = Date.parse(sensor.observed[0]?.time)
-    const lastTime = Math.max(
-        Date.parse(sensor.observed.at(-1)?.time),
-        Date.parse(sensor.forecasts?.[run]?.at(-1)?.time) || 0,
-        observedTime || 0
-    )
+    const { firstTime, lastTime } = chartTimeRange(sensor, run, observedTime)
     const options = useMemo(() => chartOptions(firstTime, lastTime, unitRef, pickRef, viewRef), [firstTime, lastTime])
 
     const data = useMemo(() => {
-        const toPoints = (readings) => readings.map((reading) => ({ x: Date.parse(reading.time), y: reading[unit.key] }))
-        const observed = toPoints(sensor.observed)
-        // Hours up to the selected one that AirNow hasn't reported yet, so the
-        // line reaches the selected hour as a grey gap.
-        for (let time = (observed.at(-1)?.x ?? observedTime) + ONE_HOUR; time <= observedTime; time += ONE_HOUR)
-            observed.push({ x: time, y: null, notReportedYet: true })
-        const observedAtRun = observed.filter((point) => point.x <= runTime && point.y != null).pop()
-        const joinPoint = observedAtRun && { ...observedAtRun, joinsObserved: true }
-        const forecast = run ? [joinPoint, ...toPoints(sensor.forecasts?.[run] ?? [])].filter(Boolean) : []
+        const series = buildSeries(sensor, unit.key, run, observedTime)
         return {
             datasets: [
-                toLine(OBSERVED, observed, OBSERVED_COLOR),
-                toLine(FORECAST, forecast, FORECAST_COLOR),
-                { ...toLine(MISSING, bridgeMissingHours(observed), MISSING_COLOR), borderDash: [2, 3], borderWidth: 1.5, pointRadius: 0 },
+                toLine(OBSERVED, series.observed, OBSERVED_COLOR),
+                toLine(FORECAST, series.forecast, FORECAST_COLOR),
+                { ...toLine(MISSING, series.missing, MISSING_COLOR), borderDash: [2, 3], borderWidth: 1.5, pointRadius: 0 },
             ],
         }
-    }, [sensor, unit.key, run, runTime, observedTime])
+    }, [sensor, unit.key, run, observedTime])
 
     useEffect(() => {
         const chart = chartRef.current
-        const viewEnd = runTime === Infinity ? lastTime : runTime + 24 * ONE_HOUR
-        const range = viewRef.current ?? { min: viewEnd - 36 * ONE_HOUR, max: viewEnd }
-        chart.zoomScale('x', range, 'none')
+        chart.zoomScale('x', viewRef.current ?? initialViewRange(runTime, lastTime), 'none')
 
         const panWithWheel = (event) => {
             if (event.ctrlKey) return
@@ -196,12 +180,10 @@ export default function SensorTimeSeries({ sensor, unit, forecastLayerName, run,
     // Keep the picked hour on screen: slide the user's range to it, same width.
     useEffect(() => {
         const chart = chartRef.current
-        const view = viewRef.current
-        if (!view || !Number.isFinite(selectedTime)) return
-        if (selectedTime >= view.min && selectedTime <= view.max) return
-        const width = view.max - view.min
-        const min = Math.max(firstTime, Math.min(selectedTime - width / 2, lastTime - width))
-        chart.zoomScale('x', { min, max: min + width }, 'none')
+        if (!viewRef.current || !Number.isFinite(selectedTime)) return
+        const range = rangeShowing(selectedTime, viewRef.current, firstTime, lastTime)
+        if (!range) return
+        chart.zoomScale('x', range, 'none')
         rememberView(chart, viewRef)
     }, [selectedTime, firstTime, lastTime])
 
@@ -220,12 +202,15 @@ export default function SensorTimeSeries({ sensor, unit, forecastLayerName, run,
     }, [data, run, runTime, selectedTime, observedTime])
 
     return (
-        <>
-            <div className={styles.chart}>
-                <Line ref={chartRef} data={data} options={options} plugins={CHART_PLUGINS} />
-            </div>
-        </>
+        <div className={styles.chart}>
+            <Line ref={chartRef} data={data} options={options} plugins={CHART_PLUGINS} />
+        </div>
     )
+}
+
+function tooltipLabel(item, unit) {
+    if (!item.raw.missing) return ` ${item.dataset.label}  ${formatReading(item.raw.y, unit)}`
+    return item.raw.notReportedYet ? ' Not reported yet' : ' Sensor unavailable'
 }
 
 function rememberView(chart, viewRef) {
@@ -234,54 +219,20 @@ function rememberView(chart, viewRef) {
 
 // The observed or forecast point nearest a click, handed to its handler.
 function pickPoint(event, chart, handlers) {
-    const press = chart.pressedAt
-    const native = event.native
-    if (press && native && Math.hypot(native.clientX - press.x, native.clientY - press.y) > DRAG_DISTANCE) return
-    let nearest = null
-    chart.data.datasets.forEach((dataset, datasetIndex) => {
-        if (dataset.label !== OBSERVED && dataset.label !== FORECAST) return
-        chart.getDatasetMeta(datasetIndex).data.forEach((element, index) => {
-            const point = dataset.data[index]
-            if (point?.y == null || point.joinsObserved) return
-            const distance = Math.hypot(element.x - event.x, element.y - event.y)
-            if (distance <= PICK_DISTANCE && (!nearest || distance < nearest.distance))
-                nearest = { distance, time: point.x, label: dataset.label }
-        })
+    const candidates = chart.data.datasets.flatMap((dataset, datasetIndex) => {
+        if (dataset.label !== OBSERVED && dataset.label !== FORECAST) return []
+        return chart.getDatasetMeta(datasetIndex).data.map((element, index) => ({
+            x: element.x,
+            y: element.y,
+            point: dataset.data[index],
+            label: dataset.label,
+        }))
     })
-    if (!nearest) return
-    if (nearest.label === OBSERVED) handlers.onPickObservedTime?.(nearest.time)
-    else handlers.onPickForecastTime?.(nearest.time, handlers.forecastLayerName)
-}
-
-function bridgeMissingHours(points) {
-    const bridges = []
-    let gapStart = null
-    points.forEach((point, index) => {
-        if (point.y == null) gapStart ??= index
-        else if (gapStart != null) {
-            bridges.push(...bridgeGap(points, gapStart, index))
-            gapStart = null
-        }
-    })
-    if (gapStart != null) bridges.push(...bridgeGap(points, gapStart, points.length))
-    return bridges
-}
-
-function bridgeGap(points, gapStart, gapEnd) {
-    const before = points[gapStart - 1]
-    const after = points[gapEnd]
-    const startValue = before?.y ?? after?.y
-    const endValue = after?.y ?? before?.y
-    if (startValue == null) return []
-    const gapLength = gapEnd - gapStart + 1
-    const missing = points.slice(gapStart, gapEnd).map((point, offset) => ({
-        x: point.x,
-        y: startValue + ((endValue - startValue) * (offset + 1)) / gapLength,
-        missing: true,
-        notReportedYet: point.notReportedYet,
-    }))
-    const lineBreak = { x: (after ?? missing.at(-1)).x, y: null }
-    return [before, ...missing, after, lineBreak].filter(Boolean)
+    const click = { x: event.x, y: event.y, clientX: event.native?.clientX, clientY: event.native?.clientY }
+    const picked = pickedPoint(candidates, click, chart.pressedAt)
+    if (!picked) return
+    if (picked.label === OBSERVED) handlers.onPickObservedTime?.(picked.time)
+    else handlers.onPickForecastTime?.(picked.time, handlers.forecastLayerName)
 }
 
 function toLine(label, points, color) {
@@ -312,22 +263,6 @@ function fadingFill(chart, color) {
     gradient.addColorStop(0, `${color}30`)
     gradient.addColorStop(1, `${color}00`)
     return gradient
-}
-
-function placeHourTicks(axis) {
-    const width = axis.chart.chartArea?.width ?? axis.chart.width
-    const hoursShown = (axis.max - axis.min) / ONE_HOUR
-    const stepThatFits = (pixelsApart, divisibleBy = 1) =>
-        TICK_STEPS_IN_HOURS.find((hours) => hoursShown / hours <= width / pixelsApart && hours % divisibleBy === 0) ??
-        TICK_STEPS_IN_HOURS.at(-1)
-    const markStep = stepThatFits(PIXELS_BETWEEN_MARKS)
-    const labelStep = stepThatFits(PIXELS_BETWEEN_LABELS, markStep)
-    const timezoneOffset = new Date(axis.min).getTimezoneOffset() * 60000
-    const localHour = (time) => Math.round((time - timezoneOffset) / ONE_HOUR)
-    const firstMark = Math.ceil((axis.min - timezoneOffset) / (markStep * ONE_HOUR)) * markStep * ONE_HOUR + timezoneOffset
-    axis.ticks = []
-    for (let time = firstMark; time <= axis.max; time += markStep * ONE_HOUR)
-        axis.ticks.push({ value: time, major: localHour(time) % labelStep === 0 })
 }
 
 function formatTick(value, index, ticks) {

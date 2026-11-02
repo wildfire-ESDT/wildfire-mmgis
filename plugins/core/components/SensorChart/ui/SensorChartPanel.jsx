@@ -2,32 +2,36 @@ import React, { useState } from 'react'
 import UnitToggle from './UnitToggle'
 import SensorReading from './SensorReading'
 import SensorTimeSeries, { formatTime, OBSERVED_COLOR, FORECAST_COLOR } from './SensorTimeSeries'
-import { readingsAt, colorFor } from './sensorReadings'
+import { colorFor } from '../logic/sensorColors'
+import { formatReading, readingsAt } from '../logic/sensorReadings'
 import styles from './SensorChart.module.css'
 
 export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onPickObservedTime, onPickForecastTime }) {
-    const [selectedUnit, setUnit] = useState(null)
+    const [selectedUnitKey, setSelectedUnitKey] = useState(null)
     if (!entries.length) return null
     // Sensors from different configs share one panel; the first sets its units and model.
     const { config } = entries[0]
-    const unit = config.units.find((candidate) => candidate.key === selectedUnit) ?? config.units[0]
+    const unit = config.units.find((candidate) => candidate.key === selectedUnitKey) ?? config.units[0]
     const unitLabels = Object.fromEntries(config.units.map((candidate) => [candidate.key, candidate.label]))
+    const unitToggle = config.units.length > 1 && (
+        <UnitToggle units={unitLabels} selectedUnit={unit.key} onSelect={setSelectedUnitKey} />
+    )
     const forecastOn = entries.some(({ view }) => view.forecastOn)
-    const formatValue = (reading) => {
-        const value = reading?.[unit.key]
-        if (value == null) return `${unit.label} —`
-        const shown = unit.decimals != null ? Number(value).toFixed(unit.decimals) : value
-        return `${unit.label} ${shown}${unit.suffix ? ` ${unit.suffix}` : ''}`
-    }
-    const modelSource = config.modelName && (
+    const formatValue = (reading) => `${unit.label} ${formatReading(reading?.[unit.key], unit)}`
+    const modelSource = Boolean(config.modelName) && (
         <>
-            {config.modelLogo && <img className={styles.modelLogo} src={config.modelLogo} alt="" />}
+            {Boolean(config.modelLogo) && <img className={styles.modelLogo} src={config.modelLogo} alt="" />}
             {config.modelName}
         </>
     )
+    const closeButton = (
+        <button type="button" className={styles.close} onClick={onClose} aria-label="Close">
+            <i className="mdi mdi-close" />
+        </button>
+    )
 
     if (entries.length === 1) {
-        const { sensor, view } = entries[0]
+        const { id, sensor, view } = entries[0]
         const { observed, forecast, hoursAhead } = readingsAt(sensor, view, config.colorBy)
         return (
             <div className={styles.panel}>
@@ -36,8 +40,8 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                         <div className={styles.siteName}>AirNow Sensor - {sensor.site_name}</div>
                         <div className={styles.subtitle}>Managed by {sensor.agency}</div>
                     </div>
-                        <UnitToggle units={unitLabels} selectedUnit={unit.key} onSelect={setUnit} />
-                    <i className={`mdi mdi-close ${styles.close}`} onClick={onClose} />
+                    {unitToggle}
+                    {closeButton}
                 </div>
                 <div className={styles.readings}>
                     <SensorReading
@@ -68,7 +72,7 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                 </div>
                 <div className={styles.body}>
                     <SensorTimeSeries
-                        key={sensor.aqs_code}
+                        key={id}
                         sensor={sensor}
                         unit={unit}
                         forecastLayerName={view.forecastLayerName}
@@ -90,8 +94,8 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                     <div className={styles.siteName}>{entries.length} AirNow Sensors</div>
                     <div className={styles.subtitle}>{formatTime(entries[0].view.time)}</div>
                 </div>
-                <UnitToggle units={unitLabels} selectedUnit={unit.key} onSelect={setUnit} />
-                <i className={`mdi mdi-close ${styles.close}`} onClick={onClose} />
+                {unitToggle}
+                {closeButton}
             </div>
             <div className={styles.legend}>
                 <span className={styles.legendItem}>
@@ -111,10 +115,10 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                 </span>
             </div>
             <div className={styles.sensorCards}>
-                {entries.map(({ sensor, config: sensorConfig, view }) => {
+                {entries.map(({ id, sensor, config: sensorConfig, view }) => {
                     const { observed, forecast, hoursAhead } = readingsAt(sensor, view, sensorConfig.colorBy)
                     return (
-                        <div key={sensor.aqs_code} className={styles.sensorCard}>
+                        <div key={id} className={styles.sensorCard}>
                             <div className={styles.sensorCardHeader}>
                                 <div className={styles.sensorCardName} title={`Managed by ${sensor.agency}`}>
                                     {sensor.site_name}
@@ -131,11 +135,15 @@ export default function SensorChartPanel({ entries, onRemoveSensor, onClose, onP
                                         {forecast && <span className={styles.hoursAhead}>{hoursAhead}h</span>}
                                     </div>
                                 )}
-                                <i
-                                    className={`mdi mdi-close ${styles.close}`}
-                                    onClick={() => onRemoveSensor(sensor.aqs_code)}
+                                <button
+                                    type="button"
+                                    className={styles.close}
+                                    onClick={() => onRemoveSensor(id)}
                                     title="Remove"
-                                />
+                                    aria-label="Remove"
+                                >
+                                    <i className="mdi mdi-close" />
+                                </button>
                             </div>
                             <div className={styles.sensorCardChart}>
                                 <SensorTimeSeries

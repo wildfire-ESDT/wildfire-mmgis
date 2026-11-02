@@ -61,6 +61,16 @@
 }
 
 .unit,
+.selectedUnit,
+.close {
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    margin: 0;
+}
+
+.unit,
 .selectedUnit {
     display: flex;
     align-items: center;
@@ -80,6 +90,7 @@
     display: flex;
     align-items: center;
     height: 20px;
+    padding: 0;
     cursor: pointer;
     color: var(--color-a3);
 }
