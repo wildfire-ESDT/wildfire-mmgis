@@ -88,6 +88,29 @@
             ]
           },
           {
+            "components": [
+              {
+                "field": "drapedOpacity",
+                "name": "Draped Opacity",
+                "description": "How solid draped layers are on the mesh, from 0 to 1, times each layer's own opacity. Below 1 the buildings show through. Default 0.75.",
+                "type": "number",
+                "width": 4,
+                "default": 0.75
+              }
+            ]
+          },
+          {
+            "components": [
+              {
+                "field": "linkedLayers",
+                "name": "Linked Layers",
+                "description": "Layers turned on and off together with this tileset, such as 3D roads and labels.",
+                "type": "layerMultiSelect",
+                "width": 12
+              }
+            ]
+          },
+          {
             "name": "Settings",
             "components": [
               {

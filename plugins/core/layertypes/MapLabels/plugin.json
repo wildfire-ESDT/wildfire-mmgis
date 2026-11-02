@@ -1,0 +1,123 @@
+{
+  "uuid": "d5d54971-c188-49c4-a487-c5d47a5ff877",
+  "id": "core-layertype-maplabels",
+  "name": "MapLabels",
+  "type": "layertype",
+  "typeId": "maplabels",
+  "version": "core",
+  "tier": "core",
+  "overridable": false,
+  "color": "#f5c542",
+  "defaultIcon": "Label",
+  "description": "3D roads and labels: place names, road names and freeway lines from OpenMapTiles vector tiles, drawn upright over terrain and 3D Tiles on the Cesium globe. Globe only.",
+  "capabilities": {
+    "renderers": {
+      "map": false,
+      "globe": { "engines": ["cesium"] }
+    },
+    "map": { "stacking": false, "tracksLoad": false },
+    "time": false
+  },
+  "supportedData": [
+    {
+      "label": "OpenMapTiles vector tiles",
+      "category": "vector-tiles",
+      "standards": ["Mapbox Vector Tiles", "TileJSON", "OpenMapTiles schema"],
+      "formats": ["pbf"],
+      "urlSchemes": ["{url}", "{url}/{z}/{x}/{y}.pbf"],
+      "description": "Vector tiles in the OpenMapTiles schema; the place, transportation_name and transportation layers are used. A TileJSON URL is read at start-up for the current tile URL.",
+      "procurement": "OpenFreeMap (https://tiles.openfreemap.org/planet) is free and needs no key. Any OpenMapTiles-schema tile server works."
+    }
+  ],
+  "config": {
+    "tabs": [
+      {
+        "name": "Core",
+        "rows": [
+          {
+            "name": "Core",
+            "components": [
+              {
+                "field": "type",
+                "name": "Layer Type",
+                "description": "",
+                "type": "dropdown",
+                "optionsFrom": "layerTypes",
+                "width": 2
+              },
+              {
+                "field": "name",
+                "name": "Layer Name",
+                "description": "A display name for the layer.",
+                "type": "textnotrim",
+                "width": 6,
+                "required": true
+              },
+              {
+                "field": "visibility",
+                "name": "Initial Visibility",
+                "description": "Whether the layer is on initially.",
+                "type": "checkbox",
+                "width": 2,
+                "defaultChecked": false
+              }
+            ]
+          },
+          {
+            "components": [
+              {
+                "field": "url",
+                "name": "Vector Tiles URL",
+                "description": "A TileJSON URL, or a {z}/{x}/{y}.pbf URL, for OpenMapTiles-schema vector tiles. Leave empty for OpenFreeMap (https://tiles.openfreemap.org/planet).",
+                "type": "text",
+                "width": 12
+              }
+            ]
+          },
+          {
+            "name": "Show",
+            "components": [
+              {
+                "field": "showPlaceNames",
+                "name": "Place Names",
+                "description": "Cities, towns, suburbs and neighbourhoods; smaller places appear as you zoom in.",
+                "type": "switch",
+                "width": 3,
+                "defaultChecked": true
+              },
+              {
+                "field": "showRoadNames",
+                "name": "Road Names",
+                "description": "Freeway route numbers from mid zoom; street names up close.",
+                "type": "switch",
+                "width": 3,
+                "defaultChecked": true
+              },
+              {
+                "field": "showRoadLines",
+                "name": "Major Road Lines",
+                "description": "Freeways as lines draped on the ground.",
+                "type": "switch",
+                "width": 3,
+                "defaultChecked": true
+              },
+              {
+                "field": "labelFontSize",
+                "name": "Label Size (px)",
+                "description": "Base label size in pixels. Default 14.",
+                "type": "number",
+                "width": 3,
+                "default": 14
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "modules": {
+    "globe": {
+      "cesium": "./globe/cesium"
+    }
+  }
+}
