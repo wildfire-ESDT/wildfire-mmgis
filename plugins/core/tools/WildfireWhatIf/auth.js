@@ -1,9 +1,9 @@
 // Keycloak authentication for the Wildfire What-If tool (Authorization Code
 // flow with PKCE). The user signs in on Keycloak's own page, so this code never
-// sees a password; it only trades a one-time code for tokens. This gates the
-// tool UI only: the token is
-// kept in sessionStorage for reload survival and refreshed before expiry,
-// but is not attached to veloserver or MMGIS requests.
+// sees a password; it only trades a one-time code for tokens. The token is
+// kept in sessionStorage for reload survival and refreshed before expiry. It
+// gates the tool UI and is sent with run history requests, where the MMGIS
+// server verifies it; veloserver requests don't carry it.
 
 import useWhatIfStore from './store'
 import { loadHistory, exitRunView, hideScenario, restoreScenario, clearPerimeter } from './actions'
@@ -15,6 +15,8 @@ const PKCE_KEY = 'ww-kc-pkce'
 // Query params Keycloak appends to the redirect back; stripped from the URL.
 const CALLBACK_PARAMS = ['code', 'state', 'session_state', 'iss', 'error', 'error_description']
 const REFRESH_EARLY_MS = 60000
+// A token sent to the server must have at least this long left, or it's refreshed first.
+const ACCESS_TOKEN_MINIMUM_LIFE_MS = 30000
 
 let refreshTimer = null
 // Bumped on every login/logout/expiry. A token response from an older auth
@@ -140,10 +142,13 @@ function scheduleRefresh(session) {
 }
 
 function refresh(refreshToken) {
-    if (!refreshToken) return expire()
+    if (!refreshToken) {
+        expire()
+        return Promise.resolve()
+    }
     const s = S.getState()
     const gen = authGen
-    fetch(`${tokenEndpoint()}/token`, {
+    return fetch(`${tokenEndpoint()}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
@@ -161,6 +166,19 @@ function refresh(refreshToken) {
         })
 }
 
+// The signed-in user's access token for MMGIS requests made as them, or null
+// when signed out.
+export function freshAccessToken() {
+    const session = readSession()
+    if (!session || !session.access_token) return Promise.resolve(null)
+    if (session.expires_at - Date.now() > ACCESS_TOKEN_MINIMUM_LIFE_MS)
+        return Promise.resolve(session.access_token)
+    return refresh(session.refresh_token).then(() => {
+        const refreshedSession = readSession()
+        return refreshedSession ? refreshedSession.access_token : null
+    })
+}
+
 // Clears auth state plus the previous user's in-memory runs so the next
 // login starts from its own history.
 function signedOutState(authError) {
@@ -168,6 +186,7 @@ function signedOutState(authError) {
         loggedIn: false,
         authUser: null,
         authUserId: null,
+        actionError: null,
         authError,
         authBusy: false,
         jobs: {},

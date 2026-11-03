@@ -1,6 +1,6 @@
 import React from 'react'
 import useWhatIfStore from '../store'
-import { submit } from '../actions'
+import { dismissActionError, submit } from '../actions'
 import ToolController_ from '@basics/ToolController_/ToolController_'
 import { Button, IconButton } from '@design/components'
 import PerimeterSection from './PerimeterSection'
@@ -20,6 +20,7 @@ export default function WhatIfPanel() {
     const hasPerimeter = useWhatIfStore((s) => !!s.perimeterRing)
     const hasWind = useWhatIfStore((s) => !!(s.wind && s.wind.target))
     const fetchingWinds = useWhatIfStore((s) => s.fetchingWinds)
+    const actionError = useWhatIfStore((s) => s.actionError)
     // Setup edits the draft scenario; opening a run swaps in its results
     const viewingId = useWhatIfStore((s) =>
         s.activeJobId && s.jobs[s.activeJobId] ? s.activeJobId : null
@@ -64,6 +65,19 @@ export default function WhatIfPanel() {
                         Log Out
                     </button>
                 </div>
+
+                {actionError && (
+                    <div className="ww-status ww-status-err">
+                        {actionError}{' '}
+                        <button
+                            type="button"
+                            className="ww-link-btn"
+                            onClick={() => dismissActionError()}
+                        >
+                            Dismiss
+                        </button>
+                    </div>
+                )}
 
                 {viewingId ? (
                     <RunResults key={viewingId} id={viewingId} />

@@ -9,23 +9,16 @@ const logger = require("../../../../../API/logger");
 const wr = require("../models/whatif_run");
 const WhatIfRun = wr.WhatIfRun;
 
+// Every route acts as req.whatIfUser, the caller verified from their Keycloak
+// access token (see ../keycloakAccess.js). Another user's run answers as not
+// found, so its existence isn't revealed.
+
 /**
- * Lists run history rows, newest first, scoped to one user.
- * @query user_id *optional* Only rows recorded under this Keycloak `sub`.
- *   Falls back to `username` for legacy callers. Without either, only rows
- *   recorded with no user_id are returned.
+ * Lists the caller's run history rows, newest first.
  */
 router.get("/", function (req, res) {
-  let where;
-  if (req.query.user_id != null && req.query.user_id !== "") {
-    where = { user_id: String(req.query.user_id) };
-  } else if (req.query.username != null && req.query.username !== "") {
-    where = { username: String(req.query.username) };
-  } else {
-    where = { user_id: null };
-  }
   WhatIfRun.findAll({
-    where,
+    where: { user_id: req.whatIfUser.id },
     order: [["created_on", "DESC"]],
   })
     .then((rows) => {
@@ -46,9 +39,9 @@ router.get("/", function (req, res) {
 });
 
 /**
- * Upserts a run history row by scenario_id. Only fields present in the
+ * Upserts one of the caller's runs by scenario_id. Only fields present in the
  * body are updated, so a rename POST of {scenario_id, name} keeps the
- * original payload/endpoint/username.
+ * original payload/endpoint.
  */
 router.post("/", function (req, res) {
   const b = req.body || {};
@@ -61,20 +54,32 @@ router.post("/", function (req, res) {
     return;
   }
 
-  const fields = {};
+  // Owner fields come from the verified caller, never from the body.
+  const fields = { username: req.whatIfUser.username };
   if (b.endpoint !== undefined) fields.endpoint = b.endpoint;
   if (b.name !== undefined) fields.name = b.name;
   if (b.payload !== undefined) fields.payload = b.payload;
   if (b.result !== undefined) fields.result = b.result;
-  if (b.user_id !== undefined) fields.user_id = b.user_id;
-  if (b.username !== undefined) fields.username = b.username;
 
-  WhatIfRun.findOne({ where: { scenario_id: b.scenario_id } })
+  WhatIfRun.findOne({ where: { scenario_id: String(b.scenario_id) } })
     .then((existing) => {
+      if (existing && existing.user_id !== req.whatIfUser.id) return null;
       if (existing) return existing.update(fields);
-      return WhatIfRun.create({ scenario_id: b.scenario_id, ...fields });
+      return WhatIfRun.create({
+        scenario_id: String(b.scenario_id),
+        ...fields,
+        user_id: req.whatIfUser.id,
+      });
     })
     .then((row) => {
+      if (!row) {
+        res.status(404).send({
+          status: "failure",
+          message: "Run not found.",
+          body: {},
+        });
+        return;
+      }
       res.send({
         status: "success",
         message: "Successfully saved run.",
@@ -92,7 +97,7 @@ router.post("/", function (req, res) {
 });
 
 /**
- * Deletes a single run by scenario_id.
+ * Deletes one of the caller's runs by scenario_id.
  */
 router.delete("/:scenario_id", function (req, res) {
   const scenario_id = req.params.scenario_id;
@@ -103,7 +108,7 @@ router.delete("/:scenario_id", function (req, res) {
       body: {},
     });
   }
-  WhatIfRun.destroy({ where: { scenario_id } })
+  WhatIfRun.destroy({ where: { scenario_id, user_id: req.whatIfUser.id } })
     .then((count) => {
       if (count === 0) {
         return res.status(404).send({

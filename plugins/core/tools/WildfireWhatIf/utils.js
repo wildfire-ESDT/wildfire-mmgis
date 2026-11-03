@@ -197,8 +197,11 @@ export function closeRing(ring) {
     return ring
 }
 
+// Unguessable, since a run's id names it in run history requests. getRandomValues
+// works on plain-http sites too, where crypto.randomUUID is missing.
 export function generateId() {
-    return 'wf-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
+    const randomBytes = crypto.getRandomValues(new Uint8Array(16))
+    return 'wf-' + Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 // ─── Fire names ───────────────────────────────────────────────────────────────

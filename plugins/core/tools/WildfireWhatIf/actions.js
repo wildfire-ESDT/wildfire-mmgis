@@ -5,6 +5,7 @@
 import { area, length, polygon, lineString, lineIntersect } from '@turf/turf'
 import useWhatIfStore, { BBOX_BUFFER_KM } from './store'
 import * as map from './map'
+import { freshAccessToken } from './auth'
 import {
     getMap,
     fitVisible,
@@ -49,28 +50,50 @@ let pendingMapFire = null
 // was picked while the tool couldn't hear it.
 let lastMapFire = null
 
+// ─── Action errors ────────────────────────────────────────────────────────────
+
+// Shown at the top of the panel until dismissed or the next action that can fail starts.
+function showActionError(message) {
+    S.setState({ actionError: message })
+}
+
+export function dismissActionError() {
+    if (S.getState().actionError) S.setState({ actionError: null })
+}
+
 // ─── Backend / MMGIS-server requests ──────────────────────────────────────────
 
-function mmgisFetch(path, init) {
+function mmgisFetch(path, init = {}) {
     const root = (window.mmgisglobal && window.mmgisglobal.ROOT_PATH) || ''
     const url = (root ? root + '/' : '') + path.replace(/^\//, '')
     return fetch(url, {
         credentials: 'same-origin',
+        ...init,
         headers: {
             Accept: 'application/json',
-            ...((init && init.headers) || {}),
+            ...(init.headers || {}),
         },
-        ...(init || {}),
+    })
+}
+
+// The WhatIfRuns backend reads who is asking from this token, never from the
+// request, so each user only sees and changes their own runs.
+const ACCESS_TOKEN_HEADER = 'X-WhatIf-Access-Token'
+
+function runHistoryFetch(path, init = {}) {
+    return freshAccessToken().then((accessToken) => {
+        if (!accessToken) throw new Error('Sign in to use run history.')
+        return mmgisFetch(path, {
+            ...init,
+            headers: { ...(init.headers || {}), [ACCESS_TOKEN_HEADER]: accessToken },
+        })
     })
 }
 
 // Run history, persisted per-user in MMGIS Postgres via the WhatIfRuns
-// backend plugin (/api/whatif-runs), keyed by the Keycloak username.
-function fetchJobHistory(userId) {
-    return mmgisFetch(
-        'api/whatif-runs' +
-            (userId ? '?user_id=' + encodeURIComponent(userId) : '')
-    )
+// backend plugin (/api/whatif-runs).
+function fetchJobHistory() {
+    return runHistoryFetch('api/whatif-runs')
         .then((r) => r.json())
         .then((d) => {
             if (!d || d.status !== 'success' || !Array.isArray(d.body)) return {}
@@ -108,7 +131,7 @@ function fetchJobHistory(userId) {
 }
 
 function recordJob(jobId, payload, name, result) {
-    return mmgisFetch('api/whatif-runs', {
+    return runHistoryFetch('api/whatif-runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -117,8 +140,6 @@ function recordJob(jobId, payload, name, result) {
             payload,
             result: result || null,
             name: name || '',
-            user_id: S.getState().authUserId || null,
-            username: S.getState().authUser || null,
         }),
     }).catch(() => {})
 }
@@ -428,6 +449,7 @@ export function clearPerimeter() {
 }
 
 export function uploadPerimeter(file) {
+    dismissActionError()
     const reader = new FileReader()
     reader.onload = function (e) {
         try {
@@ -454,7 +476,7 @@ export function uploadPerimeter(file) {
             const name = pickFireName(props) || file.name.replace(/\.(geo)?json$/i, '')
             setPerimeter(ring, { source: 'uploaded', name })
         } catch (err) {
-            window.alert('Invalid GeoJSON: ' + err.message)
+            showActionError('Invalid GeoJSON: ' + err.message)
         }
     }
     reader.readAsText(file)
@@ -463,9 +485,10 @@ export function uploadPerimeter(file) {
 // ─── Drawing ──────────────────────────────────────────────────────────────────
 
 export function startMapDraw() {
+    dismissActionError()
     const leafletMap = getMap()
     if (!leafletMap) {
-        window.alert('Map not ready yet.')
+        showActionError('Map not ready yet.')
         return
     }
     cancelDrawSessions()
@@ -489,9 +512,10 @@ export function cancelMapDraw() {
 // line stored and sent through the payload alongside the perimeter/wind.
 
 export function startDozerLineDraw() {
+    dismissActionError()
     const leafletMap = getMap()
     if (!leafletMap) {
-        window.alert('Map not ready yet.')
+        showActionError('Map not ready yet.')
         return
     }
     cancelDrawSessions()
@@ -540,10 +564,11 @@ export function cancelWindFetch() {
 }
 
 export function fetchWinds() {
+    dismissActionError()
     const s = S.getState()
     const bbox = bboxLonLat()
     if (!bbox) {
-        window.alert('Draw a fire perimeter first. The wind region is derived from it.')
+        showActionError('Draw a fire perimeter first. The wind region is derived from it.')
         return
     }
     const gen = ++windFetchGen
@@ -784,20 +809,21 @@ function buildPayloadResult(payload) {
 }
 
 export function submit() {
+    dismissActionError()
     const s = S.getState()
     if (!s.perimeterRing) {
-        window.alert('Draw or upload a fire perimeter first.')
+        showActionError('Draw or upload a fire perimeter first.')
         return
     }
     // The name is optional: default to the fire and the time of the run
     const name = (s.runName || '').trim() || `${s.perimeterName || 'Scenario'} · ${fmtRunTime(Date.now())}`
     if (!s.wind) {
-        window.alert('Fetch winds first. The forecast needs a wind field.')
+        showActionError('Fetch winds first. The forecast needs a wind field.')
         return
     }
     const wind = s.wind.target
     if (!wind) {
-        window.alert('No usable wind data. Refetch the latest winds.')
+        showActionError('No usable wind data. Refetch the latest winds.')
         return
     }
     cancelDrawSessions()
@@ -828,7 +854,7 @@ export function submit() {
         result = buildPayloadResult(payload)
     } catch (err) {
         S.setState({ submitting: false })
-        window.alert('Submission failed: ' + err.message)
+        showActionError('Submission failed: ' + err.message)
         return
     }
     const jobId = generateId()
@@ -1011,6 +1037,7 @@ function drawSummaryCard(canvas, job, scale) {
 }
 
 export function downloadSpreadPNG(job) {
+    dismissActionError()
     const leafletMap = getMap()
     if (!leafletMap) return
     const scale = 2
@@ -1019,7 +1046,7 @@ export function downloadSpreadPNG(job) {
     // bars sit over its edges, and the view is centered on what's left.
     const edges = coveredEdges(container)
     const fail = (err) =>
-        window.alert('PNG export failed: ' + ((err && err.message) || 'the map image could not be read'))
+        showActionError('PNG export failed: ' + ((err && err.message) || 'the map image could not be read'))
     import('html2canvas')
         .then(({ default: html2canvas }) =>
             // useCORS without allowTaint: a tainted canvas can't be exported
@@ -1110,7 +1137,7 @@ export function setBboxFromMapFeature(feature) {
 export function loadHistory() {
     const userId = S.getState().authUserId
     if (!userId) return
-    fetchJobHistory(userId).then((reg) => {
+    fetchJobHistory().then((reg) => {
         // Someone else signed in (or out) while this was loading
         if (S.getState().authUserId !== userId) return
         const jobs = { ...S.getState().jobs }
@@ -1131,14 +1158,14 @@ export function loadHistory() {
 }
 
 // Rename a run locally and upsert the name into the DB-backed history
-// (same route WorkflowsTool uses — POST upserts, so this also works for rows
-// this browser never submitted).
+// (POST upserts, so this also works for the user's rows this browser never
+// submitted).
 export function renameRun(id, name) {
     const s = S.getState()
     const job = s.jobs[id]
     if (!job) return
     S.setState({ jobs: { ...s.jobs, [id]: { ...job, name } } })
-    mmgisFetch('api/whatif-runs', {
+    runHistoryFetch('api/whatif-runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario_id: id, name: name || '' }),
@@ -1154,7 +1181,7 @@ export function deleteRun(id) {
     const jobIds = s.jobIds.filter((jid) => jid !== id)
     if (s.activeJobId === id) exitRunView()
     S.setState({ jobs, jobIds })
-    mmgisFetch(`api/whatif-runs/${encodeURIComponent(id)}`, {
+    runHistoryFetch(`api/whatif-runs/${encodeURIComponent(id)}`, {
         method: 'DELETE',
     }).catch(() => {})
 }

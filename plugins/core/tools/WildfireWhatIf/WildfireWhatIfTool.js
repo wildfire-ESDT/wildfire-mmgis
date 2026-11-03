@@ -119,7 +119,7 @@ function interfaceWithMMGIS() {
     const toolPanel = document.getElementById('toolPanel')
     let restoreFrame = null
     if (toolPanel) {
-        toolPanel.innerHTML = ''
+        toolPanel.replaceChildren()
         restoreFrame = hidePanelFrame(toolPanel)
         WildfireWhatIf._root = createRoot(toolPanel)
         WildfireWhatIf._root.render(<WhatIfPanel />)

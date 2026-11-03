@@ -6,9 +6,9 @@ const { sequelize } = require("../../../../../API/connection");
 require("dotenv").config();
 
 // Persisted run history for the WildfireWhatIf tool. Rows are scoped by
-// `user_id` (the Keycloak `sub` claim, a stable per-user UUID); `username`
-// is kept alongside as a human-readable label only. Rows with a null
-// user_id belong to callers that don't send one.
+// `user_id` (the Keycloak `sub` claim of the verified caller, a stable
+// per-user UUID); `username` is kept alongside as a human-readable label only.
+// Rows with a null user_id predate verified callers and are no longer served.
 var WhatIfRun = sequelize.define(
   "whatif_runs",
   {

@@ -1,4 +1,5 @@
 const router = require("./routes/whatifRuns");
+const { requireWhatIfUser } = require("./keycloakAccess");
 const { sequelize } = require("./models/whatif_run");
 const logger = require("../../../../API/logger");
 
@@ -10,6 +11,7 @@ let setup = {
       s.ensureUser(),
       s.checkHeadersCodeInjection,
       s.setContentType,
+      requireWhatIfUser,
       router
     );
   },

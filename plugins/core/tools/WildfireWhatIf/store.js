@@ -18,6 +18,8 @@ const useWhatIfStore = create((set) => ({
     windStale: false, // perimeter moved after wind was fetched
     fetchingWinds: false,
     hrrrError: null,
+    // Why the last action couldn't run, shown at the top of the panel
+    actionError: null,
     // Fuel
     fuel: 'null',
     // Dozer lines — simple "fuel cleared, don't spread over this" barriers
