@@ -14,6 +14,7 @@ import {
 import ToolController_ from '@basics/ToolController_/ToolController_'
 import { restoreSession, isLoginCallback } from './auth'
 import WhatIfPanel from './components/WhatIfPanel'
+import { noteMapFeatureClick } from './demo' // also registers the demo fires' map hooks
 
 const DEFAULT_VELO_URL = 'https://firepanel.ai/veloserver'
 
@@ -43,6 +44,7 @@ const WildfireWhatIf = {
         useWhatIfStore.setState({
             vars,
             veloUrl: vars.veloUrl || DEFAULT_VELO_URL,
+            modelUrl: vars.modelUrl || useWhatIfStore.getState().modelUrl,
             kcUrl: vars.keycloakUrl || useWhatIfStore.getState().kcUrl,
             kcRealm: vars.keycloakRealm || useWhatIfStore.getState().kcRealm,
             kcClientId:
@@ -61,6 +63,7 @@ const WildfireWhatIf = {
             af &&
             af.feature &&
             af.layerName === WildfireWhatIf._wfigsLayerName &&
+            !useWhatIfStore.getState().activeDemo &&
             isNewMapFire(af.feature)
         )
             selectFireFromMap(af.feature)
@@ -68,10 +71,13 @@ const WildfireWhatIf = {
 
     notify: function (type, payload) {
         if (type === 'setActiveFeature' && payload) {
+            noteMapFeatureClick() // the demo's click readout stays out of this click
             if (payload.layerName !== WildfireWhatIf._wfigsLayerName) return
             // Clicks made while drawing belong to the drawing, not a fire pick
             const s = useWhatIfStore.getState()
-            if (s.drawing || s.drawingDozerLine) ignoreMapFire(payload.feature)
+            // A demo fire is open: a fire clicked on the map is someone else's
+            // (MMGIS shows its info); it must not start a new scenario under the demo
+            if (s.activeDemo || s.drawing || s.drawingDozerLine) ignoreMapFire(payload.feature)
             else selectFireFromMap(payload.feature)
         }
     },

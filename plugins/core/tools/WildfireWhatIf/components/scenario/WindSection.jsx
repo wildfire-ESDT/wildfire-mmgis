@@ -1,9 +1,9 @@
 import React, { useState } from 'react'
-import useWhatIfStore from '../store'
-import { fetchWinds, setWind, resetWind } from '../actions'
-import { dirLabel, msToMph, fmtWind } from '../utils'
+import useWhatIfStore from '../../store'
+import { fetchWinds, setWind, resetWind } from '../../actions'
+import { dirLabel, msToMph, fmtWind } from '../../utils'
 import { Button, IconButton, Slider } from '@design/components'
-import SectionLabel from './SectionLabel'
+import SectionLabel from '../common/SectionLabel'
 
 // "HRRR 9:00 AM PDT", plus how old it is when it isn't the current hour.
 function cycleStatus(hrrrRun) {
@@ -25,7 +25,7 @@ function cycleStatus(hrrrRun) {
     return hoursOld > 0 ? `${label} · ${hoursOld} h old` : label
 }
 
-function WindArrow({ deg }) {
+export function WindArrow({ deg }) {
     // Points where the wind blows TO (direction_deg is where it comes FROM)
     return (
         <div className="ww-arrow-wrap">

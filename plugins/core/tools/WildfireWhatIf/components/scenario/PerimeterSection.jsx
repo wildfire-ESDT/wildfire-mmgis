@@ -1,9 +1,9 @@
 import React, { useRef } from 'react'
-import useWhatIfStore from '../store'
-import { startMapDraw, cancelMapDraw, clearPerimeter, uploadPerimeter } from '../actions'
-import { ringAcres, fmtAcres } from '../utils'
+import useWhatIfStore from '../../store'
+import { startMapDraw, cancelMapDraw, clearPerimeter, uploadPerimeter } from '../../actions'
+import { ringAcres, fmtAcres } from '../../utils'
 import { Button, IconButton } from '@design/components'
-import SectionLabel from './SectionLabel'
+import SectionLabel from '../common/SectionLabel'
 
 const SOURCE_LABELS = {
     selected: 'Selected on map',

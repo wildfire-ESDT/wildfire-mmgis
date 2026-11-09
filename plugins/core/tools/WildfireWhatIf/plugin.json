@@ -42,6 +42,18 @@
             {
                 "components": [
                     {
+                        "field": "variables.modelUrl",
+                        "name": "Model Server URL",
+                        "description": "Wildfire model server (adjacent-servers/wildfire-model) serving the demo fires and running what-if forecasts. Default 'wildfire-model' uses MMGIS's custom adjacent-server proxy (ADJACENT_SERVER_CUSTOM_0=[\"true\", \"wildfire-model\", \"localhost\", \"8106\"]). May be absolute, e.g. http://localhost:8106.",
+                        "type": "text",
+                        "width": 12,
+                        "placeholder": "wildfire-model"
+                    }
+                ]
+            },
+            {
+                "components": [
+                    {
                         "field": "variables.keycloakUrl",
                         "name": "Keycloak URL",
                         "description": "Origin of the Keycloak server used to sign in to this tool.",

@@ -1,6 +1,7 @@
-import React from 'react'
-import useWhatIfStore, { PAGE_SIZE } from '../store'
-import { selectRun, deleteRun } from '../actions'
+import React, { useEffect } from 'react'
+import useWhatIfStore, { PAGE_SIZE } from '../../store'
+import { selectRun, deleteRun } from '../../actions'
+import { loadDemos, openDemo } from '../../demo'
 import { Button } from '@design/components'
 
 function normalizeStatus(s) {
@@ -11,6 +12,61 @@ function normalizeStatus(s) {
     if (['running', 'processing'].includes(l)) return 'running'
     if (['queued', 'pending'].includes(l)) return 'queued'
     return l
+}
+
+function fmtDay(iso, withYear) {
+    const d = new Date(String(iso).replace(' ', 'T') + (/[zZ+]/.test(String(iso).slice(10)) ? '' : 'Z'))
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString([], { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}), timeZone: 'UTC' })
+}
+
+function fmtAc(a) {
+    return a == null ? '—' : `${Math.round(a).toLocaleString()} ac`
+}
+
+// The model's six-day forecasts of test fires (from the model server), listed
+// as runs; opening one shows it in the Fire analysis window beside the fire.
+function ModelRuns({ filter }) {
+    const demos = useWhatIfStore((s) => s.demos)
+    const loading = useWhatIfStore((s) => s.demosLoading)
+    const error = useWhatIfStore((s) => s.demosError)
+    useEffect(() => {
+        if (demos === null && !loading && !error) loadDemos()
+    }, [])
+    if (error)
+        return (
+            <div className="ww-status ww-status-err">
+                {error}{' '}
+                <button type="button" className="ww-link-btn" onClick={() => loadDemos()}>
+                    Retry
+                </button>
+            </div>
+        )
+    if (loading)
+        return (
+            <div className="ww-status ww-status-info">
+                <span className="ww-spinner" /> Loading the model's forecasts…
+            </div>
+        )
+    const shown = (demos || []).filter((d) => !filter || String(d.name).toLowerCase().includes(filter))
+    return shown.map((d) => (
+        <div key={d.id} className="ww-job">
+            <div className="ww-job-header" title={`Open the ${d.name} forecast`} onClick={() => openDemo(d.id)}>
+                <span className="ww-job-dot completed" />
+                <span className="ww-job-name">{d.name}</span>
+                <span className="ww-sim-badge sixday">Six-day</span>
+                <span className="ww-job-time">
+                    {fmtDay(d.start_time)} to {fmtDay(d.end_time, true)}
+                </span>
+            </div>
+            {d.start_acres != null && (
+                <div className="ww-job-sub">
+                    {fmtAc(d.start_acres)} at the start · {fmtAc(d.forecast_acres_144h)} forecast · {fmtAc(d.truth_acres_144h)}{' '}
+                    ground truth ({d.observed})
+                </div>
+            )}
+        </div>
+    ))
 }
 
 export default function RunsList() {
@@ -57,11 +113,7 @@ export default function RunsList() {
                 />
             )}
             <div className="ww-jobs-list">
-                {total === 0 && (
-                    <div className="ww-empty">
-                        {f ? 'No runs match the filter.' : 'No runs yet.'}
-                    </div>
-                )}
+                <ModelRuns filter={f} />
                 {pageIds.map((id) => {
                     const job = jobs[id] || { status: 'unknown', name: id }
                     const isActive = activeJobId === id

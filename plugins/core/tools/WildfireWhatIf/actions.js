@@ -273,6 +273,13 @@ export function setPerimeter(ring, opts) {
     fetchWinds()
 }
 
+// Demo fires (demo.js) register how to hide and redraw their map layers, so
+// the tool's open/close handles them without this file importing demo.js.
+let demoHooks = { hide: () => {}, redraw: () => false }
+export function setDemoHooks(hooks) {
+    demoHooks = { ...demoHooks, ...hooks }
+}
+
 // Tool lifecycle: open redraws whatever was showing before it closed; close
 // stops everything that could still draw on the map.
 export function onToolOpen() {
@@ -286,6 +293,7 @@ export function onToolClose() {
     cancelDrawSessions()
     cancelWindFetch()
     map.clearScenarioLayers()
+    demoHooks.hide()
 }
 
 // Redraw the run being viewed, or else the draft. Nothing is drawn while
@@ -293,6 +301,7 @@ export function onToolClose() {
 export function restoreScenario() {
     const s = S.getState()
     if (!s.loggedIn) return
+    if (demoHooks.redraw()) return // a demo fire is open
     if (pendingMapFire) {
         const feature = pendingMapFire
         pendingMapFire = null
@@ -315,6 +324,7 @@ export function restoreScenario() {
 export function hideScenario() {
     cancelDrawSessions()
     map.clearScenarioLayers()
+    demoHooks.hide() // an open demo fire too (signing in again redraws it)
 }
 
 // ─── Setup vs. results view ───────────────────────────────────────────────────
@@ -651,8 +661,8 @@ export function resetWind() {
 export function renderWindVectors() {
     const s = S.getState()
     // A background fetch for the draft must not draw arrows over a run, or on
-    // the map at all while the tool is closed
-    if (!toolOpen || s.activeJobId) return
+    // the map at all while the tool is closed, or under an open demo fire
+    if (!toolOpen || s.activeJobId || s.activeDemo) return
     const w = s.wind
     if (!w || !w.points || w.points.length === 0) {
         map.removeWindVectors()

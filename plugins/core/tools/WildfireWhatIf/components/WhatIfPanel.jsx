@@ -3,15 +3,16 @@ import useWhatIfStore from '../store'
 import { dismissActionError, submit } from '../actions'
 import ToolController_ from '@basics/ToolController_/ToolController_'
 import { Button, IconButton } from '@design/components'
-import PerimeterSection from './PerimeterSection'
-import WindSection from './WindSection'
-import FuelSection from './FuelSection'
-import DozerLinesSection from './DozerLinesSection'
-import SchemaForm from './SchemaForm'
-import RunsList from './RunsList'
-import RunResults from './RunResults'
-import LoginGate from './LoginGate'
-import SectionLabel from './SectionLabel'
+import PerimeterSection from './scenario/PerimeterSection'
+import WindSection from './scenario/WindSection'
+import FuelSection from './scenario/FuelSection'
+import DozerLinesSection from './scenario/DozerLinesSection'
+import SchemaForm from './common/SchemaForm'
+import RunsList from './runs/RunsList'
+import RunResults from './runs/RunResults'
+import LoginGate from './common/LoginGate'
+import FireAnalysisWindow from './forecast/FireAnalysisWindow'
+import SectionLabel from './common/SectionLabel'
 import { logout } from '../auth'
 
 export default function WhatIfPanel() {
@@ -22,9 +23,19 @@ export default function WhatIfPanel() {
     const fetchingWinds = useWhatIfStore((s) => s.fetchingWinds)
     const actionError = useWhatIfStore((s) => s.actionError)
     // Setup edits the draft scenario; opening a run swaps in its results
+    const activeDemo = useWhatIfStore((s) => s.activeDemo)
     const viewingId = useWhatIfStore((s) =>
         s.activeJobId && s.jobs[s.activeJobId] ? s.activeJobId : null
     )
+
+    // A demo fire is open: the Fire analysis window beside it is the whole tool
+    // until "Back to tool"; the panel steps out of the way
+    if (activeDemo)
+        return (
+            <LoginGate>
+                <FireAnalysisWindow key={activeDemo} />
+            </LoginGate>
+        )
 
     return (
         <LoginGate>

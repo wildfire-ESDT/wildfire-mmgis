@@ -1,8 +1,8 @@
 import React from 'react'
-import useWhatIfStore from '../store'
+import useWhatIfStore from '../../store'
 import ToolController_ from '@basics/ToolController_/ToolController_'
 import { IconButton } from '@design/components'
-import { login } from '../auth'
+import { login } from '../../auth'
 
 export default function LoginGate({ children }) {
     const loggedIn = useWhatIfStore((s) => s.loggedIn)

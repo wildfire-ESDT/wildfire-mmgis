@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
-import useWhatIfStore from '../store'
+import useWhatIfStore from '../../store'
 import {
     newScenario,
     renameRun,
     downloadSpreadGeoJSON,
     downloadSpreadPNG,
-} from '../actions'
+} from '../../actions'
 import {
     runStats,
     fmtAcres,
@@ -14,7 +14,7 @@ import {
     fmtWind,
     fmtHrrr,
     simTypeLabel,
-} from '../utils'
+} from '../../utils'
 import { Button } from '@design/components'
 
 function Stat({ label, value, sub }) {

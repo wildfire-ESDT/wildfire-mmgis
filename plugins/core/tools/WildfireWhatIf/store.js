@@ -47,6 +47,46 @@ const useWhatIfStore = create((set) => ({
     kcRealm: 'wildfire',
     kcClientId: 'wildfire-whatif',
 
+    // Demo fires (demo.js): completed model forecasts from the model server,
+    // and what-if runs of the model on them
+    modelUrl: 'wildfire-model', // relative → MMGIS's adjacent-server proxy; may be absolute
+    demos: null, // [{id, name, start_time, end_time, growth_iou_144h, ...}]
+    demoModel: null, // {name, epoch, test_growth_iou_144h}
+    demosLoading: false,
+    demosError: null,
+    activeDemo: null, // id of the open demo fire
+    demoResults: {}, // id -> [model forecast, what-if runs...]
+    demoIdx: 0, // which of the open fire's runs is shown
+    demoStep: 12, // 0 = forecast start, k = +12k hours
+    demoPlaying: false,
+    showObserved: true, // the ground truth's edge on the map
+    demoWind: null, // what-if six-day mean wind {speed_ms, direction_deg}; null = the real wind
+    // The fire's model inputs drawn under the forecast (demo.js)
+    inputCatalogs: {}, // demo id -> [{key, label, group, units, time, ramp | cats+colors, min, max}]
+    visibleInputs: [], // the added input layers shown on the map (any number)
+    addedInputKeys: [], // the added input layers, top of the list first (drawn on top)
+    windEditOpen: false, // the Wind card's Modify is open (the map shows the authored wind)
+    drawersClosed: {}, // the Fire analysis window's closed drawers: forecast | whatif | spot
+    detailsOpen: false, // the fire's incident details shown under its name
+    syncMapTime: false, // MMGIS's own time follows the forecast's step (off: the forecast leaves it alone)
+    toolCollapsed: false, // the Fire analysis window folded to a slim bar
+    sidePanels: { area: false, whatif: false }, // the panels slid out beside the window (both can be open)
+    showForecast: true, // the model's forecast on the map (the Fire analysis window's eye)
+    compareTruth: false, // the Forecast card shows its difference from the ground truth
+    fireOpacity: 0.6, // the forecast fill (see-through like the map's fire perimeters; its edge stays solid)
+    windArrows: false, // the wind as arrows over the map
+    windFlow: false, // the wind as moving streaks (leaflet-velocity) over the map
+    flowLoading: false,
+    inputOpacities: {}, // input layer key -> its opacity (default 0.75)
+    probe: null, // {lat, lon}: the spot clicked on the map, read in the Fire analysis window
+    probeData: null, // {row, col, step, rows: [{group, label, value}]}
+    probeLoading: false,
+    probeError: null,
+    inputLoading: null, // the layer being fetched
+    inputRanges: {}, // layer cache key -> {min, max} of the loaded data
+    demoBusy: false,
+    demoError: null,
+
     set: (patch) => set(patch),
 }))
 

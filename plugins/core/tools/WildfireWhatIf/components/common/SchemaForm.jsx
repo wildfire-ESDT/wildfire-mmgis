@@ -1,6 +1,6 @@
 import React from 'react'
-import useWhatIfStore from '../store'
-import FORM_SECTIONS from '../formConfig'
+import useWhatIfStore from '../../store'
+import FORM_SECTIONS from '../../formConfig'
 import { RadioGroup } from '@design/components'
 
 function clampNumber(f, raw) {

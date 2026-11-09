@@ -711,7 +711,6 @@
     margin-top: 1px;
 }
 
-
 #wildfireTool .ww-kv {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -907,4 +906,2143 @@
 #wildfireTool input::placeholder {
     color: #aab3ba;
     opacity: 1;
+}
+
+/* the forecast grids are drawn cell for cell, not smoothed */
+.leaflet-image-layer.ww-raster {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+#wildfireTool .ww-show-layers {
+    margin-top: 10px;
+}
+
+/* ── The floating fire layers window (outside the tool panel) ── */
+
+.ww-fire-layers {
+    position: fixed;
+    top: 56px;
+    right: 64px;
+    width: 300px;
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
+    z-index: 1600;
+    border-radius: 10px;
+    border: 1px solid var(--color-a1, #3a3e40);
+    background: rgba(var(--color-a-rgb, 29, 31, 32), 0.9);
+    backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px var(--color-shadow, rgba(0, 0, 0, 0.4));
+    color: #f1f3f5;
+    font-size: 12px;
+}
+
+.ww-fire-layers .ww-key-section {
+    padding: 10px 12px;
+}
+
+.ww-fire-layers .ww-key-section + .ww-key-section {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ww-fire-layers .ww-key-section-name {
+    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #e8eaed;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.ww-fire-layers .ww-key-ramp {
+    height: 10px;
+    border-radius: 3px;
+}
+
+.ww-fire-layers .ww-key-ramp-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2px;
+    font-size: 11px;
+    color: #b4bac0;
+}
+
+.ww-fire-layers .ww-key-legend-items,
+.ww-fire-layers .ww-key-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-top: 6px;
+    font-size: 11px;
+}
+
+.ww-fire-layers .ww-key-legend-items > span,
+.ww-fire-layers .ww-key-categories > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.ww-fire-layers .ww-key-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 10px;
+    border-radius: 2px;
+}
+
+.ww-fire-layers .ww-key-swatch.edge {
+    border: 2px solid;
+    box-sizing: border-box;
+}
+
+.ww-fire-layers .ww-key-arrow {
+    width: 12px;
+    font-size: 13px;
+    line-height: 10px;
+    text-align: center;
+}
+
+.ww-fire-layers .ww-key-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.ww-fire-layers .ww-key-name {
+    flex: 1;
+}
+
+.ww-fire-layers .hidden .ww-key-name,
+.ww-fire-layers .ww-key-row.hidden {
+    color: #8a939b;
+}
+
+.ww-fire-layers .ww-key-icon {
+    padding: 0 2px;
+    border: none;
+    background: none;
+    color: #b4bac0;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.ww-fire-layers .ww-key-icon:hover {
+    color: #fff;
+}
+
+.ww-fire-layers .ww-key-layer + .ww-key-layer {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ww-fire-layers .ww-key-layer .ww-key-row {
+    margin-top: 0;
+}
+
+.ww-fire-layers .ww-key-detail {
+    margin: 2px 0 6px;
+    font-size: 11px;
+    color: #9aa3ab;
+}
+
+.ww-fire-layers .ww-key-opacity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: #b4bac0;
+}
+
+.ww-fire-layers .ww-key-footer {
+    padding: 8px 12px 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Dragging (sliders, the map, drawing lines) must not select the panel's or the
+   key's text; text fields still select normally */
+#wildfireTool,
+.ww-fire-layers {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+#wildfireTool input,
+#wildfireTool textarea,
+#wildfireTool pre {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.leaflet-image-layer.ww-raster {
+    -webkit-user-drag: none;
+    user-select: none;
+}
+
+/* ── Fire analysis window: the run shown, the step player, acres at the step ── */
+
+.ww-fire-layers .ww-an-fire {
+    font-size: 15px;
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+.ww-fire-layers .ww-an-clock {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-top: 10px;
+}
+
+.ww-fire-layers .ww-an-lead {
+    font-size: 22px;
+    color: #fff;
+}
+
+.ww-fire-layers .ww-an-when {
+    font-size: 12px;
+    color: #b4bac0;
+}
+
+.ww-fire-layers .ww-an-player {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-top: 4px;
+}
+
+.ww-fire-layers .ww-an-player .ww-key-icon {
+    font-size: 18px;
+    padding: 2px 3px;
+}
+
+.ww-fire-layers .ww-an-player .ww-key-icon:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.ww-fire-layers .ww-an-player .ww-an-play {
+    font-size: 22px;
+    color: #fff;
+}
+
+.ww-fire-layers .ww-an-slider {
+    flex: 1;
+    margin-left: 6px;
+}
+
+.ww-fire-layers .ww-an-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    color: #b4bac0;
+}
+
+.ww-fire-layers .ww-an-value {
+    font-size: 13px;
+    color: #fff;
+    margin-top: 2px;
+    white-space: nowrap;
+}
+
+.ww-fire-layers .ww-an-sub {
+    font-size: 11px;
+    color: #ffb199;
+    white-space: nowrap;
+}
+
+.ww-fire-layers .ww-key-forecast {
+    margin: 4px 0 6px 20px;
+}
+
+/* the spot readout, inside the Fire analysis window */
+.ww-fire-layers .ww-spot-head {
+    margin-top: 0;
+}
+
+.ww-fire-layers .ww-spot-head .ww-key-section-name {
+    margin-bottom: 0;
+}
+
+.ww-fire-layers .ww-spot-group {
+    margin-top: 8px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers .ww-spot-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 1px 0;
+}
+
+.ww-fire-layers .ww-spot-row > span:first-child {
+    color: #b4bac0;
+}
+
+.ww-fire-layers .ww-spot-row > span:last-child {
+    text-align: right;
+}
+
+.ww-fire-layers .ww-spot-hint {
+    margin: 6px 0 0;
+}
+
+/* ── The model's forecasts in the Runs list ── */
+
+#wildfireTool .ww-job-sub {
+    margin: 2px 0 0 14px;
+    font-size: 11px;
+    color: #9aa3ab;
+}
+
+/* ── Fire analysis window: back button, title, tabs ── */
+
+.ww-fire-layers .ww-an-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px 3px 4px;
+    border: 1px solid #5a5e60;
+    border-radius: 4px;
+    background: var(--color-i, #3a3e40);
+    color: #eceff1;
+    font-size: 12px;
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+}
+
+.ww-fire-layers .ww-an-back:hover {
+    background: #4a4e50;
+    color: #fff;
+}
+
+.ww-fire-layers .ww-an-title {
+    padding: 10px 12px 4px;
+}
+
+.ww-fire-layers .ww-an-title .ww-an-fire {
+    margin-bottom: 2px;
+}
+
+.ww-fire-layers .ww-an-error {
+    color: #ffb4a9;
+}
+
+/* the What-if tab wears the tool panel's styles (#wildfireTool) without its box */
+
+.ww-fire-layers #wildfireTool.ww-an-panel {
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    max-height: none;
+    overflow: visible;
+    padding-bottom: 0;
+    font-size: 12px;
+}
+
+.ww-fire-layers #wildfireTool.ww-an-panel button.ww-submit {
+    width: calc(100% - 20px);
+}
+
+#wildfireTool .ww-an-arrows-hint {
+    text-align: left;
+    margin: 4px 0 0;
+}
+
+/* ── Fire analysis window: one view ── */
+
+.ww-fire-layers .ww-an-header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr; /* the heading sits in the middle whatever the Back button's width */
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-a1, #3a3e40);
+}
+
+.ww-fire-layers .ww-an-header .ww-an-back {
+    justify-self: start;
+}
+
+.ww-fire-layers .ww-an-heading {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #fff;
+}
+
+.ww-fire-layers .ww-an-title {
+    padding: 10px 12px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ww-fire-layers .ww-an-title .ww-key-detail {
+    margin-bottom: 0;
+    line-height: 1.45;
+}
+
+.ww-fire-layers .ww-an-layers {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ww-fire-layers .ww-an-add {
+    margin-top: 10px;
+}
+
+.ww-fire-layers .ww-an-whatif {
+    padding: 10px 12px 12px;
+}
+
+.ww-fire-layers .ww-an-whatif #wildfireTool.ww-an-panel > * {
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.ww-fire-layers .ww-an-whatif #wildfireTool.ww-an-panel button.ww-submit {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+/* ── Fire analysis window: drawers (cards that open and close from their heading) ── */
+
+.ww-fire-layers .ww-drawer {
+    margin: 8px 10px 0;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    overflow: hidden;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.ww-fire-layers .ww-drawer.open {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.ww-fire-layers .ww-drawer:last-child {
+    margin-bottom: 10px;
+}
+
+.ww-fire-layers .ww-drawer-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-right: 8px;
+}
+
+.ww-fire-layers .ww-drawer-toggle {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: none;
+    background: none;
+    color: #8a939b;
+    text-align: left;
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.ww-fire-layers .ww-drawer-toggle:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #d5dadf;
+}
+
+.ww-fire-layers .ww-drawer.open .ww-drawer-toggle {
+    color: #fff;
+}
+
+.ww-fire-layers .ww-drawer-icon {
+    font-size: 17px;
+    line-height: 1;
+}
+
+.ww-fire-layers .ww-drawer.open .ww-drawer-icon {
+    color: #f97316; /* the fire color: this part is open */
+}
+
+.ww-fire-layers .ww-drawer-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ww-fire-layers .ww-drawer-summary {
+    margin-left: auto;
+    font-size: 11px;
+    color: #9aa3ab;
+    white-space: nowrap;
+}
+
+.ww-fire-layers .ww-drawer-body {
+    padding: 4px 12px 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ww-fire-layers .ww-drawer-body > .ww-key-detail:first-child,
+.ww-fire-layers .ww-drawer-body > :first-child {
+    margin-top: 8px;
+}
+
+.ww-fire-layers .ww-drawer .ww-an-whatif {
+    padding: 0;
+}
+
+.ww-fire-layers .ww-an-key {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ww-fire-layers .ww-an-subhead {
+    margin: 14px 0 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9aa3ab;
+}
+
+/* ── Fire analysis window: the fire's header ── */
+
+.ww-fire-layers .ww-an-title {
+    padding: 12px 12px 10px;
+    background: linear-gradient(180deg, rgba(249, 115, 22, 0.12), rgba(249, 115, 22, 0) 85%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ww-fire-layers .ww-an-fire-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ww-fire-layers .ww-an-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 60%, #f97316, #b91c1c);
+    box-shadow: 0 0 12px rgba(249, 115, 22, 0.45);
+    color: #fff;
+    font-size: 19px;
+}
+
+.ww-fire-layers .ww-an-fire-text {
+    min-width: 0;
+}
+
+.ww-fire-layers .ww-an-title .ww-an-fire {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.2;
+}
+
+.ww-fire-layers .ww-an-where {
+    margin-top: 2px;
+    font-size: 12px;
+    color: #c4cad0;
+}
+
+.ww-fire-layers .ww-an-incident {
+    display: inline-block;
+    margin-top: 3px;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.08);
+    font-family: monospace;
+    font-size: 11px;
+    color: #d5dadf;
+}
+
+.ww-fire-layers .ww-an-chips {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+    margin-top: 10px;
+}
+
+.ww-fire-layers .ww-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 11px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.05);
+    font-size: 10.5px;
+    color: #d5dadf;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.ww-fire-layers .ww-chip .mdi {
+    font-size: 13px;
+    color: #9aa3ab;
+}
+
+.ww-fire-layers .ww-chip-fire {
+    border-color: rgba(249, 115, 22, 0.45);
+    background: rgba(249, 115, 22, 0.12);
+    color: #ffd2b3;
+}
+
+.ww-fire-layers .ww-chip-fire .mdi {
+    color: #fb923c;
+}
+
+.ww-fire-layers .ww-chip-ok {
+    border-color: rgba(102, 187, 106, 0.45);
+    background: rgba(102, 187, 106, 0.12);
+    color: #cdeccf;
+}
+
+.ww-fire-layers .ww-chip-ok .mdi {
+    color: #81c784;
+}
+
+.ww-fire-layers .ww-an-forecast-line {
+    margin-top: 10px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #9aa3ab;
+}
+
+.ww-fire-layers .ww-an-forecast-line strong {
+    color: #e8eaed;
+    font-weight: 500;
+}
+
+.ww-fire-layers .ww-an-truth-src {
+    color: #67e8f9;
+}
+
+/* ── Fire analysis window: forecast and ground truth cards, the wind strip ── */
+
+.ww-fire-layers .ww-an-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.ww-fire-layers .ww-an-card {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: 8px 10px 9px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top-width: 3px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.ww-fire-layers .ww-an-card-fire {
+    border-top-color: #f97316;
+    background: linear-gradient(180deg, rgba(249, 115, 22, 0.1), rgba(255, 255, 255, 0.03));
+}
+
+.ww-fire-layers .ww-an-card-truth {
+    border-top-color: #22d3ee;
+    background: linear-gradient(180deg, rgba(34, 211, 238, 0.09), rgba(255, 255, 255, 0.03));
+}
+
+.ww-fire-layers .ww-an-card .ww-an-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #c4cad0;
+    white-space: nowrap;
+}
+
+.ww-fire-layers .ww-an-card-fire .ww-an-label .mdi {
+    color: #fb923c;
+    font-size: 13px;
+}
+
+.ww-fire-layers .ww-an-card-truth .ww-an-label .mdi {
+    color: #22d3ee;
+    font-size: 13px;
+}
+
+.ww-fire-layers .ww-an-card .ww-an-value {
+    margin-top: 2px;
+    font-size: 18px;
+    font-weight: 500;
+    color: #fff;
+    white-space: nowrap;
+}
+
+.ww-fire-layers .ww-an-card .ww-an-sub {
+    font-size: 11px;
+    color: #b4bac0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ww-fire-layers .ww-an-card-fire .ww-an-sub {
+    color: #fdba74;
+}
+
+.ww-fire-layers .ww-an-card-truth .ww-an-sub {
+    color: #a5f3fc;
+}
+
+.ww-fire-layers .ww-an-vs {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 1px 6px;
+    border-radius: 9px;
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+.ww-fire-layers .ww-an-vs.over {
+    background: rgba(249, 115, 22, 0.18);
+    color: #fdba74;
+}
+
+.ww-fire-layers .ww-an-vs.under {
+    background: rgba(96, 165, 250, 0.18);
+    color: #bfdbfe;
+}
+
+.ww-fire-layers .ww-an-wind {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(90deg, rgba(96, 165, 250, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.ww-fire-layers .ww-an-wind-arrow {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(96, 165, 250, 0.2);
+    color: #93c5fd;
+    font-size: 17px;
+}
+
+.ww-fire-layers .ww-an-wind-arrow .mdi {
+    display: inline-block;
+    transition: transform 0.4s ease;
+}
+
+.ww-fire-layers .ww-an-wind-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: #c4cad0;
+}
+
+.ww-fire-layers .ww-an-wind-text strong {
+    color: #fff;
+    font-weight: 600;
+}
+
+.ww-fire-layers .ww-an-wind-when {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8a939b;
+    white-space: nowrap;
+}
+
+.ww-fire-layers .ww-an-compare {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #b4bac0;
+    cursor: pointer;
+}
+
+.ww-fire-layers .ww-an-compare input {
+    margin: 0;
+}
+
+/* ── Area conditions: the card that slides the panel out, and the panel ── */
+
+.ww-fire-layers button.ww-area-toggle {
+    display: block;
+    width: calc(100% - 20px);
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ww-fire-layers button.ww-area-toggle .ww-drawer-toggle {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.ww-fire-layers button.ww-area-toggle.open .ww-drawer-toggle {
+    color: #fff;
+}
+
+.ww-fire-layers .ww-area-chevron {
+    margin-left: 6px;
+    font-size: 16px;
+    color: #9aa3ab;
+}
+
+.ww-fire-layers button.ww-area-toggle.open .ww-area-chevron {
+    color: var(--color-mmgis, #08aeea);
+}
+
+.ww-fire-layers.ww-area-panel {
+    animation: ww-slide-from-left 0.22s ease-out;
+}
+
+.ww-fire-layers.ww-area-panel.from-right {
+    animation-name: ww-slide-from-right;
+}
+
+@keyframes ww-slide-from-left {
+    from {
+        opacity: 0;
+        transform: translateX(-18px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes ww-slide-from-right {
+    from {
+        opacity: 0;
+        transform: translateX(18px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.ww-fire-layers .ww-area-close {
+    justify-self: end;
+}
+
+.ww-fire-layers.ww-area-panel .ww-drawer {
+    margin: 0 10px 10px;
+}
+
+/* ── Consistency with the tool panel (#wildfireTool): the same box, font, card and accent ──
+   The Fire analysis window and the Area conditions panel wear the panel's surface (var(--color-k),
+   var(--color-a1) border, its shadow, the app font at 13 px), its 3 px card corners and its
+   yellow accent (var(--color-h), the color of the panel's section labels); fire orange is kept
+   only for what is the fire (the badge, the forecast card, the forecast colors). */
+
+.ww-fire-layers {
+    background: var(--color-k, #1d1f20);
+    border: 1px solid var(--color-a1, #3a3e40);
+    box-shadow: inset 2px 0px 10px 0px rgba(0, 0, 0, 0.2), 0 8px 32px var(--color-shadow, rgba(0, 0, 0, 0.4));
+    backdrop-filter: none;
+    font-family: inherit;
+    font-size: 13px;
+}
+
+.ww-fire-layers .ww-drawer,
+.ww-fire-layers button.ww-area-toggle {
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ww-fire-layers .ww-drawer.open {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 221, 92, 0.25);
+}
+
+.ww-fire-layers .ww-drawer.open .ww-drawer-icon,
+.ww-fire-layers button.ww-area-toggle.open .ww-drawer-icon {
+    color: var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers button.ww-area-toggle.open {
+    border-color: rgba(255, 221, 92, 0.25);
+}
+
+.ww-fire-layers button.ww-area-toggle.open .ww-area-chevron {
+    color: var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers .ww-drawer-title {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+}
+
+.ww-fire-layers .ww-an-subhead,
+.ww-fire-layers .ww-key-section-name {
+    color: var(--color-h, #ffdd5c);
+    letter-spacing: 0.06em;
+}
+
+.ww-fire-layers .ww-an-card,
+.ww-fire-layers .ww-an-wind {
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ww-fire-layers .ww-an-card {
+    border-top-width: 2px;
+}
+
+.ww-fire-layers .ww-an-card-fire {
+    border-top-color: #f97316;
+}
+
+.ww-fire-layers .ww-an-card-truth {
+    border-top-color: #22d3ee;
+}
+
+.ww-fire-layers .ww-an-card .ww-an-label {
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    color: #cfd5da;
+}
+
+.ww-fire-layers .ww-an-card .ww-an-value {
+    font-size: 16px;
+}
+
+.ww-fire-layers .ww-chip {
+    border-radius: 3px;
+}
+
+.ww-fire-layers .ww-an-title {
+    background: linear-gradient(180deg, rgba(249, 115, 22, 0.08), rgba(249, 115, 22, 0) 80%);
+}
+
+.ww-fire-layers .ww-an-back {
+    border-radius: 3px;
+}
+
+/* ── Fire analysis window: the forecast (always shown) and the two panel buttons ── */
+
+.ww-fire-layers .ww-an-forecast {
+    padding-top: 10px;
+}
+
+.ww-fire-layers .ww-an-panel-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 0 12px 12px;
+}
+
+.ww-fire-layers .ww-an-panel-button {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    padding: 7px 8px;
+    border-radius: 3px;
+    border: 1px solid #5a5e60;
+    background: var(--color-i, #3a3e40);
+    color: #eceff1;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.ww-fire-layers .ww-an-panel-button:hover {
+    background: #4a4e50;
+    border-color: #6a6e70;
+}
+
+.ww-fire-layers .ww-an-panel-button.open {
+    border-color: var(--color-h, #ffdd5c);
+    background: rgba(255, 221, 92, 0.1);
+}
+
+.ww-fire-layers .ww-an-panel-button > .mdi:first-child {
+    font-size: 17px;
+    color: #c4cad0;
+}
+
+.ww-fire-layers .ww-an-panel-button.open > .mdi:first-child {
+    color: var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers .ww-an-panel-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+}
+
+.ww-fire-layers .ww-an-panel-label {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ww-fire-layers .ww-an-panel-note {
+    font-size: 10.5px;
+    color: #9aa3ab;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ww-fire-layers .ww-an-panel-chevron {
+    font-size: 16px;
+    color: #9aa3ab;
+}
+
+.ww-fire-layers .ww-an-panel-button.open .ww-an-panel-chevron {
+    color: var(--color-h, #ffdd5c);
+}
+
+/* ── Area conditions: Add layer on top, then the draggable layers ── */
+
+.ww-fire-layers .ww-an-add {
+    margin-top: 6px;
+}
+
+.ww-fire-layers .ww-drag-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    border-top: 2px solid transparent;
+    border-bottom: 2px solid transparent;
+}
+
+.ww-fire-layers .ww-drag-row + .ww-drag-row {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ww-fire-layers .ww-drag-row.dragging {
+    opacity: 0.4;
+}
+
+.ww-fire-layers .ww-drag-row.over-above {
+    border-top: 2px solid var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers .ww-drag-row.over-below {
+    border-bottom: 2px solid var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers .ww-drag-handle {
+    flex-shrink: 0;
+    padding: 1px 0;
+    color: #8a939b;
+    font-size: 16px;
+    line-height: 1;
+    cursor: grab;
+}
+
+.ww-fire-layers .ww-drag-handle:hover {
+    color: #fff;
+}
+
+.ww-fire-layers .ww-drag-handle:active {
+    cursor: grabbing;
+}
+
+.ww-fire-layers .ww-drag-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.ww-fire-layers .ww-an-layers .ww-key-layer + .ww-key-layer {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.ww-fire-layers .ww-an-keysection {
+    padding-top: 0;
+}
+
+.ww-fire-layers .ww-an-keysection .ww-an-key {
+    margin-top: 0;
+}
+
+.ww-fire-layers .ww-an-panel-buttons {
+    padding-bottom: 10px;
+}
+
+/* ── Slim window: the tool's name, the fire in one line (details fold out), the stepper first ── */
+
+.ww-fire-layers:not(.ww-area-panel) {
+    width: 280px;
+}
+
+.ww-fire-layers .ww-an-header-main {
+    padding: 8px 10px;
+}
+
+.ww-fire-layers .ww-an-header-main .ww-an-heading {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
+.ww-fire-layers .ww-an-back-icon {
+    padding: 2px 5px;
+    font-size: 15px;
+    line-height: 1;
+}
+
+.ww-fire-layers .ww-an-title {
+    padding: 0;
+}
+
+.ww-fire-layers button.ww-an-fire-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 9px 12px;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ww-fire-layers button.ww-an-fire-row:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.ww-fire-layers .ww-an-badge {
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+}
+
+.ww-fire-layers .ww-an-fire-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.ww-fire-layers .ww-an-title .ww-an-fire {
+    font-size: 15px;
+}
+
+.ww-fire-layers .ww-an-where {
+    font-size: 11px;
+}
+
+.ww-fire-layers .ww-an-details-chevron {
+    font-size: 18px;
+    color: #9aa3ab;
+}
+
+.ww-fire-layers .ww-an-title.open .ww-an-details-chevron {
+    color: var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers .ww-an-details {
+    padding: 0 12px 10px;
+}
+
+.ww-fire-layers .ww-an-details .ww-an-incident {
+    margin-top: 0;
+}
+
+/* the stepper */
+
+.ww-fire-layers .ww-hero {
+    padding: 12px 12px 6px;
+}
+
+.ww-fire-layers .ww-hero-run {
+    margin-bottom: 10px;
+}
+
+.ww-fire-layers .ww-hero-time {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.ww-fire-layers .ww-hero-lead {
+    font-size: 30px;
+    font-weight: 300;
+    color: #fff;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.ww-fire-layers .ww-hero-when {
+    margin-top: 2px;
+    font-size: 12px;
+    color: #b4bac0;
+}
+
+.ww-fire-layers .ww-hero-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 10px 0 6px;
+}
+
+.ww-fire-layers .ww-hero-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: #c4cad0;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.ww-fire-layers .ww-hero-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+.ww-fire-layers .ww-hero-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.ww-fire-layers .ww-hero-play {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    margin: 0 4px;
+    border: none;
+    border-radius: 50%;
+    background: #0277bd;
+    box-shadow: 0 2px 10px rgba(2, 119, 189, 0.45);
+    color: #fff;
+    font-size: 26px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.ww-fire-layers .ww-hero-play:hover {
+    background: #0288d1;
+}
+
+.ww-fire-layers .ww-hero-track {
+    padding: 0 2px;
+}
+
+.ww-fire-layers .ww-hero-ramp {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 2px;
+    margin-top: 6px;
+}
+
+.ww-fire-layers .ww-hero-ramp span {
+    height: 5px;
+    border-radius: 1px;
+    opacity: 0.3;
+    transition: opacity 0.2s ease;
+}
+
+.ww-fire-layers .ww-hero-ramp span.on {
+    opacity: 1;
+}
+
+.ww-fire-layers .ww-hero-ticks {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3px;
+    font-size: 10px;
+    color: #8a939b;
+}
+
+/* the three slim lines */
+
+.ww-fire-layers .ww-hero-lines {
+    margin-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-top: 6px;
+}
+
+.ww-fire-layers .ww-hero-line {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 3px 0;
+    font-size: 12px;
+}
+
+.ww-fire-layers .ww-hero-line .mdi {
+    width: 16px;
+    text-align: center;
+    font-size: 14px;
+    align-self: center;
+    display: inline-block;
+}
+
+.ww-fire-layers .ww-hero-line.fire .mdi {
+    color: #fb923c;
+}
+
+.ww-fire-layers .ww-hero-line.truth .mdi {
+    color: #22d3ee;
+}
+
+.ww-fire-layers .ww-hero-line.wind .mdi {
+    color: #93c5fd;
+    transition: transform 0.4s ease;
+}
+
+.ww-fire-layers .ww-hero-line-label {
+    color: #b4bac0;
+    min-width: 78px;
+}
+
+.ww-fire-layers .ww-hero-line strong {
+    color: #fff;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.ww-fire-layers .ww-hero-grow {
+    font-size: 11px;
+    color: #9aa3ab;
+}
+
+.ww-fire-layers .ww-hero-line.fire .ww-hero-grow {
+    color: #fdba74;
+}
+
+.ww-fire-layers .ww-hero-line.truth .ww-hero-grow {
+    color: #a5f3fc;
+}
+
+.ww-fire-layers .ww-hero-line .ww-an-vs {
+    margin: 0 0 0 auto;
+}
+
+.ww-fire-layers .ww-an-header-main {
+    grid-template-columns: 28px 1fr 28px; /* the name centred between the Back arrow and an equal spacer */
+    gap: 6px;
+}
+
+.ww-fire-layers .ww-an-header-main .ww-an-heading {
+    font-size: 10.5px;
+    letter-spacing: 0.04em;
+    text-align: center;
+    white-space: normal;
+    line-height: 1.25;
+}
+
+.ww-fire-layers .ww-an-panel-button {
+    gap: 5px;
+    padding: 6px 7px;
+}
+
+.ww-fire-layers .ww-an-panel-button > .mdi:first-child {
+    font-size: 15px;
+}
+
+.ww-fire-layers .ww-an-panel-label {
+    font-size: 11.5px;
+    white-space: normal;
+}
+
+/* ── The forecast timeline: 13 markers on a line coloured by each step's burn color ── */
+
+.ww-fire-layers .ww-hero-time {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    text-align: left;
+}
+
+.ww-fire-layers .ww-hero-lead {
+    font-size: 22px;
+    font-weight: 400;
+}
+
+.ww-fire-layers .ww-tl {
+    margin-top: 10px;
+}
+
+.ww-fire-layers .ww-tl-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.ww-fire-layers .ww-tl-play {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin-right: 2px;
+    border-radius: 3px;
+    border: 1px solid #0288d1;
+    background: #0277bd;
+    color: #fff;
+    font-size: 17px;
+    cursor: pointer;
+}
+
+.ww-fire-layers .ww-tl-play:hover {
+    background: #0288d1;
+}
+
+.ww-fire-layers .ww-tl-step {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #c4cad0;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.ww-fire-layers .ww-tl-step:hover:not(:disabled) {
+    color: #fff;
+}
+
+.ww-fire-layers .ww-tl-step:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.ww-fire-layers .ww-tl-track {
+    position: relative;
+    flex: 1;
+    height: 26px;
+    margin: 0 6px;
+}
+
+.ww-fire-layers .ww-tl-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 11px;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    height: 4px;
+}
+
+.ww-fire-layers .ww-tl-line span {
+    opacity: 0.22;
+    transition: opacity 0.2s ease;
+}
+
+.ww-fire-layers .ww-tl-line span.on {
+    opacity: 1;
+}
+
+.ww-fire-layers .ww-tl-mark {
+    position: absolute;
+    top: 13px;
+    width: 9px;
+    height: 9px;
+    margin: -4.5px 0 0 -4.5px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1.5px solid #6a6e70;
+    background: var(--color-k, #1d1f20);
+    cursor: pointer;
+    transition: transform 0.15s ease;
+}
+
+.ww-fire-layers .ww-tl-mark:hover {
+    transform: scale(1.35);
+    border-color: #fff;
+}
+
+.ww-fire-layers .ww-tl-mark.past {
+    border-color: transparent;
+}
+
+.ww-fire-layers .ww-tl-mark.now {
+    width: 15px;
+    height: 15px;
+    margin: -7.5px 0 0 -7.5px;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15);
+}
+
+.ww-fire-layers .ww-tl-days {
+    display: flex;
+    justify-content: space-between;
+    margin: 2px 26px 0 54px;
+    font-size: 10px;
+    color: #8a939b;
+}
+
+/* ── Forecast / Ground truth / Wind side by side ── */
+
+.ww-fire-layers .ww-trio {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ww-fire-layers .ww-trio-cell {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 0 6px;
+}
+
+.ww-fire-layers .ww-trio-cell + .ww-trio-cell {
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ww-fire-layers .ww-trio-cell:first-child {
+    padding-left: 0;
+}
+
+.ww-fire-layers .ww-trio-label {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #b4bac0;
+    white-space: nowrap;
+}
+
+.ww-fire-layers .ww-trio-label .mdi {
+    display: inline-block;
+    font-size: 12px;
+    transition: transform 0.4s ease;
+}
+
+.ww-fire-layers .ww-trio-cell.fire .mdi {
+    color: #fb923c;
+}
+
+.ww-fire-layers .ww-trio-cell.truth .mdi {
+    color: #22d3ee;
+}
+
+.ww-fire-layers .ww-trio-cell.wind .mdi {
+    color: #93c5fd;
+}
+
+.ww-fire-layers .ww-trio-cell strong {
+    margin-top: 2px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.ww-fire-layers .ww-trio-sub {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10.5px;
+    color: #9aa3ab;
+    white-space: nowrap;
+}
+
+.ww-fire-layers .ww-trio-cell.fire .ww-trio-sub {
+    color: #fdba74;
+}
+
+.ww-fire-layers .ww-trio-cell.truth .ww-trio-sub {
+    color: #a5f3fc;
+}
+
+.ww-fire-layers .ww-trio .ww-an-vs {
+    margin: 0;
+    padding: 0 4px;
+}
+
+/* ── The side column: Area conditions above What-if ── */
+
+.ww-side-column {
+    position: fixed;
+    z-index: 1600;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+}
+
+.ww-side-column .ww-fire-layers.ww-area-panel {
+    position: static;
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    flex-shrink: 0;
+}
+
+.ww-fire-layers .ww-hero-time .ww-hero-when {
+    flex: 1;
+    margin-left: 10px;
+}
+
+.ww-fire-layers .ww-sync-time {
+    padding: 0 2px;
+    border: none;
+    background: none;
+    color: #8a939b;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.ww-fire-layers .ww-sync-time:hover {
+    color: #fff;
+}
+
+.ww-fire-layers .ww-sync-time.on {
+    color: var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers .ww-trio {
+    grid-template-columns: 1fr 1.15fr 0.85fr;
+}
+
+.ww-fire-layers .ww-trio-label {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── The timeline as one solid bar ── */
+
+.ww-fire-layers .ww-tl-bar {
+    position: relative;
+    flex: 1;
+    height: 24px;
+    margin: 0 8px;
+    cursor: pointer;
+    touch-action: none;
+}
+
+.ww-fire-layers .ww-tl-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 9px;
+    height: 6px;
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    border-radius: 3px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.ww-fire-layers .ww-tl-fill span {
+    opacity: 0.18;
+    transition: opacity 0.2s ease;
+}
+
+.ww-fire-layers .ww-tl-fill span.on {
+    opacity: 1;
+}
+
+.ww-fire-layers .ww-tl-handle {
+    position: absolute;
+    top: 12px;
+    width: 14px;
+    height: 14px;
+    margin: -7px 0 0 -7px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2px solid rgba(0, 0, 0, 0.35);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+    transition: left 0.15s ease;
+    pointer-events: none;
+}
+
+.ww-fire-layers .ww-tl-bar:hover .ww-tl-handle {
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.15), 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.ww-fire-layers .ww-tl-days {
+    margin: 2px 28px 0 56px;
+}
+
+/* ── Forecast and Ground truth side by side ── */
+
+.ww-fire-layers .ww-trio.ww-duo {
+    grid-template-columns: 1fr 1fr;
+}
+
+/* ── Runs, in the main window ── */
+
+.ww-fire-layers .ww-runs {
+    padding: 0 12px 10px;
+}
+
+.ww-fire-layers .ww-runs-head {
+    margin-bottom: 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers .ww-run {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 6px;
+    border-left: 2px solid transparent;
+    border-radius: 0 3px 3px 0;
+    cursor: pointer;
+    font-size: 12px;
+    color: #cfd5da;
+}
+
+.ww-fire-layers .ww-run:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff;
+}
+
+.ww-fire-layers .ww-run.active {
+    border-left-color: var(--color-mmgis, #08aeea);
+    background: rgba(8, 174, 234, 0.08);
+    color: #fff;
+}
+
+.ww-fire-layers .ww-run > .mdi {
+    font-size: 14px;
+    color: #9aa3ab;
+}
+
+.ww-fire-layers .ww-run.active > .mdi {
+    color: #fb923c;
+}
+
+.ww-fire-layers .ww-run-name {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ww-fire-layers .ww-run .ww-key-icon {
+    font-size: 13px;
+    opacity: 0;
+}
+
+.ww-fire-layers .ww-run:hover .ww-key-icon {
+    opacity: 1;
+}
+
+/* ── Docked: the side column joins the window into one tool ── */
+
+.ww-side-column {
+    gap: 0;
+}
+
+.ww-side-column .ww-fire-layers.ww-area-panel {
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.ww-side-column .ww-fire-layers.ww-area-panel + .ww-fire-layers.ww-area-panel {
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ww-side-column.docked-right .ww-fire-layers.ww-area-panel {
+    border-left: none;
+}
+
+.ww-side-column.docked-right .ww-fire-layers.ww-area-panel:first-child {
+    border-top-right-radius: 10px;
+}
+
+.ww-side-column.docked-right .ww-fire-layers.ww-area-panel:last-child {
+    border-bottom-right-radius: 10px;
+}
+
+.ww-side-column.docked-left .ww-fire-layers.ww-area-panel {
+    border-right: none;
+}
+
+.ww-side-column.docked-left .ww-fire-layers.ww-area-panel:first-child {
+    border-top-left-radius: 10px;
+}
+
+.ww-side-column.docked-left .ww-fire-layers.ww-area-panel:last-child {
+    border-bottom-left-radius: 10px;
+}
+
+.ww-side-column {
+    box-shadow: 0 8px 32px var(--color-shadow, rgba(0, 0, 0, 0.4));
+    border-radius: 0 10px 10px 0;
+}
+
+.ww-fire-layers.has-side {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.ww-side-column .ww-fire-layers.ww-area-panel {
+    animation: none;
+}
+
+.ww-side-column {
+    animation: ww-slide-from-left 0.2s ease-out;
+}
+
+/* ── The timeline bar: the legend's ramp, the part not yet reached dimmed ── */
+
+.ww-fire-layers .ww-tl-fill {
+    display: none;
+}
+
+.ww-fire-layers .ww-tl-ramp {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 7px;
+    height: 10px;
+    border-radius: 2px;
+    transition: clip-path 0.15s ease;
+}
+
+.ww-fire-layers .ww-tl-ramp.dim {
+    opacity: 0.2;
+}
+
+.ww-fire-layers .ww-tl-handle {
+    width: 6px;
+    height: 18px;
+    margin: -9px 0 0 -3px;
+    border-radius: 2px;
+}
+
+/* ── Incident details: organised rows ── */
+
+.ww-fire-layers .ww-meta-head {
+    margin: 10px 0 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-h, #ffdd5c);
+    border-bottom: 1px solid rgba(255, 221, 92, 0.25);
+    padding-bottom: 2px;
+}
+
+.ww-fire-layers .ww-meta-head:first-child {
+    margin-top: 2px;
+}
+
+.ww-fire-layers dl.ww-meta {
+    display: grid;
+    grid-template-columns: 82px 1fr;
+    gap: 4px 8px;
+    margin: 0;
+    font-size: 12px;
+}
+
+.ww-fire-layers dl.ww-meta dt {
+    color: #9aa3ab;
+}
+
+.ww-fire-layers dl.ww-meta dd {
+    margin: 0;
+    color: #f1f3f5;
+    min-width: 0;
+}
+
+.ww-fire-layers dl.ww-meta dd.mono {
+    font-family: monospace;
+    font-size: 11.5px;
+}
+
+.ww-fire-layers .ww-meta-sub {
+    display: block;
+    font-size: 11px;
+    color: #9aa3ab;
+}
+
+/* ── Runs in the window: the tool panel's own rows (status dot, name, badge) ── */
+
+.ww-fire-layers .ww-runs .ww-job {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 2px solid transparent;
+    padding: 6px 4px;
+    cursor: pointer;
+}
+
+.ww-fire-layers .ww-runs .ww-job:last-child {
+    border-bottom: none;
+}
+
+.ww-fire-layers .ww-runs .ww-job.active {
+    border-left-color: var(--color-mmgis, #08aeea);
+    background: rgba(8, 174, 234, 0.07);
+}
+
+.ww-fire-layers .ww-job-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #f1f3f5;
+}
+
+.ww-fire-layers .ww-job-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #b4bac0;
+}
+
+.ww-fire-layers .ww-job-dot.completed {
+    background: #66bb6a;
+}
+
+.ww-fire-layers .ww-job-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #cfd5da;
+}
+
+.ww-fire-layers .ww-job.active .ww-job-name {
+    color: #fff;
+}
+
+.ww-fire-layers .ww-job-delete {
+    color: #9aa3ab;
+    cursor: pointer;
+    opacity: 0;
+    font-size: 11px;
+}
+
+.ww-fire-layers .ww-job:hover .ww-job-delete {
+    opacity: 1;
+}
+
+.ww-fire-layers .ww-sim-badge,
+#wildfireTool .ww-sim-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
+.ww-fire-layers .ww-sim-badge.fire {
+    background: rgba(255, 107, 53, 0.2);
+    color: #ffa07a;
+}
+
+.ww-fire-layers .ww-sim-badge.whatif,
+#wildfireTool .ww-sim-badge.whatif {
+    background: rgba(8, 174, 234, 0.18);
+    color: #7fd3f5;
+}
+
+/* ── Whose forecast this is ── */
+
+.ww-fire-layers .ww-hero-label {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 4px;
+    padding-bottom: 2px;
+    border-bottom: 1px solid rgba(255, 221, 92, 0.25);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers .ww-hero-label-run {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-transform: none;
+    letter-spacing: 0;
+    color: #cfd5da;
+}
+
+/* ── Title bar: one line, left-aligned after the back arrow ── */
+
+.ww-fire-layers .ww-an-header.ww-an-header-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px 8px 10px;
+}
+
+.ww-fire-layers .ww-an-header-main .ww-an-heading {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+}
+
+.ww-fire-layers .ww-an-header-main > span:last-child:empty {
+    display: none;
+}
+
+/* ── One accent: the tool's amber-yellow instead of orange (the map's burn colours stay) ── */
+
+.ww-fire-layers .ww-an-badge {
+    background: radial-gradient(circle at 50% 60%, #ffdd5c, #e0a400);
+    box-shadow: 0 0 10px rgba(255, 221, 92, 0.35);
+    color: #2a2310;
+}
+
+.ww-fire-layers .ww-an-title {
+    background: linear-gradient(180deg, rgba(255, 221, 92, 0.07), rgba(255, 221, 92, 0) 80%);
+}
+
+.ww-fire-layers .ww-trio-cell.fire .mdi {
+    color: var(--color-h, #ffdd5c);
+}
+
+.ww-fire-layers .ww-trio-cell.fire .ww-trio-sub {
+    color: #ffe9a3;
+}
+
+.ww-sim-badge.sixday,
+#wildfireTool .ww-sim-badge.sixday,
+.ww-fire-layers .ww-sim-badge.sixday {
+    background: rgba(255, 221, 92, 0.16);
+    color: #ffe48a;
+}
+
+/* the tool eases sideways when a panel opens or closes (not while the map is dragged: see .ww-map-moving) */
+.ww-fire-layers:not(.ww-area-panel),
+.ww-side-column {
+    transition: left 0.22s ease, top 0.22s ease;
+}
+
+body.ww-map-moving .ww-fire-layers:not(.ww-area-panel),
+body.ww-map-moving .ww-side-column {
+    transition: none;
+}
+
+/* ── Docked tool: no easing (it no longer follows the map), and the folded bar ── */
+
+.ww-fire-layers:not(.ww-area-panel) {
+    transition: none;
+}
+
+.ww-fire-layers.collapsed .ww-an-header-main {
+    border-bottom: none;
+}
+
+.ww-fire-layers.collapsed .ww-an-header-main .ww-an-heading {
+    text-transform: none;
+    font-size: 13px;
+    letter-spacing: 0;
+    color: #fff;
+}
+
+/* the full name fits beside both buttons */
+.ww-fire-layers .ww-an-header.ww-an-header-main {
+    gap: 8px;
+    padding: 8px 8px 8px 8px;
+}
+
+.ww-fire-layers:not(.collapsed) .ww-an-header-main .ww-an-heading {
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+    text-align: center;
+}
+
+/* the side column docks on the window's left now: square the corners where they join */
+.ww-fire-layers.has-side {
+    border-top-right-radius: 10px;
+    border-bottom-right-radius: 10px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+.ww-side-column.docked-left {
+    border-radius: 10px 0 0 10px;
+}
+
+.ww-fire-layers:not(.ww-area-panel) {
+    width: 296px;
+}
+
+/* the tool glides to its new place (it only moves after the map stops) */
+.ww-fire-layers:not(.ww-area-panel),
+.ww-side-column {
+    transition: left 0.3s ease, top 0.3s ease;
+}
+
+/* fixed in place: no movement transitions */
+.ww-fire-layers:not(.ww-area-panel),
+.ww-side-column {
+    transition: none;
 }

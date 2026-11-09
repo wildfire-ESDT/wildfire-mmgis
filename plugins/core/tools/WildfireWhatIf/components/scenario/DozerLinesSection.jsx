@@ -1,20 +1,21 @@
 import React from 'react'
-import useWhatIfStore from '../store'
+import useWhatIfStore from '../../store'
 import {
     startDozerLineDraw,
     cancelDozerLineDraw,
     removeDozerLine,
     clearDozerLines,
-} from '../actions'
+} from '../../actions'
 import { Button, IconButton } from '@design/components'
-import SectionLabel from './SectionLabel'
+import SectionLabel from '../common/SectionLabel'
 
-export default function DozerLinesSection() {
+// `always`: show without a drawn perimeter (the demo fires bring their own)
+export default function DozerLinesSection({ always = false }) {
     const drawingDozerLine = useWhatIfStore((s) => s.drawingDozerLine)
     const dozerLines = useWhatIfStore((s) => s.dozerLines)
     const perimeterRing = useWhatIfStore((s) => s.perimeterRing)
 
-    if (!perimeterRing) return null
+    if (!perimeterRing && !always) return null
 
     return (
         <>
