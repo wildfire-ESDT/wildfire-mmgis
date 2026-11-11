@@ -60,6 +60,7 @@ export function openDemo(id) {
         addedInputKeys: [],
         windEditOpen: false,
         showObserved: true, // the ground truth's edge shows from the start
+        truthSource: null, // each fire opens on its own default ground truth
         sidePanels: { area: false, whatif: false },
         toolCollapsed: false,
     })
@@ -166,6 +167,18 @@ export function setShowObserved(on) {
     drawDemo()
 }
 
+// The model forecast's edge under a what-if
+export function setShowBaseline(on) {
+    S.setState({ showBaseline: !!on })
+    drawDemo()
+}
+
+// Which ground truth the fire is compared with: 'feds' (VIIRS) or 'agency' (the WFIGS / NIFC perimeter)
+export function setTruthSource(key) {
+    S.setState({ truthSource: key || null })
+    drawDemo()
+}
+
 export function setDemoWind(field, value) {
     const base = observedWind()
     if (!base) return
@@ -268,6 +281,12 @@ export function setInputVisible(key, visible) {
 // The Wind card's Modify: while it is open (or the wind is changed) the map shows the authored wind
 export function setWindEditOpen(open) {
     S.setState({ windEditOpen: !!open })
+    // Authoring starts from the forecast start: the wind on the map is the first step's, not the
+    // last one's (the forecast usually sits at +144 h when Modify is opened)
+    if (open && S.getState().demoStep !== 0) {
+        pauseDemo()
+        return setDemoStep(0) // redraws
+    }
     drawDemo()
 }
 

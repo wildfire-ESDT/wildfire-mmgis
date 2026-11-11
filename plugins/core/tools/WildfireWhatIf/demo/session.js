@@ -18,6 +18,14 @@ export function redraw(opts) {
     redrawFn(opts)
 }
 
+// The model forecast a what-if is compared with (the fire's first run); null when the run on screen is
+// that forecast itself. `s` = a store state (a component's selector passes its own).
+export function baselineOf(s = S.getState()) {
+    const list = s.activeDemo && s.demoResults[s.activeDemo]
+    const res = list ? list[Math.min(s.demoIdx, list.length - 1)] : null
+    return res && res.kind === 'whatif' && list[0] !== res ? list[0] : null
+}
+
 export function activeResult() {
     const s = S.getState()
     const list = s.activeDemo && s.demoResults[s.activeDemo]

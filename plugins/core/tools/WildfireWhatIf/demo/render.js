@@ -1,18 +1,65 @@
 // Drawing the open fire on the map: the input layers (bottom), the forecast's
-// see-through fill, the ground truth's edge, the authored wind's arrows, the run's
-// dozer lines and the spot marker; and framing the map on the fire beside the tool.
+// see-through fill, the ground truth's edge, the run's dozer lines and the spot marker
+// (the wind, the run's or the one being authored, is flow.js's moving streaks); and framing
+// the map on the fire beside the tool.
 // The forecast is drawn as an arrival-time map: every cell burned by the current
 // step, colored by when it burned.
 import * as map from '../map'
 import { getMap, coveredEdges } from '../utils'
-import { S, STEPS, session, setRedraw, activeResult } from './session'
-import { START_RGBA, OBSERVED_RGBA, stepColor, hexRgb, rampColor } from './colors'
+import { S, STEPS, session, setRedraw, activeResult, baselineOf } from './session'
+import { START_RGBA, OBSERVED_RGBA, BASELINE_RGBA, stepColor, hexRgb, rampColor } from './colors'
 import { decode, fieldOf, fireBounds } from './grids'
-import { inputEntry, needLayer, inputOpacity } from './layers'
+import { inputEntry, needLayer, inputOpacity, layerCacheKey } from './layers'
 import { updateFlow, removeFlow } from './flow'
-import { draftWind } from './wind'
 
 let overlays = null // L.layerGroup of the fire's overlays
+// The raster overlays (input layers, forecast fill, ground truth edge), bottom first. They stay on the
+// map from one redraw to the next: a redraw gives an image a new picture only when its content changed
+// (the browser keeps showing the old picture until the new one has loaded), so stepping through the
+// forecast neither blanks the map nor redraws a layer that does not change (fuel type, terrain).
+let rasters = [] // [{id, sig, layer}]
+const resIds = new WeakMap() // run -> a number that tells runs apart in a raster's signature
+let nextResId = 1
+function resId(res) {
+    if (!resIds.has(res)) resIds.set(res, nextResId++)
+    return resIds.get(res)
+}
+
+function removeRasters(leafletMap) {
+    rasters.forEach((r) => {
+        try {
+            leafletMap.removeLayer(r.layer)
+        } catch (e) {}
+    })
+    rasters = []
+}
+
+// wanted: [{id, sig, url: () => data URL, opacity}], bottom first
+function syncRasters(wanted, bounds, leafletMap) {
+    const L = window.L
+    const sameStack = rasters.length === wanted.length && rasters.every((r, i) => r.id === wanted[i].id)
+    if (!sameStack) {
+        // a layer was added, removed or reordered: draw the stack afresh, in order
+        removeRasters(leafletMap)
+        rasters = wanted.map((w) => ({
+            id: w.id,
+            sig: w.sig,
+            layer: L.imageOverlay(w.url(), bounds, { className: 'ww-raster', interactive: false, opacity: w.opacity }).addTo(
+                leafletMap
+            ),
+        }))
+        return
+    }
+    wanted.forEach((w, i) => {
+        const r = rasters[i]
+        if (r.sig !== w.sig) {
+            r.layer.setBounds(bounds)
+            r.layer.setUrl(w.url())
+            r.sig = w.sig
+        }
+        r.layer.setOpacity(w.opacity)
+    })
+}
 
 function canvasSized(cols, rows, paint) {
     const c = document.createElement('canvas')
@@ -54,10 +101,9 @@ function forecastImage(res, step) {
     })
 }
 
-// The ground truth's edge at `step`: burned pixels with an unburned pixel within
-// `width` (one cell's edge on the cells; half a cell's on the smoothed field)
-function observedImage(res, step) {
-    const f = fieldOf(res, 'observed')
+// The edge at `step` of a burned-by-step field (fieldOf): burned pixels with an unburned pixel within
+// `width` (one cell's edge on the cells; half a cell's on the smoothed field), in `rgba`
+function edgeImage(f, step, rgba) {
     const { rows, cols, codes } = f
     const width = f.up > 1 ? 2 : 1
     const burned = (r, c) => {
@@ -74,12 +120,17 @@ function observedImage(res, step) {
                     edge = !burned(r - d, c) || !burned(r + d, c) || !burned(r, c - d) || !burned(r, c + d)
                 if (!edge) continue
                 const o = (r * cols + c) * 4
-                px[o] = OBSERVED_RGBA[0]
-                px[o + 1] = OBSERVED_RGBA[1]
-                px[o + 2] = OBSERVED_RGBA[2]
-                px[o + 3] = OBSERVED_RGBA[3]
+                px[o] = rgba[0]
+                px[o + 1] = rgba[1]
+                px[o + 2] = rgba[2]
+                px[o + 3] = rgba[3]
             }
     })
+}
+
+// The ground truth's edge at `step`
+function observedImage(res, step) {
+    return edgeImage(fieldOf(res, 'observed', S.getState().truthSource), step, OBSERVED_RGBA)
 }
 
 // The inputs of the step that ends at `step` (the start's inputs at step 0)
@@ -105,33 +156,14 @@ function inputImage(res, data, entry, step) {
     })
 }
 
-// Wind arrows pointing where the wind blows, sized by speed (the setup view's
-// HRRR arrow shape, in white so they read over the fire's colors)
-const DRAFT_ARROW = '#ffdd5c' // the Wind card's arrow color
-
-function windArrows(points, color = '#ffffff') {
-    const L = window.L
-    return (points || []).map(([lat, lon, u, v]) => {
-        const speed = Math.sqrt(u * u + v * v)
-        const len = Math.max(10, Math.min(32, 8 + speed * 1.6))
-        const half = len / 2
-        const box = len + 12
-        const angDeg = (Math.atan2(-v, u) * 180) / Math.PI
-        const arrow = `M ${-half} 0 H ${half} M ${half} 0 L ${half - 6} -3.6 M ${half} 0 L ${half - 6} 3.6`
-        const svg =
-            `<svg xmlns="http://www.w3.org/2000/svg" width="${box}" height="${box}" viewBox="${-box / 2} ${-box / 2} ${box} ${box}" style="overflow:visible">` +
-            `<g transform="rotate(${angDeg})" stroke-linecap="round" stroke-linejoin="round" fill="none">` +
-            `<path d="${arrow}" stroke="rgba(10,14,20,0.85)" stroke-width="4"/>` +
-            `<path d="${arrow}" stroke="${color}" stroke-width="1.8"/>` +
-            `</g></svg>`
-        return L.marker([lat, lon], {
-            icon: L.divIcon({ html: svg, className: 'ww-wind-arrow-icon', iconSize: [box, box], iconAnchor: [box / 2, box / 2] }),
-            interactive: false,
-        })
-    })
+export function removeDemoLayers() {
+    const leafletMap = getMap()
+    if (leafletMap) removeRasters(leafletMap)
+    removeVectors()
 }
 
-export function removeDemoLayers() {
+// The redrawn-every-time part: the run's lines and the spot marker
+function removeVectors() {
     const leafletMap = getMap()
     if (overlays && leafletMap) {
         try {
@@ -144,9 +176,10 @@ export function removeDemoLayers() {
 export function drawDemo({ fit } = {}) {
     const leafletMap = getMap()
     const res = activeResult()
-    removeDemoLayers()
+    if (session.hidden || !leafletMap || !res) removeDemoLayers()
     if (session.hidden) return removeFlow() // the tool is closed; its redraw hook draws again on open
     if (!leafletMap || !res) return
+    removeVectors()
     const L = window.L
     const s = S.getState()
     const g = res.grid
@@ -155,6 +188,7 @@ export function drawDemo({ fit } = {}) {
         [g.north, g.east],
     ]
     overlays = L.layerGroup()
+    const wanted = []
     // the list's top draws on top: drawn from the bottom of the list up
     ;[...s.addedInputKeys]
         .reverse()
@@ -162,38 +196,43 @@ export function drawDemo({ fit } = {}) {
         .forEach((key) => {
             const entry = inputEntry(key)
             const data = entry && needLayer(key)
-            if (data)
-                L.imageOverlay(inputImage(res, data, entry, s.demoStep), bounds, {
-                    className: 'ww-raster',
-                    interactive: false,
-                    opacity: inputOpacity(key),
-                }).addTo(overlays)
+            if (!data) return
+            const frame = Math.min(Math.max(s.demoStep, 1), data.steps.length) - 1 // a fixed layer has one frame
+            wanted.push({
+                id: `input:${key}`,
+                sig: `${layerCacheKey(key)}|${frame}`,
+                url: () => inputImage(res, data, entry, s.demoStep),
+                opacity: inputOpacity(key),
+            })
         })
     // The forecast stays in sight over any input layer: its see-through fill, unless hidden
     if (s.showForecast)
-        L.imageOverlay(forecastImage(res, s.demoStep), bounds, {
-            className: 'ww-raster',
-            interactive: false,
+        wanted.push({
+            id: 'forecast',
+            sig: `${resId(res)}|${s.demoStep}`,
+            url: () => forecastImage(res, s.demoStep),
             opacity: s.fireOpacity,
-        }).addTo(overlays)
+        })
+    // The ground truth's edge stays under a what-if too, as an outline only (its acres are not set
+    // against a what-if: that wind or those lines never happened)
     if (s.showObserved)
-        L.imageOverlay(observedImage(res, s.demoStep), bounds, {
-            className: 'ww-raster',
-            interactive: false,
-        }).addTo(overlays)
-    if (s.windEditOpen) { // the yellow arrows: only while the Wind card's Modify is open
-        // Authoring a what-if: the real wind at the shown step, scaled and turned the way the
-        // what-if will be (the Wind card's Modify), drawn as the card's yellow arrows
-        const real = needLayer('wind', { scale: 1, turn: 0 })
-        if (real && real.arrows) {
-            const d = draftWind()
-            const pts = real.arrows[Math.min(Math.max(s.demoStep, 1), real.arrows.length) - 1].map(([lat, lon, u, v]) => {
-                const t = (d.turn * Math.PI) / 180 // clockwise on the compass
-                return [lat, lon, d.scale * (u * Math.cos(t) + v * Math.sin(t)), d.scale * (-u * Math.sin(t) + v * Math.cos(t))]
-            })
-            windArrows(pts, DRAFT_ARROW).forEach((m) => m.addTo(overlays))
-        }
-    }
+        wanted.push({
+            id: 'observed',
+            sig: `${resId(res)}|${s.demoStep}|${s.truthSource}`,
+            url: () => observedImage(res, s.demoStep),
+            opacity: 1,
+        })
+    // Under a what-if: the model forecast's edge at the same step, so the difference the changed wind or
+    // the drawn lines make is what the eye sees
+    const base = baselineOf(s)
+    if (base && s.showBaseline)
+        wanted.push({
+            id: 'baseline',
+            sig: `${resId(base)}|${s.demoStep}`,
+            url: () => edgeImage(fieldOf(base, 'arrival'), s.demoStep, BASELINE_RGBA),
+            opacity: 1,
+        })
+    syncRasters(wanted, bounds, leafletMap)
     // The lines this run was made with (the draft's lines are drawn by map.js)
     ;(res.lines || []).forEach((coords) =>
         L.polyline(

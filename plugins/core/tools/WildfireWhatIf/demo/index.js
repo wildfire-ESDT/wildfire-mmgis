@@ -20,10 +20,10 @@
 //   hooks.js     hiding and redrawing when the tool closes and opens
 import './hooks'
 
-export { STEPS, activeResult } from './session'
+export { STEPS, activeResult, baselineOf } from './session'
 export * from './actions'
-export { stepCss, rampCss, START_CSS, OBSERVED_CSS, RAMP_CSS } from './colors'
-export { fireBounds } from './grids'
+export { stepCss, rampCss, START_CSS, OBSERVED_CSS, BASELINE_CSS, RAMP_CSS } from './colors'
+export { fireBounds, truthOf, arrivalAt } from './grids'
 export { passTime, fmtPass, setSyncMapTime } from './time'
 export { layerCacheKey, inputOpacity } from './layers'
 export { drawDemo, focusFire } from './render'

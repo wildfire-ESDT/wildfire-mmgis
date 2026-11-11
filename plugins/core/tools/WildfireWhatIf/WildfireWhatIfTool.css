@@ -1686,6 +1686,30 @@
     white-space: nowrap;
 }
 
+/* Ground truth source: FEDS (VIIRS) or the WFIGS agency perimeter */
+.ww-fire-layers .ww-key-truth {
+    display: flex;
+    gap: 4px;
+    margin: 4px 0 0 22px;
+}
+
+.ww-fire-layers .ww-key-truth button {
+    flex: 1;
+    padding: 3px 6px;
+    border: 1px solid #3a4148;
+    border-radius: 3px;
+    background: none;
+    color: #b4bac0;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.ww-fire-layers .ww-key-truth button.on {
+    border-color: var(--color-mmgis, #08aeea);
+    color: #fff;
+    background: rgba(8, 174, 234, 0.15);
+}
+
 .ww-fire-layers .ww-an-compare {
     margin-top: 8px;
     font-size: 11px;
@@ -2628,6 +2652,11 @@
 
 .ww-fire-layers .ww-trio.ww-duo {
     grid-template-columns: 1fr 1fr;
+}
+
+/* a what-if: the forecast alone (no ground truth beside it) */
+.ww-fire-layers .ww-trio.ww-duo.ww-solo {
+    grid-template-columns: 1fr;
 }
 
 /* ── Runs, in the main window ── */

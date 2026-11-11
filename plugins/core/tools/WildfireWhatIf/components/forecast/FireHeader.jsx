@@ -2,11 +2,12 @@
 // forecast) in a dropdown.
 import React from 'react'
 import useWhatIfStore from '../../store'
-import { setDetailsOpen, passTime, fmtPass } from '../../demo'
+import { setDetailsOpen, passTime, fmtPass, truthOf } from '../../demo'
 import { fmtAc, localWhen } from './format'
 
 export default function FireHeader({ info, id, res }) {
     const open = useWhatIfStore((s) => s.detailsOpen)
+    const chosen = truthOf(res, useWhatIfStore((s) => s.truthSource))
     const inc = (info && info.incident) || {}
     const lon = info && info.bounds ? (info.bounds[0][1] + info.bounds[1][1]) / 2 : 0
     const knownCause = inc.cause && !/^(undetermined|unknown)$/i.test(String(inc.cause).trim())
@@ -94,7 +95,7 @@ export default function FireHeader({ info, id, res }) {
                                     <span className="ww-meta-sub">{info ? info.start_perimeter : ''}</span>
                                 </dd>
                                 <dt>Ground truth</dt>
-                                <dd className="ww-an-truth-src">{info ? info.observed : ''}</dd>
+                                <dd className="ww-an-truth-src">{chosen ? chosen.label : info ? info.observed : ''}</dd>
                             </dl>
                         </>
                     )}

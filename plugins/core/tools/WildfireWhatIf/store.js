@@ -60,6 +60,8 @@ const useWhatIfStore = create((set) => ({
     demoStep: 12, // 0 = forecast start, k = +12k hours
     demoPlaying: false,
     showObserved: true, // the ground truth's edge on the map
+    showBaseline: true, // the model forecast's edge under a what-if (what the what-if is compared with)
+    truthSource: null, // which ground truth is shown: 'feds' | 'agency'; null = the fire's own default
     demoWind: null, // what-if six-day mean wind {speed_ms, direction_deg}; null = the real wind
     // The fire's model inputs drawn under the forecast (demo.js)
     inputCatalogs: {}, // demo id -> [{key, label, group, units, time, ramp | cats+colors, min, max}]

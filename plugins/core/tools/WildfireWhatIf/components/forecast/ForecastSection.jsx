@@ -2,7 +2,7 @@
 // forecast's and the ground truth's acres, the two panel buttons and the runs.
 import React from 'react'
 import useWhatIfStore from '../../store'
-import { setSyncMapTime, setSidePanel, fmtPass } from '../../demo'
+import { setSyncMapTime, setSidePanel, fmtPass, truthOf, baselineOf } from '../../demo'
 import Timeline from './Timeline'
 import ForecastRuns from './ForecastRuns'
 import { fmtAc } from './format'
@@ -48,12 +48,18 @@ export default function ForecastSection({ res, runs, idx, step, playing }) {
     const when = step === 0 ? res.start_time : st.time
     const start = res.start_acres
     const forecast = st ? st.forecast_acres : start
-    const truth = st ? st.observed_acres : start
+    const chosen = truthOf(res, useWhatIfStore((s) => s.truthSource)) // the ground truth picked in Area conditions
+    const truth = !st ? start : chosen ? chosen.acres[step - 1] : st.observed_acres
     const showForecast = useWhatIfStore((s) => s.showForecast)
     const showObserved = useWhatIfStore((s) => s.showObserved)
     const windFlow = useWhatIfStore((s) => s.windFlow)
     const visibleInputs = useWhatIfStore((s) => s.visibleInputs)
     const compare = useWhatIfStore((s) => s.compareTruth)
+    const whatif = res.kind === 'whatif' // a what-if's acres are not set against the ground truth's (it never happened)
+    // ... but with the model forecast it was made from: its acres at the same step
+    const base = useWhatIfStore((s) => baselineOf(s))
+    const baseAc = !base ? null : step > 0 && base.steps[step - 1] ? base.steps[step - 1].forecast_acres : base.start_acres
+    const moved = baseAc == null ? 0 : forecast - baseAc
     const shown = [showForecast, showObserved, windFlow].filter(Boolean).length + visibleInputs.length
     const grow = (g) => (g > 0.5 ? `+${Math.round(g).toLocaleString()} ac` : null)
     return (
@@ -69,15 +75,21 @@ export default function ForecastSection({ res, runs, idx, step, playing }) {
                     <SyncTimeToggle />
                 </div>
                 <Timeline res={res} step={step} playing={playing} />
-                <div className="ww-trio ww-duo">
+                <div className={`ww-trio ww-duo${whatif && baseAc == null ? ' ww-solo' : ''}`}>
                     <div className="ww-trio-cell fire">
                         <span className="ww-trio-label">
-                            <i className="mdi mdi-fire" /> Forecast
+                            <i className="mdi mdi-fire" /> {whatif ? 'What-if' : 'Forecast'}
                         </span>
                         <strong>{fmtAc(forecast)}</strong>
                         <span className="ww-trio-sub">
                             {grow(forecast - start) || 'no growth yet'}
-                            {compare && step > 0 && truth > 0 && (
+                            {baseAc != null && step > 0 && Math.abs(moved) >= 0.5 && (
+                                <span className={`ww-an-vs ${moved > 0 ? 'over' : 'under'}`} title="Against the model forecast at this step">
+                                    {moved > 0 ? '▲' : '▼'}
+                                    {Math.abs(Math.round(moved)).toLocaleString()} ac
+                                </span>
+                            )}
+                            {compare && !whatif && step > 0 && truth > 0 && (
                                 <span className={`ww-an-vs ${forecast >= truth ? 'over' : 'under'}`}>
                                     {forecast >= truth ? '▲' : '▼'}
                                     {Math.abs(Math.round((forecast / truth - 1) * 100))}%
@@ -85,13 +97,24 @@ export default function ForecastSection({ res, runs, idx, step, playing }) {
                             )}
                         </span>
                     </div>
-                    <div className="ww-trio-cell truth">
-                        <span className="ww-trio-label">
-                            <i className="mdi mdi-satellite-variant" /> Ground truth
-                        </span>
-                        <strong>{fmtAc(truth)}</strong>
-                        <span className="ww-trio-sub">{grow(truth - start) || 'no growth yet'}</span>
-                    </div>
+                    {baseAc != null && (
+                        <div className="ww-trio-cell">
+                            <span className="ww-trio-label">
+                                <i className="mdi mdi-fire" /> Model forecast
+                            </span>
+                            <strong>{fmtAc(baseAc)}</strong>
+                            <span className="ww-trio-sub">{grow(baseAc - start) || 'no growth yet'}</span>
+                        </div>
+                    )}
+                    {!whatif && (
+                        <div className="ww-trio-cell truth">
+                            <span className="ww-trio-label">
+                                <i className="mdi mdi-satellite-variant" /> Ground truth
+                            </span>
+                            <strong>{fmtAc(truth)}</strong>
+                            <span className="ww-trio-sub">{grow(truth - start) || 'no growth yet'}</span>
+                        </div>
+                    )}
                 </div>
             </div>
             <div className="ww-an-panel-buttons">

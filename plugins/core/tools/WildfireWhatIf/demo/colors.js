@@ -7,7 +7,9 @@ const OBSERVED_RGBA = [34, 211, 238, 255] // the ground truth's edge at the curr
 // Light to dark through the fire colors: early burn pale, late burn dark
 const RAMP = ['#fde68a', '#fbbf24', '#f97316', '#dc2626', '#991b1b', '#581c87']
 
-export { START_RGBA, OBSERVED_RGBA }
+const BASELINE_RGBA = [255, 255, 255, 255] // the model forecast's edge, drawn under a what-if
+
+export { START_RGBA, OBSERVED_RGBA, BASELINE_RGBA }
 
 export function hexRgb(h) {
     const n = parseInt(h.slice(1), 16)
@@ -31,6 +33,7 @@ export function stepCss(k) {
 
 export const START_CSS = `rgba(${START_RGBA.slice(0, 3).join(',')},${START_RGBA[3] / 255})`
 export const OBSERVED_CSS = `rgb(${OBSERVED_RGBA.slice(0, 3).join(',')})`
+export const BASELINE_CSS = `rgb(${BASELINE_RGBA.slice(0, 3).join(',')})`
 export const RAMP_CSS = `linear-gradient(to right, ${RAMP.join(', ')})`
 
 // Color scales by name (the server's layer list says which one a layer uses)

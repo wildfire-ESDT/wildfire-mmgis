@@ -70,6 +70,8 @@ export function createWindFlow(map, box) {
     const ctx = canvas.getContext('2d')
 
     let field = null // the field drawn
+    let color = [250, 252, 255] // the streaks' colour (white: the run's wind; setColor for a wind being authored)
+    let blendMs = BLEND_MS // how long the field now blending in takes
     let from = null // the field blending out, and when the blend began
     let blendStart = 0
     let streaks = []
@@ -90,7 +92,7 @@ export function createWindFlow(map, box) {
         const b = field && sample(field, lat, lon)
         if (!b) return null
         if (!from) return b
-        const t = Math.min((now - blendStart) / BLEND_MS, 1)
+        const t = Math.min((now - blendStart) / blendMs, 1)
         if (t >= 1) {
             from = null
             return b
@@ -181,7 +183,7 @@ export function createWindFlow(map, box) {
         for (let g = 0; g < SEGS; g++) {
             const t01 = (g + 1) / SEGS
             ctx.lineWidth = 0.6 + 1.6 * t01
-            ctx.strokeStyle = `rgba(250, 252, 255, ${0.95 * t01})`
+            ctx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${0.95 * t01})`
             ctx.stroke(core[g])
         }
     }
@@ -204,14 +206,19 @@ export function createWindFlow(map, box) {
     raf = requestAnimationFrame(frame)
 
     return {
-        // records: [U, V] of one step. The streaks keep going; the new wind blends in.
-        setField(records) {
+        // records: [U, V] of one step. The streaks keep going; the new wind blends in over `ms`.
+        setField(records, ms = BLEND_MS) {
             const next = toArrays(records)
+            blendMs = ms
             if (field) {
                 from = field
                 blendStart = performance.now()
             }
             field = next
+        },
+        // [r, g, b] of the streaks
+        setColor(rgb) {
+            color = rgb
         },
         destroy() {
             if (raf) cancelAnimationFrame(raf)

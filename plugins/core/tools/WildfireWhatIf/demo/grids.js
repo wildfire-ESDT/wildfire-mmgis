@@ -16,6 +16,10 @@ export function gridsOf(res) {
     if (!g) {
         const n = res.grid.rows * res.grid.cols
         g = { arrival: decode(res.arrival, n), observed: decode(res.observed, n) }
+        // every ground truth the fire can be compared with (FEDS, the agency perimeter)
+        ;(res.truths || []).forEach((t) => {
+            g['observed:' + t.key] = decode(t.observed, n)
+        })
         grids.set(res, g)
     }
     return g
@@ -93,13 +97,36 @@ function smoothCodes(codes, rows, cols) {
     return out
 }
 
-// The codes drawn for `which` ('arrival' or 'observed'): the smoothed version of the model's cells
-export function fieldOf(res, which) {
+// The ground truth of a run for the chosen `source` ('feds' | 'agency'): {key, label, observed, acres}.
+// Its default (the first) when the run does not have that one; null for a run with no list.
+export function truthOf(res, source) {
+    const list = (res && res.truths) || []
+    return list.find((t) => t.key === source) || list[0] || null
+}
+
+// The codes drawn for `which` ('arrival' or 'observed'): the smoothed version of the model's cells.
+// `source` picks the ground truth ('observed' only).
+export function fieldOf(res, which, source) {
     const g = gridsOf(res)
+    if (which === 'observed') {
+        const t = truthOf(res, source)
+        if (t && g['observed:' + t.key]) which = 'observed:' + t.key
+    }
     const { rows, cols } = res.grid
     const key = which + 'Smooth'
     if (!g[key]) g[key] = smoothCodes(g[which], rows, cols)
     return { codes: g[key], rows: rows * SMOOTH_UP, cols: cols * SMOOTH_UP, up: SMOOTH_UP }
+}
+
+// When the fire reaches the cell holding (lat, lon) in a run: 255 burning at the forecast start, k (1..12)
+// first burned in step k (between +12(k-1) and +12k hours), 0 not within the six days; null outside the window
+export function arrivalAt(res, lat, lon) {
+    if (!res || !res.grid) return null
+    const g = res.grid
+    const c = Math.floor(((lon - g.west) / (g.east - g.west)) * g.cols)
+    const r = Math.floor(((g.north - lat) / (g.north - g.south)) * g.rows) // row 0 is north
+    if (r < 0 || c < 0 || r >= g.rows || c >= g.cols) return null
+    return gridsOf(res).arrival[r * g.cols + c]
 }
 
 // The fire's own extent in a run up to `step` (default: all six days): the start fire, every cell

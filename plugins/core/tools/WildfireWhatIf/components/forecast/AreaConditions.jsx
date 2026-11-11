@@ -4,6 +4,14 @@ import React, { useEffect, useRef, useState } from 'react'
 import useWhatIfStore from '../../store'
 import {
     setShowObserved,
+    setTruthSource,
+    truthOf,
+    setShowBaseline,
+    baselineOf,
+    arrivalAt,
+    fmtPass,
+    activeResult,
+    BASELINE_CSS,
     setWindFlow,
     setInputVisible,
     removeInput,
@@ -51,6 +59,49 @@ function MapLayerCard({ layer, step }) {
     )
 }
 
+// When a run's fire reaches the spot, in words: {text, step} (step: 0 at the start, 99 never)
+function arrivalText(res, probe) {
+    const a = arrivalAt(res, probe.lat, probe.lon)
+    if (a == null) return null
+    if (a === 255) return { step: 0, text: 'Burning at the forecast start' }
+    if (a === 0) return { step: 99, text: 'Not within the six days' }
+    const st = res.steps[a - 1]
+    return { step: a, text: `+${12 * (a - 1)} to +${12 * a} h${st ? ` · by ${fmtPass(st.time, res.grid)}` : ''}` }
+}
+
+// When the fire reaches the clicked spot in the run on screen and, for a what-if, in the model forecast
+function SpotArrival({ probe }) {
+    useWhatIfStore((s) => s.demoIdx) // another run picked: read again
+    useWhatIfStore((s) => s.demoResults)
+    const res = activeResult()
+    const base = baselineOf()
+    const now = res && arrivalText(res, probe)
+    if (!now) return null
+    const was = base && arrivalText(base, probe)
+    let shift = null
+    if (was && was.step !== now.step) {
+        if (now.step === 99) shift = 'The what-if keeps the fire from this spot'
+        else if (was.step === 99) shift = 'Only the what-if reaches this spot'
+        else shift = `${12 * Math.abs(now.step - was.step)} h ${now.step < was.step ? 'earlier' : 'later'} than the model forecast`
+    }
+    return (
+        <>
+            <div className="ww-spot-group">Fire arrival</div>
+            <div className="ww-spot-row">
+                <span>{was ? 'What-if' : 'Forecast'}</span>
+                <span>{now.text}</span>
+            </div>
+            {was && (
+                <div className="ww-spot-row">
+                    <span>Model forecast</span>
+                    <span>{was.text}</span>
+                </div>
+            )}
+            {shift && <div className="ww-spot-hint">{shift}</div>}
+        </>
+    )
+}
+
 // Every input at the spot clicked on the map, at the shown step
 export function SpotSection() {
     const probe = useWhatIfStore((s) => s.probe)
@@ -80,6 +131,7 @@ export function SpotSection() {
                 </>
             }
         >
+            <SpotArrival probe={probe} />
             {error && <div className="ww-key-detail">{error}</div>}
             {data &&
                 data.rows.map((r) => {
@@ -172,6 +224,11 @@ export default function AreaConditions({ res, step }) {
     const addedLayers = added.map((key) => catalog.find((layer) => layer.key === key)).filter(Boolean)
     const fireOpacity = useWhatIfStore((s) => s.fireOpacity)
     const compare = useWhatIfStore((s) => s.compareTruth)
+    const truths = res.truths || []
+    const whatif = res.kind === 'whatif' // the ground truth stays as an outline; no acres comparison with a what-if
+    const showBaseline = useWhatIfStore((s) => s.showBaseline)
+    const hasBaseline = useWhatIfStore((s) => !!baselineOf(s))
+    const chosen = truthOf(res, useWhatIfStore((s) => s.truthSource))
     const w = res.steps[Math.max(step, 1) - 1]
     const windNow =
         w && w.wind_speed_ms != null
@@ -198,16 +255,43 @@ export default function AreaConditions({ res, step }) {
                         <OpacityRow value={fireOpacity} onChange={setFireOpacity} />
                     </div>
                 )}
+                {hasBaseline && (
+                    <OverlayRow
+                        swatch={<i className="ww-key-swatch edge" style={{ borderColor: BASELINE_CSS }} />}
+                        label="Model forecast (for comparison)"
+                        visible={showBaseline}
+                        onToggle={() => setShowBaseline(!showBaseline)}
+                    />
+                )}
                 <OverlayRow
                     swatch={<i className="ww-key-swatch edge" style={{ borderColor: OBSERVED_CSS }} />}
                     label="Ground truth"
                     visible={showObserved}
                     onToggle={() => setShowObserved(!showObserved)}
                 />
-                <label className="ww-key-row ww-an-compare" title="Shows how far the forecast's acres are from the ground truth's">
-                    <input type="checkbox" checked={compare} onChange={(e) => setCompareTruth(e.target.checked)} />
-                    <span className="ww-key-name">Compare forecast with ground truth</span>
-                </label>
+                {truths.length > 1 && (
+                    <div className="ww-key-truth" role="radiogroup" aria-label="Ground truth source">
+                        {truths.map((t) => (
+                            <button
+                                key={t.key}
+                                type="button"
+                                role="radio"
+                                aria-checked={chosen.key === t.key}
+                                className={chosen.key === t.key ? 'on' : ''}
+                                title={t.label}
+                                onClick={() => setTruthSource(t.key)}
+                            >
+                                {t.key === 'agency' ? 'WFIGS perimeter' : 'FEDS (VIIRS)'}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {!whatif && (
+                    <label className="ww-key-row ww-an-compare" title="Shows how far the forecast's acres are from the ground truth's">
+                        <input type="checkbox" checked={compare} onChange={(e) => setCompareTruth(e.target.checked)} />
+                        <span className="ww-key-name">Compare forecast with ground truth</span>
+                    </label>
+                )}
                 <WindFlowRow windNow={windNow} />
                 <div className="ww-an-subhead">Weather, terrain and fuel</div>
                 <div className="ww-an-add">
